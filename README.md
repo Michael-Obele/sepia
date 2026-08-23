@@ -263,6 +263,8 @@ claude mcp add --transport http sepia https://sepia.fly.dev/mcp \
 
 All connect from the **provider's cloud**, so the server must be publicly reachable (it is — Fly with `force_https`); Streamable HTTP is the universal transport.
 
+> ⚠️ **Grok requires OAuth 2.1, and Sepia still runs Phase 1 (Bearer token).** The live server exposes no `/.well-known/oauth-*` metadata, so Grok's custom-connector flow shows an OAuth credential form that **can't be completed with real credentials yet**. See [Connecting Sepia to Grok](docs/grok-custom-connector.md) for the exact steps, the caveat, and the workaround.
+
 ### Install the skill + always-on instructions
 
 The skill and the always-on instruction files are served over HTTP from the same
