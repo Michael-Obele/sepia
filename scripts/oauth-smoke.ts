@@ -59,6 +59,10 @@ const EXPECTED_ISSUER = (process.env.EXPECTED_ISSUER ?? BASE).replace(
   /\/$/,
   "",
 );
+// The URL-client test needs the metadata server reachable from the TARGET
+// server — only possible when testing locally (the prod server can't reach
+// localhost:9997).
+const isLocalTarget = BASE.startsWith("http://localhost");
 const PASSWORD = process.env.DASHBOARD_PASSWORD ?? "";
 const STATIC_TOKEN = process.env.MCP_BEARER_TOKEN ?? "test-static-token";
 const REDIRECT_URI = "http://localhost:9999/callback";
@@ -325,7 +329,9 @@ async function main() {
     //     token_endpoint_auth_method=private_key_jwt — the ChatGPT pattern.
     //     (Bug: @tmcp/auth's schema rejects private_key_jwt → invalid_client.
     //     The server must fetch + sanitize the document itself.)
-    {
+    //     Only runs against a LOCAL server — the metadata server on
+    //     localhost:9997 must be reachable from the target.
+    if (isLocalTarget) {
       const urlVerifier = b64url(randomBytes(32));
       const urlChallenge = codeChallenge(urlVerifier);
       const urlAuthUrl = new URL(`${BASE}/authorize`);
@@ -388,6 +394,8 @@ async function main() {
         urlTokenRes.status === 200 && !!urlTokens.access_token,
         String(urlTokenRes.status),
       );
+    } else {
+      console.log("  ⏭️  URL-client test skipped (local target only)");
     }
 
     // 5. Authorize POST with wrong password → error page, no redirect.
