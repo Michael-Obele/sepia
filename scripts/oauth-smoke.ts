@@ -6,7 +6,7 @@
 import { createHash, randomBytes } from "node:crypto";
 
 const BASE = "http://localhost:8090";
-const PASSWORD = "dev-password-123";
+const PASSWORD = process.env.DASHBOARD_PASSWORD ?? "dev-password-123";
 const STATIC_TOKEN = process.env.MCP_BEARER_TOKEN ?? "test-static-token";
 
 function b64url(buf: Buffer): string {

@@ -53,6 +53,24 @@ const PORT = Number(process.env.PORT ?? 8080);
 //                                  → always-on instruction files (skills/sepia/always-on/)
 const SKILL_DIR = new URL("../skills/sepia/", import.meta.url);
 
+/**
+ * Rewrite a request URL to the public issuer origin so the OAuth library's
+ * origin check passes behind Fly's TLS termination (Bun sees http://
+ * internally while the issuer is https://sepia.fly.dev). Path + query are
+ * preserved; the body/headers are untouched.
+ */
+function publicOauthRequest(request: Request): Request {
+  const url = new URL(request.url);
+  const issuer = new URL(
+    process.env.OAUTH_ISSUER_URL ?? "https://sepia.fly.dev",
+  );
+  if (url.origin === issuer.origin) return request;
+  const publicUrl = new URL(issuer.origin);
+  publicUrl.pathname = url.pathname;
+  publicUrl.search = url.search;
+  return new Request(publicUrl.href, request);
+}
+
 function serveSkillFile(relPath: string, contentType: string) {
   const file = Bun.file(new URL(relPath, SKILL_DIR));
   if (!file.exists()) return new Response("Not Found", { status: 404 });
@@ -87,7 +105,7 @@ Bun.serve({
         for (const [key, value] of form) {
           if (key !== "password") clean.set(key, value.toString());
         }
-        const rebuilt = new Request(request.url, {
+        const rebuilt = new Request(publicOauthRequest(request).url, {
           method: "POST",
           headers: { "content-type": "application/x-www-form-urlencoded" },
           body: clean.toString(),
@@ -98,7 +116,7 @@ Bun.serve({
         const oauthResponse = await oauth.respond(rebuilt);
         if (oauthResponse) return oauthResponse;
       } else {
-        const oauthResponse = await oauth.respond(request);
+        const oauthResponse = await oauth.respond(publicOauthRequest(request));
         if (oauthResponse) return oauthResponse;
       }
     }
