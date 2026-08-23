@@ -45,7 +45,7 @@ import { oauthClients, oauthCodes, oauthTokens } from "@sepia/shared";
  * - `redirect_uri` → dropped if empty or not a valid URL (the library falls
  *   back to the client's single registered redirect URI)
  */
-export function normalizeAuthorizeUrl(url: URL): URL {
+function normalizeAuthorizeUrl(url: URL): URL {
   const out = new URL(url.href);
   const params = out.searchParams;
 
@@ -478,12 +478,20 @@ function renderLoginPage(opts: LoginPageOptions): Response {
 
 // ── Handlers ────────────────────────────────────────────────────────────────
 
+/**
+ * Internal header set by handleOAuthRequest() after the password is
+ * validated (the library consumes the form body before our handler runs, so
+ * validation happens in the request pipeline). The rebuilt request strips
+ * all client-supplied headers, so this can't be spoofed.
+ */
+const AUTHENTICATED_HEADER = "x-sepia-oauth-authenticated";
+
 const handlers = {
   /**
    * GET  → render the login + consent page (form posts back to /authorize).
-   * POST → the password was already validated by the interceptor in
-   *        src/index.ts (it rebuilds the request and sets
-   *        x-sepia-oauth-authenticated). Issue a PKCE-bound code, redirect.
+   * POST → the password was already validated by handleOAuthRequest() (it
+   *        rebuilds the request and sets AUTHENTICATED_HEADER). Issue a
+   *        PKCE-bound code, redirect.
    */
   async authorize(
     authReq: AuthorizeRequest,
@@ -493,7 +501,7 @@ const handlers = {
       authReq;
 
     if (httpReq.method === "POST") {
-      if (httpReq.headers.get("x-sepia-oauth-authenticated") !== "1") {
+      if (httpReq.headers.get(AUTHENTICATED_HEADER) !== "1") {
         return renderLoginPage({
           client,
           redirectUri,
@@ -671,3 +679,83 @@ export const oauth = OAuth.issuer(issuerUrl())
     "/register": { windowMs: 60 * 60 * 1000, max: 20 },
   })
   .build();
+
+// ── Request pipeline (single entry point for the fetch handler) ────────────
+
+/**
+ * Rewrite a request URL to the public issuer origin so the OAuth library's
+ * origin check passes behind Fly's TLS termination (Bun sees http://
+ * internally while the issuer is https://sepia.fly.dev). Path + query are
+ * preserved; the body/headers are untouched.
+ */
+function publicOauthRequest(request: Request): Request {
+  const url = new URL(request.url);
+  const issuer = new URL(issuerUrl());
+  if (url.origin === issuer.origin) return request;
+  const publicUrl = new URL(issuer.origin);
+  publicUrl.pathname = url.pathname;
+  publicUrl.search = url.search;
+  return new Request(publicUrl.href, request);
+}
+
+/**
+ * Handle an incoming HTTP request for the OAuth endpoints. Returns a Response
+ * for OAuth routes (/authorize, /token, /register, /revoke, /.well-known/*),
+ * or null for everything else (routing continues in the fetch handler).
+ * Returns null when OAuth is disabled.
+ *
+ * The pipeline (each step fixes a real-world client bug):
+ * 1. Origin rewrite — Fly's TLS proxy means Bun sees http:// while the
+ *    issuer is https://sepia.fly.dev; the library rejects origin mismatches.
+ * 2. POST /authorize — the library consumes the form body before our handler
+ *    runs, so the password is validated HERE; the request is rebuilt without
+ *    the password (and without client-supplied headers) and marked
+ *    authenticated via an internal header.
+ * 3. Param normalization — real clients send variations (plain PKCE, case
+ *    differences, missing response_type, empty resource) that the library's
+ *    strict schemas turn into 500s.
+ * 4. Error logging — the library swallows non-OAuth errors silently.
+ */
+export async function handleOAuthRequest(
+  request: Request,
+): Promise<Response | null> {
+  if (!oauthEnabled()) return null;
+
+  const url = new URL(request.url);
+  const publicUrl = publicOauthRequest(request);
+
+  try {
+    if (url.pathname === "/authorize" && request.method === "POST") {
+      const form = await request.formData();
+      const password = form.get("password")?.toString() ?? "";
+      // Merge the original query params with the form body (minus the
+      // password), then normalize so client variations don't 500.
+      const merged = new URL(publicUrl.url);
+      for (const [key, value] of form) {
+        if (key !== "password") merged.searchParams.set(key, value.toString());
+      }
+      const normalized = normalizeAuthorizeUrl(merged);
+      const rebuilt = new Request(normalized.href, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: normalized.searchParams.toString(),
+      });
+      if (password === process.env.DASHBOARD_PASSWORD) {
+        rebuilt.headers.set(AUTHENTICATED_HEADER, "1");
+      }
+      return (await oauth.respond(rebuilt)) ?? null;
+    }
+
+    const normalized =
+      url.pathname === "/authorize"
+        ? new Request(
+            normalizeAuthorizeUrl(new URL(publicUrl.url)).href,
+            publicUrl,
+          )
+        : publicUrl;
+    return (await oauth.respond(normalized)) ?? null;
+  } catch (e) {
+    console.error("[oauth] request failed:", e);
+    throw e;
+  }
+}

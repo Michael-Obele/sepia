@@ -3,7 +3,7 @@ import { HttpTransport } from "@tmcp/transport-http";
 import { ValibotJsonSchemaAdapter } from "@tmcp/adapter-valibot";
 import { MEMORY_CONTRACT } from "./instructions.ts";
 import { authEnabled, requireAuth } from "./auth.ts";
-import { oauth, oauthEnabled, normalizeAuthorizeUrl } from "./oauth.ts";
+import { handleOAuthRequest, oauthEnabled } from "./oauth.ts";
 import { handleApi } from "./api.ts";
 import { registerNamespaceTools } from "./tools/namespace.ts";
 import { registerEntityTools } from "./tools/entity.ts";
@@ -53,24 +53,6 @@ const PORT = Number(process.env.PORT ?? 8080);
 //                                  → always-on instruction files (skills/sepia/always-on/)
 const SKILL_DIR = new URL("../skills/sepia/", import.meta.url);
 
-/**
- * Rewrite a request URL to the public issuer origin so the OAuth library's
- * origin check passes behind Fly's TLS termination (Bun sees http://
- * internally while the issuer is https://sepia.fly.dev). Path + query are
- * preserved; the body/headers are untouched.
- */
-function publicOauthRequest(request: Request): Request {
-  const url = new URL(request.url);
-  const issuer = new URL(
-    process.env.OAUTH_ISSUER_URL ?? "https://sepia.fly.dev",
-  );
-  if (url.origin === issuer.origin) return request;
-  const publicUrl = new URL(issuer.origin);
-  publicUrl.pathname = url.pathname;
-  publicUrl.search = url.search;
-  return new Request(publicUrl.href, request);
-}
-
 function serveSkillFile(relPath: string, contentType: string) {
   const file = Bun.file(new URL(relPath, SKILL_DIR));
   if (!file.exists()) return new Response("Not Found", { status: 404 });
@@ -91,53 +73,11 @@ Bun.serve({
     }
 
     // OAuth 2.1 endpoints (/authorize, /token, /register, /revoke,
-    // /.well-known/oauth-*) — handled by the built-in authorization server.
-    // Returns null for every other path, so routing continues below.
-    if (oauthEnabled()) {
-      // POST /authorize carries the login form. The library consumes the
-      // body before our handler runs, so validate the password HERE, then
-      // rebuild the request without the password (and without any client-
-      // supplied headers) and mark it authenticated via an internal header.
-      if (url.pathname === "/authorize" && request.method === "POST") {
-        const form = await request.formData();
-        const password = form.get("password")?.toString() ?? "";
-        // Merge the original query params with the form body (minus the
-        // password), then normalize so client variations don't 500.
-        const merged = new URL(publicOauthRequest(request).url);
-        for (const [key, value] of form) {
-          if (key !== "password") merged.searchParams.set(key, value.toString());
-        }
-        const normalized = normalizeAuthorizeUrl(merged);
-        const rebuilt = new Request(normalized.href, {
-          method: "POST",
-          headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: normalized.searchParams.toString(),
-        });
-        if (password === process.env.DASHBOARD_PASSWORD) {
-          rebuilt.headers.set("x-sepia-oauth-authenticated", "1");
-        }
-        try {
-          const oauthResponse = await oauth.respond(rebuilt);
-          if (oauthResponse) return oauthResponse;
-        } catch (e) {
-          console.error("[oauth] POST /authorize failed:", e);
-          throw e;
-        }
-      } else {
-        const oauthRequest = publicOauthRequest(request);
-        const normalized =
-          url.pathname === "/authorize"
-            ? new Request(normalizeAuthorizeUrl(new URL(oauthRequest.url)).href, oauthRequest)
-            : oauthRequest;
-        try {
-          const oauthResponse = await oauth.respond(normalized);
-          if (oauthResponse) return oauthResponse;
-        } catch (e) {
-          console.error("[oauth] respond failed:", e);
-          throw e;
-        }
-      }
-    }
+    // /.well-known/oauth-*) — handled by the built-in authorization server
+    // (src/oauth.ts). Returns null for every other path, so routing
+    // continues below.
+    const oauthResponse = await handleOAuthRequest(request);
+    if (oauthResponse) return oauthResponse;
 
     if (url.pathname === "/") {
       return Response.json({
