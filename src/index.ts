@@ -3,7 +3,7 @@ import { HttpTransport } from "@tmcp/transport-http";
 import { ValibotJsonSchemaAdapter } from "@tmcp/adapter-valibot";
 import { MEMORY_CONTRACT } from "./instructions.ts";
 import { authEnabled, requireAuth } from "./auth.ts";
-import { oauth, oauthEnabled } from "./oauth.ts";
+import { oauth, oauthEnabled, normalizeAuthorizeUrl } from "./oauth.ts";
 import { handleApi } from "./api.ts";
 import { registerNamespaceTools } from "./tools/namespace.ts";
 import { registerEntityTools } from "./tools/entity.ts";
@@ -101,23 +101,41 @@ Bun.serve({
       if (url.pathname === "/authorize" && request.method === "POST") {
         const form = await request.formData();
         const password = form.get("password")?.toString() ?? "";
-        const clean = new URLSearchParams();
+        // Merge the original query params with the form body (minus the
+        // password), then normalize so client variations don't 500.
+        const merged = new URL(publicOauthRequest(request).url);
         for (const [key, value] of form) {
-          if (key !== "password") clean.set(key, value.toString());
+          if (key !== "password") merged.searchParams.set(key, value.toString());
         }
-        const rebuilt = new Request(publicOauthRequest(request).url, {
+        const normalized = normalizeAuthorizeUrl(merged);
+        const rebuilt = new Request(normalized.href, {
           method: "POST",
           headers: { "content-type": "application/x-www-form-urlencoded" },
-          body: clean.toString(),
+          body: normalized.searchParams.toString(),
         });
         if (password === process.env.DASHBOARD_PASSWORD) {
           rebuilt.headers.set("x-sepia-oauth-authenticated", "1");
         }
-        const oauthResponse = await oauth.respond(rebuilt);
-        if (oauthResponse) return oauthResponse;
+        try {
+          const oauthResponse = await oauth.respond(rebuilt);
+          if (oauthResponse) return oauthResponse;
+        } catch (e) {
+          console.error("[oauth] POST /authorize failed:", e);
+          throw e;
+        }
       } else {
-        const oauthResponse = await oauth.respond(publicOauthRequest(request));
-        if (oauthResponse) return oauthResponse;
+        const oauthRequest = publicOauthRequest(request);
+        const normalized =
+          url.pathname === "/authorize"
+            ? new Request(normalizeAuthorizeUrl(new URL(oauthRequest.url)).href, oauthRequest)
+            : oauthRequest;
+        try {
+          const oauthResponse = await oauth.respond(normalized);
+          if (oauthResponse) return oauthResponse;
+        } catch (e) {
+          console.error("[oauth] respond failed:", e);
+          throw e;
+        }
       }
     }
 

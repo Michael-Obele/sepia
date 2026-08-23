@@ -24,9 +24,70 @@
  */
 
 import { OAuth, InvalidTokenError, InvalidGrantError } from "@tmcp/auth";
+import { createHash } from "node:crypto";
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "./db.ts";
 import { oauthClients, oauthCodes, oauthTokens } from "@sepia/shared";
+
+/**
+ * Normalize /authorize params so real-world clients (Grok, ChatGPT, …) don't
+ * trip the library's strict valibot literals — which throw a non-OAuthError
+ * and surface as a 500 `server_error` instead of a 400.
+ *
+ * Fixes:
+ * - `response_type` → forced to `code` (case-insensitive)
+ * - `code_challenge_method` → forced to `S256` (case-insensitive); a `plain`
+ *   challenge is UPGRADED by hashing it, so the library's S256 verification
+ *   still passes when the client sends verifier == challenge at /token
+ * - `resource` → dropped if not a valid URL (optional param)
+ * - `redirect_uri` → dropped if not a valid URL (the library falls back to
+ *   the client's single registered redirect URI)
+ */
+export function normalizeAuthorizeUrl(url: URL): URL {
+  const out = new URL(url.href);
+  const params = out.searchParams;
+
+  if (params.get("response_type")) {
+    params.set("response_type", "code");
+  }
+
+  const method = params.get("code_challenge_method");
+  if (method) {
+    if (method.toLowerCase() === "plain") {
+      const challenge = params.get("code_challenge");
+      if (challenge) {
+        // Upgrade plain → S256: store sha256(challenge) so the library's
+        // verifyChallenge(verifier, stored) passes when the client sends
+        // code_verifier == code_challenge (the plain convention).
+        const hashed = createHash("sha256")
+          .update(challenge)
+          .digest("base64url");
+        params.set("code_challenge", hashed);
+      }
+    }
+    params.set("code_challenge_method", "S256");
+  }
+
+  const resource = params.get("resource");
+  if (resource) {
+    try {
+      new URL(resource);
+    } catch {
+      params.delete("resource");
+    }
+  }
+
+  const redirectUri = params.get("redirect_uri");
+  if (redirectUri) {
+    try {
+      new URL(redirectUri);
+    } catch {
+      params.delete("redirect_uri");
+    }
+  }
+
+  return out;
+}
 
 export const SCOPES = ["memory:read", "memory:write"] as const;
 
