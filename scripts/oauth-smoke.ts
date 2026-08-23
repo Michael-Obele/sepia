@@ -22,6 +22,35 @@ import { eq } from "drizzle-orm";
 import { db } from "../src/db.ts";
 import { oauthClients, oauthCodes, oauthTokens } from "@sepia/shared";
 
+// Local metadata server for the URL-client regression test (ChatGPT-style).
+// Serves a Client ID Metadata Document with token_endpoint_auth_method:
+// "private_key_jwt" — which @tmcp/auth's schema rejects, so the server must
+// handle URL clients itself (fetch + sanitize to "none").
+const METADATA_PORT = 9997;
+const METADATA_CLIENT_ID = `http://localhost:${METADATA_PORT}/oauth/kN72NNGseRY2/client.json`;
+const METADATA_REDIRECT = `http://localhost:${METADATA_PORT}/connector/oauth/kN72NNGseRY2`;
+const metadataServer = Bun.serve({
+  port: METADATA_PORT,
+  fetch(req) {
+    const url = new URL(req.url);
+    if (url.pathname === "/oauth/kN72NNGseRY2/client.json") {
+      return Response.json({
+        client_id: METADATA_CLIENT_ID,
+        client_uri: `http://localhost:${METADATA_PORT}/`,
+        redirect_uris: [METADATA_REDIRECT],
+        token_endpoint_auth_method: "private_key_jwt",
+        token_endpoint_auth_methods_supported: ["none", "private_key_jwt"],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        client_name: "ChatGPT (simulated)",
+        token_endpoint_auth_signing_alg: "RS256",
+        jwks_uri: `http://localhost:${METADATA_PORT}/oauth/jwks.json`,
+      });
+    }
+    return new Response("Not Found", { status: 404 });
+  },
+});
+
 const BASE = (process.env.SMOKE_URL ?? "http://localhost:8090").replace(
   /\/$/,
   "",
@@ -289,6 +318,75 @@ async function main() {
         "plain PKCE token exchange succeeds",
         plainTokenRes.status === 200 && !!plainTokens.access_token,
         String(plainTokenRes.status),
+      );
+    }
+
+    // 4d. REGRESSION: URL-based client (Client ID Metadata Document) with
+    //     token_endpoint_auth_method=private_key_jwt — the ChatGPT pattern.
+    //     (Bug: @tmcp/auth's schema rejects private_key_jwt → invalid_client.
+    //     The server must fetch + sanitize the document itself.)
+    {
+      const urlVerifier = b64url(randomBytes(32));
+      const urlChallenge = codeChallenge(urlVerifier);
+      const urlAuthUrl = new URL(`${BASE}/authorize`);
+      urlAuthUrl.searchParams.set("response_type", "code");
+      urlAuthUrl.searchParams.set("client_id", METADATA_CLIENT_ID);
+      urlAuthUrl.searchParams.set("redirect_uri", METADATA_REDIRECT);
+      urlAuthUrl.searchParams.set("code_challenge", urlChallenge);
+      urlAuthUrl.searchParams.set("code_challenge_method", "S256");
+      urlAuthUrl.searchParams.set("state", "url-client-state");
+      urlAuthUrl.searchParams.set("resource", `${EXPECTED_ISSUER}/`);
+      urlAuthUrl.searchParams.set("scope", "memory:read memory:write");
+      const urlPage = await fetch(urlAuthUrl);
+      const urlHtml = await urlPage.text();
+      check(
+        "URL client authorize 200 (private_key_jwt metadata)",
+        urlPage.status === 200 &&
+          urlHtml.includes("Sepia — Authorize access") &&
+          urlHtml.includes("ChatGPT"),
+        String(urlPage.status),
+      );
+
+      const urlForm = new URLSearchParams();
+      urlForm.set("client_id", METADATA_CLIENT_ID);
+      urlForm.set("redirect_uri", METADATA_REDIRECT);
+      urlForm.set("code_challenge", urlChallenge);
+      urlForm.set("code_challenge_method", "S256");
+      urlForm.set("state", "url-client-state");
+      urlForm.set("scope", "memory:read memory:write");
+      urlForm.set("resource", `${EXPECTED_ISSUER}/`);
+      urlForm.set("password", PASSWORD);
+      const urlAuth = await fetch(`${BASE}/authorize`, {
+        method: "POST",
+        body: urlForm,
+        redirect: "manual",
+      });
+      const urlCode = new URL(
+        urlAuth.headers.get("location") ?? "",
+      ).searchParams.get("code");
+      check(
+        "URL client authorize redirects with code",
+        urlAuth.status === 302 && !!urlCode,
+        String(urlAuth.status),
+      );
+
+      const urlTokenForm = new URLSearchParams();
+      urlTokenForm.set("grant_type", "authorization_code");
+      urlTokenForm.set("client_id", METADATA_CLIENT_ID);
+      urlTokenForm.set("code", urlCode ?? "");
+      urlTokenForm.set("redirect_uri", METADATA_REDIRECT);
+      urlTokenForm.set("code_verifier", urlVerifier);
+      const urlTokenRes = await fetch(`${BASE}/token`, {
+        method: "POST",
+        body: urlTokenForm,
+      });
+      const urlTokens = (await urlTokenRes.json()) as {
+        access_token?: string;
+      };
+      check(
+        "URL client token exchange succeeds",
+        urlTokenRes.status === 200 && !!urlTokens.access_token,
+        String(urlTokenRes.status),
       );
     }
 

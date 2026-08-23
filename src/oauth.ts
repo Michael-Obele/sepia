@@ -205,24 +205,107 @@ function escapeHtml(value: string): string {
 
 // ── Client store (DB-backed, survives restarts) ────────────────────────────
 
+/**
+ * Fetch + validate a Client ID Metadata Document (RFC 9728 / MCP spec) for a
+ * URL-based client_id (ChatGPT, Gemini, Grok all use these).
+ *
+ * We handle this OURSELVES (instead of letting @tmcp/auth fetch it) because
+ * the library's schema REJECTS documents whose token_endpoint_auth_method is
+ * "private_key_jwt" — which ChatGPT/Gemini advertise. The library can't
+ * verify private_key_jwt anyway, and those clients also support "none", so
+ * we normalize the auth method to "none" (the token endpoint then accepts
+ * their requests without a secret).
+ *
+ * Security: we still enforce the spec's requirements — the document's
+ * client_id must match the URL exactly, redirect_uris must be present, and
+ * shared-secret auth (client_secret) is rejected.
+ */
+async function fetchClientMetadata(
+  clientId: string,
+): Promise<OAuthClientInformationFull | undefined> {
+  try {
+    const url = new URL(clientId);
+    if (
+      (url.protocol !== "https:" &&
+        !(url.protocol === "http:" && url.hostname === "localhost")) ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      !url.pathname ||
+      url.pathname === "/"
+    ) {
+      return undefined;
+    }
+    const res = await fetch(clientId);
+    if (!res.ok) return undefined;
+    const doc = (await res.json()) as Record<string, unknown>;
+
+    // Spec requirements.
+    if (doc.client_id !== clientId) return undefined;
+    if (
+      !Array.isArray(doc.redirect_uris) ||
+      doc.redirect_uris.length === 0 ||
+      !doc.redirect_uris.every((u) => typeof u === "string" && isUrl(u))
+    ) {
+      return undefined;
+    }
+    if ("client_secret" in doc || "client_secret_expires_at" in doc) {
+      return undefined; // metadata documents can't use shared secrets
+    }
+
+    return {
+      client_id: clientId,
+      client_name:
+        typeof doc.client_name === "string" && doc.client_name
+          ? doc.client_name
+          : clientId,
+      redirect_uris: doc.redirect_uris as string[],
+      // Normalize: the library only supports 'none' (private_key_jwt is
+      // unimplemented); ChatGPT/Gemini advertise both.
+      token_endpoint_auth_method: "none",
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function isUrl(value: string): boolean {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const clientStore = {
   async getClient(clientId: string) {
+    // 1. DB-registered clients (dynamic client registration).
     const rows = await db()
       .select()
       .from(oauthClients)
       .where(eq(oauthClients.clientId, clientId));
     const row = rows[0];
-    if (!row) return undefined;
-    return {
-      client_id: row.clientId,
-      client_secret: row.clientSecret ?? undefined,
-      redirect_uris: row.redirectUris,
-      client_name: row.name,
-      token_endpoint_auth_method: row.tokenEndpointAuthMethod ?? undefined,
-      client_id_issued_at: row.createdAt
-        ? Math.floor(new Date(row.createdAt).getTime() / 1000)
-        : undefined,
-    };
+    if (row) {
+      return {
+        client_id: row.clientId,
+        client_secret: row.clientSecret ?? undefined,
+        redirect_uris: row.redirectUris,
+        client_name: row.name,
+        token_endpoint_auth_method: row.tokenEndpointAuthMethod ?? undefined,
+        client_id_issued_at: row.createdAt
+          ? Math.floor(new Date(row.createdAt).getTime() / 1000)
+          : undefined,
+      };
+    }
+
+    // 2. URL-based clients (Client ID Metadata Documents) — fetch + sanitize
+    //    ourselves so the library's strict schema doesn't reject them.
+    if (clientId.startsWith("https://") || clientId.startsWith("http://")) {
+      return fetchClientMetadata(clientId);
+    }
+
+    return undefined;
   },
   async registerClient(
     client: Omit<
