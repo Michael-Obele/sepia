@@ -166,16 +166,28 @@ Bun.serve({
       );
     }
     if (url.pathname === "/instructions/cursor") {
-      return serveSkillFile("always-on/cursor.mdc", "text/markdown; charset=utf-8");
+      return serveSkillFile(
+        "always-on/cursor.mdc",
+        "text/markdown; charset=utf-8",
+      );
     }
     if (url.pathname === "/instructions/claude") {
-      return serveSkillFile("always-on/claude.md", "text/markdown; charset=utf-8");
+      return serveSkillFile(
+        "always-on/claude.md",
+        "text/markdown; charset=utf-8",
+      );
     }
     if (url.pathname === "/instructions/agents") {
-      return serveSkillFile("always-on/agents.md", "text/markdown; charset=utf-8");
+      return serveSkillFile(
+        "always-on/agents.md",
+        "text/markdown; charset=utf-8",
+      );
     }
     if (url.pathname === "/instructions/opencode") {
-      return serveSkillFile("always-on/opencode.md", "text/markdown; charset=utf-8");
+      return serveSkillFile(
+        "always-on/opencode.md",
+        "text/markdown; charset=utf-8",
+      );
     }
     if (url.pathname === "/instructions/zed") {
       return serveSkillFile("always-on/zed.md", "text/markdown; charset=utf-8");
