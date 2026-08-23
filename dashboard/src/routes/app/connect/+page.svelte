@@ -54,11 +54,10 @@
 		{
 			name: 'Gemini (Spark)',
 			auth: 'OAuth',
+			soon: true,
 			steps: [
-				'Settings → Connected Apps',
-				'Add a custom MCP app',
-				'Paste the MCP URL',
-				'Complete OAuth sign-in'
+				'Not supported yet — coming soon.',
+				'Use Grok, ChatGPT, or a local editor in the meantime.'
 			]
 		},
 		{
@@ -192,7 +191,15 @@
 					<tbody>
 						{#each targets as t}
 							<tr class="border-b last:border-0">
-								<td class="py-3 pr-4 font-medium">{t.name}</td>
+								<td class="py-3 pr-4 font-medium">
+									{t.name}
+									{#if t.soon}
+										<span
+											class="ml-2 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+											>soon</span
+										>
+									{/if}
+								</td>
 								<td class="py-3 pr-4">
 									<Badge variant={t.auth === 'OAuth' ? 'secondary' : 'outline'}>{t.auth}</Badge>
 								</td>
@@ -215,9 +222,8 @@
 		<CardContent class="flex items-start gap-3 p-4">
 			<ExternalLink class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 			<p class="text-sm text-muted-foreground">
-				OAuth (Phase 2) is required by ChatGPT, Gemini, Grok, Perplexity, and Le Chat. Until it's
-				enabled, use the Bearer token with Claude Code, Cursor, Zed, or any client that supports
-				custom headers.
+				Web AIs (ChatGPT, Grok, Perplexity, Le Chat) use OAuth 2.1 — paste the URL and sign in with
+				your dashboard password. Local editors (Claude Code, Cursor, Zed) use the Bearer token.
 			</p>
 		</CardContent>
 	</Card>

@@ -10,7 +10,10 @@
 		ArrowRight,
 		Database,
 		Shield,
-		Server
+		Server,
+		Check,
+		X,
+		Copy
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card, CardContent } from '$lib/components/ui/card/index.js';
@@ -21,6 +24,39 @@
 	import MemoryGrowth from '$lib/components/landing/memory-growth.svelte';
 	import ArchitectureFlow from '$lib/components/landing/architecture-flow.svelte';
 	import InstallMatrix from '$lib/components/landing/install-matrix.svelte';
+
+	const MCP_URL = 'https://sepia.fly.dev/mcp';
+
+	const connectSteps = [
+		{
+			name: 'Grok',
+			status: 'works' as const,
+			steps: [
+				'Go to grok.com/connectors → New Connector → Custom',
+				'Name it "Sepia" and paste the MCP URL',
+				'Click Add Connector — the Sepia login page opens',
+				'Enter your dashboard password and click Authorize'
+			]
+		},
+		{
+			name: 'ChatGPT',
+			status: 'works' as const,
+			steps: [
+				'Settings → Apps → Developer mode → Create',
+				'Choose "Custom app" and paste the MCP URL',
+				'Scan/connect — the Sepia login page opens',
+				'Enter your dashboard password and click Authorize'
+			]
+		},
+		{
+			name: 'Gemini (Spark)',
+			status: 'soon' as const,
+			steps: [
+				'Gemini custom MCP apps are not supported yet — coming soon.',
+				'Use Grok, ChatGPT, or a local editor in the meantime.'
+			]
+		}
+	];
 
 	const features = [
 		{
@@ -71,7 +107,7 @@
 		{ name: 'Claude (web)', category: 'web' },
 		{ name: 'ChatGPT', category: 'web' },
 		{ name: 'Grok', category: 'web' },
-		{ name: 'Gemini', category: 'web' },
+		{ name: 'Gemini', category: 'web', soon: true },
 		{ name: 'Perplexity', category: 'web' },
 		{ name: 'Le Chat', category: 'web' }
 	];
@@ -352,6 +388,11 @@
 							: 'bg-violet-400'}"
 					></span>
 					{tool.name}
+					{#if tool.soon}
+						<span class="ml-auto rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+							>soon</span
+						>
+					{/if}
 				</div>
 			{/each}
 		</div>
@@ -363,6 +404,63 @@
 			<span class="flex items-center gap-1.5">
 				<span class="size-1.5 rounded-full bg-violet-400"></span> Web AI
 			</span>
+		</div>
+	</div>
+</section>
+
+<!-- Connect steps — how to add Sepia to each web AI -->
+<section class="relative px-4 py-24 sm:py-32">
+	<div class="mx-auto max-w-5xl">
+		<div class="mx-auto max-w-2xl text-center">
+			<h2
+				class="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl"
+				style="letter-spacing: -0.03em"
+			>
+				Connect your AI in minutes.
+			</h2>
+			<p class="mt-4 text-muted-foreground">
+				Paste one URL, sign in with your dashboard password, done. The server URL is
+				<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{MCP_URL}</code>
+			</p>
+		</div>
+
+		<div class="mt-12 grid gap-6 lg:grid-cols-3">
+			{#each connectSteps as c (c.name)}
+				<div
+					class="flex flex-col rounded-xl border border-border/50 bg-card/50 p-6 transition-colors hover:border-border hover:bg-card"
+				>
+					<div class="mb-4 flex items-center justify-between">
+						<h3 class="text-base font-semibold text-foreground">{c.name}</h3>
+						{#if c.status === 'works'}
+							<Badge class="gap-1 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15">
+								<Check class="size-3" /> Works
+							</Badge>
+						{:else}
+							<Badge variant="secondary" class="gap-1">
+								<X class="size-3" /> Soon
+							</Badge>
+						{/if}
+					</div>
+					<ol class="space-y-3">
+						{#each c.steps as step, i (i)}
+							<li class="flex items-start gap-3 text-sm text-muted-foreground">
+								<span
+									class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted/60 font-mono text-[11px] text-foreground"
+								>
+									{i + 1}
+								</span>
+								<span class="leading-relaxed">{step}</span>
+							</li>
+						{/each}
+					</ol>
+					{#if c.status === 'works'}
+						<p class="mt-4 border-t border-border/50 pt-3 text-xs text-muted-foreground">
+							Uses OAuth 2.1 — you'll be asked for your dashboard password once, then it stays
+							connected.
+						</p>
+					{/if}
+				</div>
+			{/each}
 		</div>
 	</div>
 </section>
