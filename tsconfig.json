@@ -26,5 +26,10 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
-  }
+  },
+  // Server-side code only — the dashboard has its own check
+  // (`cd dashboard && bun run check` → svelte-check) and its own tsconfig
+  // extending .svelte-kit/tsconfig.json, which this config must not touch.
+  "include": ["src", "scripts", "packages", "drizzle.config.ts"],
+  "exclude": ["node_modules", "dashboard", "drizzle", "backups", "articles", "plan", "skills", "docs"]
 }

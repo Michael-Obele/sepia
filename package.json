@@ -18,6 +18,7 @@
     "db:cleanup": "bun run scripts/db-cleanup.ts",
     "db:baseline": "bun run scripts/db-baseline.ts",
     "smoke": "bun run scripts/smoke.ts",
+    "smoke:oauth": "bun run scripts/oauth-smoke.ts",
     "check": "tsc --noEmit",
     "install:skill": "bash scripts/install-skill.sh",
     "gen:skill-ref": "bun run scripts/gen-skill-ref.ts"
@@ -26,8 +27,10 @@
     "@neondatabase/serverless": "^1.1.0",
     "@sepia/shared": "workspace:*",
     "@tmcp/adapter-valibot": "^0.1.6",
+    "@tmcp/auth": "^0.5.0",
     "@tmcp/transport-http": "^0.9.0",
     "drizzle-orm": "^0.45.2",
+    "pkce-challenge": "^6.0.0",
     "tmcp": "^1.20.0",
     "valibot": "^1.4.2"
   },

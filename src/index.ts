@@ -3,6 +3,7 @@ import { HttpTransport } from "@tmcp/transport-http";
 import { ValibotJsonSchemaAdapter } from "@tmcp/adapter-valibot";
 import { MEMORY_CONTRACT } from "./instructions.ts";
 import { authEnabled, requireAuth } from "./auth.ts";
+import { oauth, oauthEnabled } from "./oauth.ts";
 import { handleApi } from "./api.ts";
 import { registerNamespaceTools } from "./tools/namespace.ts";
 import { registerEntityTools } from "./tools/entity.ts";
@@ -71,6 +72,37 @@ Bun.serve({
       return Response.json({ ok: true, service: "sepia" });
     }
 
+    // OAuth 2.1 endpoints (/authorize, /token, /register, /revoke,
+    // /.well-known/oauth-*) — handled by the built-in authorization server.
+    // Returns null for every other path, so routing continues below.
+    if (oauthEnabled()) {
+      // POST /authorize carries the login form. The library consumes the
+      // body before our handler runs, so validate the password HERE, then
+      // rebuild the request without the password (and without any client-
+      // supplied headers) and mark it authenticated via an internal header.
+      if (url.pathname === "/authorize" && request.method === "POST") {
+        const form = await request.formData();
+        const password = form.get("password")?.toString() ?? "";
+        const clean = new URLSearchParams();
+        for (const [key, value] of form) {
+          if (key !== "password") clean.set(key, value.toString());
+        }
+        const rebuilt = new Request(request.url, {
+          method: "POST",
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+          body: clean.toString(),
+        });
+        if (password === process.env.DASHBOARD_PASSWORD) {
+          rebuilt.headers.set("x-sepia-oauth-authenticated", "1");
+        }
+        const oauthResponse = await oauth.respond(rebuilt);
+        if (oauthResponse) return oauthResponse;
+      } else {
+        const oauthResponse = await oauth.respond(request);
+        if (oauthResponse) return oauthResponse;
+      }
+    }
+
     if (url.pathname === "/") {
       return Response.json({
         name: "sepia",
@@ -87,9 +119,11 @@ Bun.serve({
           opencode: "/instructions/opencode",
           zed: "/instructions/zed",
         },
-        auth: authEnabled()
-          ? "bearer-token"
-          : "dev-mode (MCP_BEARER_TOKEN not set)",
+        auth: oauthEnabled()
+          ? "oauth-2.1"
+          : authEnabled()
+            ? "bearer-token"
+            : "dev-mode (MCP_BEARER_TOKEN not set)",
         tools: 7,
       });
     }
@@ -139,7 +173,7 @@ Bun.serve({
     }
 
     if (url.pathname.startsWith("/mcp")) {
-      const auth = requireAuth(request);
+      const auth = await requireAuth(request);
       if (auth) return auth;
       const response = await transport.respond(request);
       return response ?? new Response("Not Found", { status: 404 });
@@ -153,7 +187,7 @@ Bun.serve({
         const response = await handleApi(request, url);
         return response ?? new Response("Not Found", { status: 404 });
       }
-      const auth = requireAuth(request);
+      const auth = await requireAuth(request);
       if (auth) return auth;
       const response = await handleApi(request, url);
       return response ?? new Response("Not Found", { status: 404 });

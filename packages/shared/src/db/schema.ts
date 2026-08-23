@@ -219,12 +219,71 @@ export const oauthClients = pgTable(
     clientId: text("client_id").notNull(),
     clientSecret: text("client_secret"),
     name: text().notNull(),
+    redirectUris: jsonb("redirect_uris").$type<string[]>().notNull().default([]),
+    tokenEndpointAuthMethod: text("token_endpoint_auth_method").default("none"),
     createdAt: timestamp("created_at", {
       withTimezone: true,
       mode: "string",
     }).defaultNow(),
   },
   (table) => [unique("oauth_clients_client_id_key").on(table.clientId)],
+);
+
+/**
+ * OAuth 2.1 authorization codes (Phase 2, @tmcp/auth). Short-lived,
+ * single-use, PKCE-bound. Survives scale-to-zero because it lives in
+ * Postgres, not memory.
+ */
+export const oauthCodes = pgTable(
+  "oauth_codes",
+  {
+    code: text().primaryKey().notNull(),
+    clientId: text("client_id").notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    codeChallenge: text("code_challenge"),
+    scopes: jsonb().$type<string[]>().notNull().default([]),
+    expiresAt: timestamp("expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    consumedAt: timestamp("consumed_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+  },
+  (table) => [index("idx_oauth_codes_client").on(table.clientId)],
+);
+
+/**
+ * OAuth 2.1 access + refresh tokens (Phase 2, @tmcp/auth). Opaque random
+ * strings stored in Postgres so tokens survive scale-to-zero restarts —
+ * web AIs (Grok, ChatGPT, Gemini) don't need to re-authorize after the
+ * Fly VM stops and cold-starts.
+ */
+export const oauthTokens = pgTable(
+  "oauth_tokens",
+  {
+    accessToken: text("access_token").primaryKey().notNull(),
+    refreshToken: text("refresh_token").notNull(),
+    clientId: text("client_id").notNull(),
+    scopes: jsonb().$type<string[]>().notNull().default([]),
+    expiresAt: timestamp("expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    refreshExpiresAt: timestamp("refresh_expires_at", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    revokedAt: timestamp("revoked_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+  },
+  (table) => [
+    unique("oauth_tokens_refresh_token_key").on(table.refreshToken),
+    index("idx_oauth_tokens_client").on(table.clientId),
+  ],
 );
 
 export const memoryEntityLinks = pgTable(

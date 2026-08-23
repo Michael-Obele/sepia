@@ -20,17 +20,17 @@ The [official MCP memory server](https://github.com/modelcontextprotocol/servers
 
 ## Features
 
-| Feature                       | What it does                                                                                                                                                                                                                                |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🧠 **Knowledge graph**        | Entities (nodes), weighted relations (edges), memories (facts/observations) with importance scoring, in isolated namespaces                                                                                                                 |
-| 🔎 **Search + traversal**     | Unified keyword search across everything; BFS graph traversal from any entity                                                                                                                                                               |
-| 🧹 **`consolidate`**          | Idempotent maintenance sweep: decay-scoring, dedup, purge — pure SQL, no LLM calls                                                                                                                                                          |
-| 📋 **Server instructions**    | A usage contract sent in the MCP `initialize` handshake; supporting clients (Claude Code, Codex, Copilot, Goose) inject it into the system prompt — zero-reminder usage                                                                     |
-| ⚡ **Always-on instructions** | `skills/sepia/always-on/` — VS Code `*.instructions.md` (`applyTo: '**/*'`), Cursor `.mdc` (`alwaysApply: true`), `~/.claude/CLAUDE.md`, `AGENTS.md`; injected into **every** session, covering clients that ignore `instructions` (Cursor) |
-| 🛠️ **Bundled Agent Skill**    | `skills/sepia/SKILL.md` (agentskills.io standard) — works in Zed, Cursor, Claude Code, Codex, OpenCode; the on-demand extended guide (tool-by-tool detail)                                                                                  |
-| 🖥️ **Web dashboard**          | Static SPA on Netlify: search, browse, edit, graph view, stats, and a "Connect an AI" page — never wakes the API's scaled-to-zero machine                                                                                                   |
-| 🌐 **Online AI support**      | Grok, ChatGPT, Claude web, Gemini (Spark), Perplexity, Le Chat all accept remote MCP connectors — your memory follows you to the web                                                                                                        |
-| 🔐 **Two-phase auth**         | Phase 1: static Bearer token (local editors, ~30 min). Phase 2: OAuth 2.1 + PKCE + dynamic client registration via `@tmcp/auth` (required for ChatGPT/Gemini/Grok-style connectors)                                                         |
+| Feature                       | What it does                                                                                                                                                                                                                                       |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧠 **Knowledge graph**        | Entities (nodes), weighted relations (edges), memories (facts/observations) with importance scoring, in isolated namespaces                                                                                                                        |
+| 🔎 **Search + traversal**     | Unified keyword search across everything; BFS graph traversal from any entity                                                                                                                                                                      |
+| 🧹 **`consolidate`**          | Idempotent maintenance sweep: decay-scoring, dedup, purge — pure SQL, no LLM calls                                                                                                                                                                 |
+| 📋 **Server instructions**    | A usage contract sent in the MCP `initialize` handshake; supporting clients (Claude Code, Codex, Copilot, Goose) inject it into the system prompt — zero-reminder usage                                                                            |
+| ⚡ **Always-on instructions** | `skills/sepia/always-on/` — VS Code `*.instructions.md` (`applyTo: '**/*'`), Cursor `.mdc` (`alwaysApply: true`), `~/.claude/CLAUDE.md`, `AGENTS.md`; injected into **every** session, covering clients that ignore `instructions` (Cursor)        |
+| 🛠️ **Bundled Agent Skill**    | `skills/sepia/SKILL.md` (agentskills.io standard) — works in Zed, Cursor, Claude Code, Codex, OpenCode; the on-demand extended guide (tool-by-tool detail)                                                                                         |
+| 🖥️ **Web dashboard**          | Static SPA on Netlify: search, browse, edit, graph view, stats, and a "Connect an AI" page — never wakes the API's scaled-to-zero machine                                                                                                          |
+| 🌐 **Online AI support**      | Grok, ChatGPT, Claude web, Gemini (Spark), Perplexity, Le Chat all accept remote MCP connectors — your memory follows you to the web                                                                                                               |
+| 🔐 **Two-phase auth**         | Phase 1: static Bearer token (local editors). Phase 2: **OAuth 2.1 + PKCE live** — built-in authorization server via `@tmcp/auth` (login page, dynamic client registration, Client ID Metadata Documents) for Grok/ChatGPT/Gemini-style connectors |
 
 ## Architecture
 
@@ -171,14 +171,14 @@ bun run dev:dashboard
 
 ### Environment variables
 
-| Variable             | Purpose                                                             |
-| -------------------- | ------------------------------------------------------------------- |
-| `DATABASE_URL`       | Neon Postgres pooled connection string (`-pooler`, port 5432)       |
-| `MCP_BEARER_TOKEN`   | Phase 1 auth token for `/mcp` and `/api/*` (`openssl rand -hex 32`) |
-| `DASHBOARD_PASSWORD` | Phase 1 dashboard login (OAuth Phase 2 replaces this)               |
-| `OAUTH_JWK_SECRET`   | Phase 2 OAuth signing key (Fly secret)                              |
-| `PUBLIC_API_URL`     | Dashboard build-time REST base (e.g. `https://sepia.fly.dev`)       |
-| `PUBLIC_MCP_URL`     | Dashboard build-time MCP URL shown on `/connect`                    |
+| Variable             | Purpose                                                                                                                                                                                                                        |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `DATABASE_URL`       | Neon Postgres pooled connection string (`-pooler`, port 5432)                                                                                                                                                                  |
+| `MCP_BEARER_TOKEN`   | Phase 1 auth token for `/mcp` and `/api/*` (`openssl rand -hex 32`)                                                                                                                                                            |
+| `DASHBOARD_PASSWORD` | OAuth 2.1 consent-page password — setting it **enables** the OAuth endpoints (single user; multi-account with passkeys/TOTP is the planned next phase). The dashboard itself signs in with the bearer token, not this password |
+| `OAUTH_ISSUER_URL`   | OAuth issuer URL (defaults to `https://sepia.fly.dev`; set to `http://localhost:8080` for local dev)                                                                                                                           |
+| `PUBLIC_API_URL`     | Dashboard build-time REST base (e.g. `https://sepia.fly.dev`)                                                                                                                                                                  |
+| `PUBLIC_MCP_URL`     | Dashboard build-time MCP URL shown on `/connect`                                                                                                                                                                               |
 
 ### Database
 
@@ -263,7 +263,7 @@ claude mcp add --transport http sepia https://sepia.fly.dev/mcp \
 
 All connect from the **provider's cloud**, so the server must be publicly reachable (it is — Fly with `force_https`); Streamable HTTP is the universal transport.
 
-> ⚠️ **Grok requires OAuth 2.1, and Sepia still runs Phase 1 (Bearer token).** The live server exposes no `/.well-known/oauth-*` metadata, so Grok's custom-connector flow shows an OAuth credential form that **can't be completed with real credentials yet**. See [Connecting Sepia to Grok](docs/grok-custom-connector.md) for the exact steps, the caveat, and the workaround.
+> ✅ **OAuth 2.1 is live.** Paste the MCP URL into any of these connectors and you'll get a browser sign-in (password = `DASHBOARD_PASSWORD`) instead of a manual credential form. Step-by-step for Grok: [Connecting Sepia to Grok](docs/grok-custom-connector.md). Bearer-token clients (Claude Code, Cursor, Zed, Copilot) keep working unchanged.
 
 ### Install the skill + always-on instructions
 
@@ -300,13 +300,13 @@ Restart your editor to pick it up. Claude Code users can also invoke the skill o
 
 ## Roadmap
 
-| Milestone                                   | Exit criteria                                                                                                                                   | Est.     |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| M1 — Server on Fly.io, Bearer auth, 7 tools | Inspector connects; CRUD works end-to-end against Neon                                                                                          | 2 days   |
-| M2 — Server instructions + skill            | New chat in Claude Code recalls a memory with zero reminder prompts; skill works in Zed + Cursor; always-on files installed in VS Code + Cursor | 1 day    |
-| M3 — REST API + dashboard on Netlify        | Browse/search/graph/CRUD at `sepia.svelte-apps.me`; stats load                                                                                  | 1.5 days |
-| M4 — OAuth 2.1 (`@tmcp/auth`)               | `codex mcp login` + inspector OAuth flow succeed; Claude connector works                                                                        | 1 day    |
-| M5 — Online AI rollout                      | Grok + ChatGPT + Gemini connectors authorized; memory usable from web chats                                                                     | 0.5 day  |
+| Milestone                                      | Exit criteria                                                                                                                                   |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| M1 — Server on Fly.io, Bearer auth, 7 tools ✅ | Inspector connects; CRUD works end-to-end against Neon                                                                                          |
+| M2 — Server instructions + skill ✅            | New chat in Claude Code recalls a memory with zero reminder prompts; skill works in Zed + Cursor; always-on files installed in VS Code + Cursor |
+| M3 — REST API + dashboard on Netlify ✅        | Browse/search/graph/CRUD at `sepia.svelte-apps.me`; stats load                                                                                  |
+| M4 — OAuth 2.1 (`@tmcp/auth`) ✅               | `codex mcp login` + inspector OAuth flow succeed; Claude connector works                                                                        |
+| M5 — Online AI rollout ✅                      | Grok + ChatGPT + Gemini connectors authorized; memory usable from web chats                                                                     |
 
 **Release gate:** everything in M1–M3 works in a fresh chat with zero reminder prompts (verified via instructions + always-on files + skill), and the dashboard shows the same data the agents write.
 
