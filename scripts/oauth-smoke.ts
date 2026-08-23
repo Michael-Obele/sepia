@@ -83,6 +83,7 @@ async function mcpCall(token: string | null, id: number, method: string) {
 
 async function main() {
   let clientId = "";
+  let exitCode = 1;
 
   try {
     // 0. Server must be in OAuth mode — hard fail otherwise.
@@ -169,7 +170,7 @@ async function main() {
       client.client_id,
     );
 
-    // 4. Authorize GET → login page
+    // 4. Authorize GET → login page (with resource param, like Grok sends)
     const verifier = b64url(randomBytes(32));
     const challenge = codeChallenge(verifier);
     const authUrl = new URL(`${BASE}/authorize`);
@@ -180,6 +181,7 @@ async function main() {
     authUrl.searchParams.set("code_challenge_method", "S256");
     authUrl.searchParams.set("state", "test-state-123");
     authUrl.searchParams.set("scope", "memory:read memory:write");
+    authUrl.searchParams.set("resource", `${EXPECTED_ISSUER}/`);
     const page = await fetch(authUrl);
     const html = await page.text();
     check(
@@ -190,7 +192,9 @@ async function main() {
     );
     check(
       "login page has hidden fields",
-      html.includes('name="code_challenge"') && html.includes('name="state"'),
+      html.includes('name="code_challenge"') &&
+        html.includes('name="state"') &&
+        html.includes('name="response_type"'),
     );
     check("login page doesn't echo password", !html.includes(PASSWORD));
 
@@ -248,7 +252,7 @@ async function main() {
       );
 
       const plainForm = new URLSearchParams();
-      plainForm.set("response_type", "code");
+      // NOTE: no response_type — the real login form doesn't send it.
       plainForm.set("client_id", client.client_id);
       plainForm.set("redirect_uri", REDIRECT_URI);
       plainForm.set("code_challenge", plainChallenge);
@@ -288,9 +292,9 @@ async function main() {
       );
     }
 
-    // 5. Authorize POST with wrong password → error page, no redirect
+    // 5. Authorize POST with wrong password → error page, no redirect.
+    //    NOTE: no response_type — the real login form doesn't send it.
     const formWrong = new URLSearchParams();
-    formWrong.set("response_type", "code");
     formWrong.set("client_id", client.client_id);
     formWrong.set("redirect_uri", REDIRECT_URI);
     formWrong.set("code_challenge", challenge);
@@ -331,6 +335,7 @@ async function main() {
     // 7. Authorize POST with correct password → 302 + code
     const form = new URLSearchParams(formWrong);
     form.set("password", PASSWORD);
+    form.set("resource", `${EXPECTED_ISSUER}/`);
     const authRes = await fetch(`${BASE}/authorize`, {
       method: "POST",
       body: form,
@@ -373,6 +378,7 @@ async function main() {
     tokenForm.set("code", code!);
     tokenForm.set("redirect_uri", REDIRECT_URI);
     tokenForm.set("code_verifier", verifier);
+    tokenForm.set("resource", `${EXPECTED_ISSUER}/`);
     const tokenRes = await fetch(`${BASE}/token`, {
       method: "POST",
       body: tokenForm,
@@ -550,9 +556,10 @@ async function main() {
     console.log(
       failures === 0 ? "\n🎉 ALL PASSED" : `\n💥 ${failures} FAILURES`,
     );
-    process.exit(failures === 0 ? 0 : 1);
+    exitCode = failures === 0 ? 0 : 1;
   } finally {
     // Self-cleanup: remove the test client + its codes/tokens.
+    // NOTE: must run BEFORE process.exit() — exit() skips finally blocks.
     if (hasDb && clientId) {
       await db().delete(oauthTokens).where(eq(oauthTokens.clientId, clientId));
       await db().delete(oauthCodes).where(eq(oauthCodes.clientId, clientId));
@@ -562,6 +569,7 @@ async function main() {
       console.log("🧹 cleaned up test client + tokens");
     }
   }
+  process.exit(exitCode);
 }
 
 main().catch((e) => {

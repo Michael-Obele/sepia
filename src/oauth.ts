@@ -35,21 +35,22 @@ import { oauthClients, oauthCodes, oauthTokens } from "@sepia/shared";
  * and surface as a 500 `server_error` instead of a 400.
  *
  * Fixes:
- * - `response_type` → forced to `code` (case-insensitive)
+ * - `response_type` → ALWAYS set to `code` (the login form doesn't include
+ *   it, and the library's schema requires it — missing → 500)
  * - `code_challenge_method` → forced to `S256` (case-insensitive); a `plain`
  *   challenge is UPGRADED by hashing it, so the library's S256 verification
  *   still passes when the client sends verifier == challenge at /token
- * - `resource` → dropped if not a valid URL (optional param)
- * - `redirect_uri` → dropped if not a valid URL (the library falls back to
- *   the client's single registered redirect URI)
+ * - `resource` → dropped if empty or not a valid URL (the login form sends
+ *   `resource=""` when the client didn't include it — empty → 500)
+ * - `redirect_uri` → dropped if empty or not a valid URL (the library falls
+ *   back to the client's single registered redirect URI)
  */
 export function normalizeAuthorizeUrl(url: URL): URL {
   const out = new URL(url.href);
   const params = out.searchParams;
 
-  if (params.get("response_type")) {
-    params.set("response_type", "code");
-  }
+  // Always force response_type=code — the login form posts without it.
+  params.set("response_type", "code");
 
   const method = params.get("code_challenge_method");
   if (method) {
@@ -75,6 +76,9 @@ export function normalizeAuthorizeUrl(url: URL): URL {
     } catch {
       params.delete("resource");
     }
+  } else {
+    // Empty string (login form sends resource="" when absent) → drop.
+    params.delete("resource");
   }
 
   const redirectUri = params.get("redirect_uri");
@@ -84,6 +88,8 @@ export function normalizeAuthorizeUrl(url: URL): URL {
     } catch {
       params.delete("redirect_uri");
     }
+  } else {
+    params.delete("redirect_uri");
   }
 
   return out;
@@ -270,17 +276,21 @@ function renderLoginPage(opts: LoginPageOptions): Response {
     .map((s) => `<li><code>${escapeHtml(s)}</code></li>`)
     .join("");
   const errorHtml = error ? `<p class="error">${escapeHtml(error)}</p>` : "";
-  const hidden = (
-    [
-      ["client_id", client.client_id],
-      ["redirect_uri", redirectUri],
-      ["code_challenge", codeChallenge ?? ""],
-      ["code_challenge_method", "S256"],
-      ["state", state ?? ""],
-      ["scope", (scopes ?? []).join(" ")],
-      ["resource", resource?.href ?? ""],
-    ] as const
-  )
+  // Hidden fields round-trip the OAuth params through the POST. response_type
+  // is REQUIRED by the library's schema — the form must include it (the
+  // browser posts to /authorize with no query string). resource is only
+  // included when present (an empty value would 500 the library).
+  const hidden: Array<[string, string]> = [
+    ["response_type", "code"],
+    ["client_id", client.client_id],
+    ["redirect_uri", redirectUri],
+    ["code_challenge", codeChallenge ?? ""],
+    ["code_challenge_method", "S256"],
+    ["state", state ?? ""],
+    ["scope", (scopes ?? []).join(" ")],
+  ];
+  if (resource) hidden.push(["resource", resource.href]);
+  const hiddenHtml = hidden
     .map(
       ([k, v]) =>
         `<input type="hidden" name="${escapeHtml(k)}" value="${escapeHtml(v)}" />`,
@@ -368,7 +378,7 @@ function renderLoginPage(opts: LoginPageOptions): Response {
     <label for="password">Password</label>
     <input type="password" id="password" name="password" autocomplete="current-password" autofocus required />
     ${errorHtml}
-    ${hidden}
+    ${hiddenHtml}
     <button type="submit">Authorize</button>
     <p class="redirect">You'll be redirected back to ${redirectHost} after signing in.</p>
   </form>
