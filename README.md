@@ -182,45 +182,24 @@ bun run dev:dashboard
 
 ### Database
 
-The DB shape is defined once in `src/db/schema.ts` (Drizzle) and migrations are
-generated with `drizzle-kit` — no hand-written DDL for new changes:
+Single source of truth: `src/db/schema.ts` (Drizzle). No hand-written DDL for new changes.
 
 ```bash
-bun run db:generate   # diff schema.ts → new migration in drizzle/
-bun run db:migrate    # apply pending migrations (drizzle-kit migrate)
-bun run db:push       # sync schema.ts to an existing DB (applies only the diff)
-bun run db:cleanup    # repair data that would violate the new constraints
-bun run db:baseline   # mark 0000 as applied on an existing DB (see below)
+bun run db:generate  # schema.ts → new migration in drizzle/
+bun run db:migrate   # apply migrations (fresh DB: creates full schema in one go)
+bun run db:push      # dev: sync schema.ts diff directly
 ```
 
-**Fresh DB** — `bun run db:migrate` creates the full schema (`0000` baseline)
-and applies `0001` (constraints + trigram indexes) in one go.
-
-**Existing live DB** (already has the schema from `sql/schema.sql`, no
-migration tracking yet):
+**Existing live DB** (has `sql/schema.sql` but no migration history):
 
 ```bash
-bun run db:cleanup    # 1. repair data that would violate the new constraints
-bun run db:baseline   # 2. mark 0000 as already applied
-bun run db:migrate    # 3. apply 0001 — CHECK constraints, UNIQUE(namespace_id,
-                      #    name) on entities, pg_trgm GIN indexes
+bun run db:cleanup && bun run db:baseline && bun run db:migrate
+# cleanup → repair data, baseline → mark 0000 applied, migrate → 0001 (constraints + pg_trgm)
 ```
 
-`db:baseline` exists because `drizzle-kit migrate` decides what to apply by
-timestamp: it applies any journal entry newer than the last tracked migration.
-The baseline row must therefore carry `0000`'s journal `when` timestamp (the
-script reads it from `drizzle/meta/_journal.json`) — using the current time
-would make drizzle-kit think every later migration is already applied.
+> `db:migrate`/`pull` need `pg` (real TCP + transactions). The app itself uses `@neondatabase/serverless` (HTTP). `sql/schema.sql` is the original baseline — keep it, new changes go through Drizzle.
 
-> Note: `drizzle-kit migrate`/`pull` need the `pg` driver (a real TCP
-> connection — migrations require transactions, which the Neon HTTP driver
-> can't do). `pg` is a devDependency for this reason; the app itself still
-> uses `@neondatabase/serverless`.
-
-`sql/schema.sql` remains as the original hand-written baseline; new schema
-changes go through Drizzle.
-
-Schema: `namespaces` → `entities` (cascade delete), `relations` (weighted directed edges, `UNIQUE(source, target, relation_type)`), `memories` (importance 0–1, `archived` flag), `memory_entity_links` (many-to-many), `oauth_clients` (Phase 2).
+Schema: `namespaces` → `entities` (cascade, `UNIQUE(namespace_id, name)`) → `relations` (`UNIQUE(source, target, relation_type)`) → `memories` (`importance 0–1`, `archived`) + `memory_entity_links` + `oauth_clients`.
 
 ## Deployment
 
