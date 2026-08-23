@@ -194,6 +194,100 @@ async function main() {
     );
     check("login page doesn't echo password", !html.includes(PASSWORD));
 
+    // 4b. REGRESSION: real-world client variations must NOT 500.
+    //     (Bug: @tmcp/auth's strict valibot literals turned these into
+    //     `server_error` 500s — Grok hit this on /authorize. The server
+    //     normalizes them; each must return 200 with the login page.)
+    const variations: Array<[string, string, string]> = [
+      ["code_challenge_method=plain", "code_challenge_method", "plain"],
+      [
+        "code_challenge_method=s256 (lowercase)",
+        "code_challenge_method",
+        "s256",
+      ],
+      ["code_challenge_method=PLAIN", "code_challenge_method", "PLAIN"],
+      ["response_type=Code", "response_type", "Code"],
+      ["response_type=token", "response_type", "token"],
+      ["resource without scheme", "resource", "sepia.fly.dev/mcp"],
+    ];
+    for (const [label, key, value] of variations) {
+      const vUrl = new URL(`${BASE}/authorize`);
+      vUrl.searchParams.set("response_type", "code");
+      vUrl.searchParams.set("client_id", client.client_id);
+      vUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+      vUrl.searchParams.set("code_challenge", challenge);
+      vUrl.searchParams.set("code_challenge_method", "S256");
+      vUrl.searchParams.set(key, value);
+      const vRes = await fetch(vUrl);
+      const vHtml = await vRes.text();
+      check(
+        `variation not 500: ${label}`,
+        vRes.status === 200 && vHtml.includes("Sepia — Authorize access"),
+        String(vRes.status),
+      );
+    }
+
+    // 4c. REGRESSION: plain PKCE must work END-TO-END (authorize with
+    //     code_challenge_method=plain, then exchange with verifier ==
+    //     challenge — the plain convention). The server upgrades plain →
+    //     S256 by hashing the challenge, so the library's S256 verification
+    //     passes when the client sends verifier == challenge.
+    {
+      const plainChallenge = "plain-challenge-value-123";
+      const plainUrl = new URL(`${BASE}/authorize`);
+      plainUrl.searchParams.set("response_type", "code");
+      plainUrl.searchParams.set("client_id", client.client_id);
+      plainUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+      plainUrl.searchParams.set("code_challenge", plainChallenge);
+      plainUrl.searchParams.set("code_challenge_method", "plain");
+      const plainPage = await fetch(plainUrl);
+      check(
+        "plain PKCE authorize 200",
+        plainPage.status === 200,
+        String(plainPage.status),
+      );
+
+      const plainForm = new URLSearchParams();
+      plainForm.set("response_type", "code");
+      plainForm.set("client_id", client.client_id);
+      plainForm.set("redirect_uri", REDIRECT_URI);
+      plainForm.set("code_challenge", plainChallenge);
+      plainForm.set("code_challenge_method", "plain");
+      plainForm.set("password", PASSWORD);
+      const plainAuth = await fetch(`${BASE}/authorize`, {
+        method: "POST",
+        body: plainForm,
+        redirect: "manual",
+      });
+      const plainCode = new URL(
+        plainAuth.headers.get("location") ?? "",
+      ).searchParams.get("code");
+      check(
+        "plain PKCE authorize redirects with code",
+        plainAuth.status === 302 && !!plainCode,
+        String(plainAuth.status),
+      );
+
+      const plainTokenForm = new URLSearchParams();
+      plainTokenForm.set("grant_type", "authorization_code");
+      plainTokenForm.set("client_id", client.client_id);
+      plainTokenForm.set("code", plainCode ?? "");
+      plainTokenForm.set("redirect_uri", REDIRECT_URI);
+      plainTokenForm.set("code_verifier", plainChallenge);
+      const plainTokenRes = await fetch(`${BASE}/token`, {
+        method: "POST",
+        body: plainTokenForm,
+      });
+      const plainTokens = (await plainTokenRes.json()) as {
+        access_token?: string;
+      };
+      check(
+        "plain PKCE token exchange succeeds",
+        plainTokenRes.status === 200 && !!plainTokens.access_token,
+        String(plainTokenRes.status),
+      );
+    }
+
     // 5. Authorize POST with wrong password → error page, no redirect
     const formWrong = new URLSearchParams();
     formWrong.set("response_type", "code");
