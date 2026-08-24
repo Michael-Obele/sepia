@@ -30,14 +30,22 @@ const INSTALLED: { label: string; path: string }[] = [
   { label: "Repo AGENTS.md", path: join(process.cwd(), "AGENTS.md") },
 ];
 
-/** Read the stamped version marker from a file (frontmatter or comment). */
+/**
+ * Read the version marker from a file. Two kinds:
+ *   - shared docs version: `sepia-docs-version` comment / `Docs version` line
+ *     (claude/agents/opencode/zed/AGENTS.md/llms.txt)
+ *   - own version: `version:` frontmatter key (SKILL.md, vscode, cursor —
+ *     these are cp'd whole, so their own version IS the docs version)
+ */
 function readVersion(path: string): string | null {
   if (!existsSync(path)) return null;
   const text = readFileSync(path, "utf8");
-  const fm = text.match(/^version:\s*"([^"]+)"/m);
-  if (fm) return fm[1] ?? null;
   const comment = text.match(/sepia-docs-version:\s*([0-9.]+)/);
-  return comment?.[1] ?? null;
+  if (comment) return comment[1] ?? null;
+  const line = text.match(/^Docs version:\s*([0-9.]+)/m);
+  if (line) return line?.[1] ?? null;
+  const fm = text.match(/^version:\s*"([^"]+)"/m);
+  return fm?.[1] ?? null;
 }
 
 const res = await fetch(`${BASE}/version`);
