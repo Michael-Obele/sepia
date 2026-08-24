@@ -6,8 +6,11 @@ import {
 	createMemory,
 	updateMemory,
 	deleteMemory,
+	ingestConversation,
+	getConversation,
 	MemoryInput,
-	MemoryUpdateInput
+	MemoryUpdateInput,
+	ConversationInput
 } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
@@ -17,6 +20,7 @@ const MemoryFilters = v.object({
 	namespace: v.optional(v.string()),
 	importance_min: v.optional(v.number()),
 	archived: v.optional(v.boolean(), false),
+	tags: v.optional(v.array(v.string())),
 	limit: v.optional(v.number(), 20),
 	offset: v.optional(v.number(), 0)
 });
@@ -53,3 +57,21 @@ export const removeMemory = command(v.tuple([v.string(), v.string()]), async ([t
 	requireAuth(token);
 	return deleteMemory(db(), id);
 });
+
+/** Ingest a distilled conversation (handoff digest bundle). */
+export const ingestConversationData = command(
+	v.tuple([v.string(), ConversationInput]),
+	async ([token, input]) => {
+		requireAuth(token);
+		return ingestConversation(db(), input, 'dashboard');
+	}
+);
+
+/** Fetch every memory of a conversation (digest + constituents) by conversation_id. */
+export const getConversationData = query(
+	v.tuple([v.string(), v.string()]),
+	async ([token, conversationId]) => {
+		requireAuth(token);
+		return getConversation(db(), conversationId);
+	}
+);

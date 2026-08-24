@@ -16,7 +16,9 @@ export {
 	getMemoryDetail,
 	addMemory,
 	updateMemoryData,
-	removeMemory
+	removeMemory,
+	ingestConversationData,
+	getConversationData
 } from './memories.remote';
 export { getRelations, addRelation, removeRelation } from './relations.remote';
 export { searchAll } from './search.remote';

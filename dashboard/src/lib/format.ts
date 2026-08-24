@@ -62,3 +62,75 @@ export function truncate(text: string, max = 160): string {
 	const t = text.trim().replace(/\s+/g, ' ');
 	return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
+
+/** Tailwind badge classes per source AI (conversation digests). */
+export function sourceBadge(ai: string | null | undefined): string {
+	const map: Record<string, string> = {
+		'claude-code': 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
+		'claude-desktop': 'bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300',
+		copilot: 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+		'github-copilot': 'bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300',
+		codex: 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950 dark:text-cyan-300',
+		chatgpt: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+		grok: 'bg-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-200',
+		gemini: 'bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300',
+		dashboard: 'bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-300'
+	};
+	const key = (ai ?? '').toLowerCase();
+	return map[key] ?? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300';
+}
+
+/** Extract the source AI from a memory row (source column or metadata.source_ai). */
+export function sourceAi(m: { source?: string | null; metadata?: unknown }): string {
+	const meta = m.metadata as Record<string, unknown> | null | undefined;
+	if (typeof meta?.source_ai === 'string' && meta.source_ai) return meta.source_ai;
+	return m.source ?? 'unknown';
+}
+
+/** Extract the source ref (session path / share URL) from digest metadata. */
+export function sourceRef(m: { metadata?: unknown }): string {
+	const meta = m.metadata as Record<string, unknown> | null | undefined;
+	return typeof meta?.source_ref === 'string' ? meta.source_ref : '';
+}
+
+/** Conversation statuses with display labels. */
+export const CONVERSATION_STATUSES = ['active', 'paused', 'done'] as const;
+export type ConversationStatus = (typeof CONVERSATION_STATUSES)[number];
+
+/** Tailwind badge classes per conversation status. */
+export function statusBadge(status: string): string {
+	const map: Record<string, string> = {
+		active: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300',
+		paused: 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300',
+		done: 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
+	};
+	return map[status] ?? map.active;
+}
+
+/** Extract the conversation status from digest metadata (default active). */
+export function conversationStatus(m: { metadata?: unknown }): ConversationStatus {
+	const meta = m.metadata as Record<string, unknown> | null | undefined;
+	const s = typeof meta?.status === 'string' ? meta.status : 'active';
+	return (CONVERSATION_STATUSES as readonly string[]).includes(s)
+		? (s as ConversationStatus)
+		: 'active';
+}
+
+/**
+ * Human-readable conversation title. Fallback chain:
+ * metadata.title → first `# ` heading in the digest content → conversation_id.
+ */
+export function conversationTitle(m: {
+	metadata?: unknown;
+	content?: string | null;
+}): string {
+	const meta = m.metadata as Record<string, unknown> | null | undefined;
+	if (typeof meta?.title === 'string' && meta.title.trim()) return meta.title.trim();
+	const firstLine = String(m.content ?? '').split('\n')[0]?.trim() ?? '';
+	const heading = firstLine.match(/^#\s+(.+)$/)?.[1];
+	if (heading) return heading.trim();
+	if (typeof meta?.conversation_id === 'string' && meta.conversation_id) {
+		return meta.conversation_id;
+	}
+	return 'Untitled conversation';
+}

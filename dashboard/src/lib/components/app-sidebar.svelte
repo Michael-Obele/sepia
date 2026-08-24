@@ -6,6 +6,7 @@
 		Layers,
 		Boxes,
 		Network,
+		MessagesSquare,
 		Plug,
 		Settings,
 		LogOut,
@@ -17,6 +18,7 @@
 	const nav = [
 		{ href: '/app', label: 'Search', icon: Search },
 		{ href: '/app/memories', label: 'Memories', icon: Layers },
+		{ href: '/app/conversations', label: 'Conversations', icon: MessagesSquare },
 		{ href: '/app/entities', label: 'Entities', icon: Boxes },
 		{ href: '/app/graph', label: 'Graph', icon: Network },
 		{ href: '/app/connect', label: 'Connect an AI', icon: Plug },
