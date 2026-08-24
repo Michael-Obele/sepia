@@ -24,6 +24,6 @@ When the user says **"save this conversation"**, **"hand off to another AI"**, *
 - **Resume**: `search` q="" tags=["conversation"] → prefer status=active → read the digest → pull constituents via `query` tags (decision, open-question, …).
 - **Mark done**: `manage_memory` action=update on the digest with `metadata: {...existing, status: "done"}` (metadata REPLACES — get first, then merge).
 
-This file has the essentials; for full tool schemas and examples, load the `sepia` skill (`SKILL.md`) if available. See also `src/instructions.ts` (source of truth).
+This file has the essentials; for full tool schemas and examples, load the `sepia` skill (`SKILL.md`) if available. For the full capability overview (all 7 tools, conversation migration, REST API), fetch https://sepia.fly.dev/llms.txt. See also `src/instructions.ts` (source of truth).
 
 <!-- Source of truth: src/instructions.ts (MEMORY_CONTRACT). Keep in sync. -->
