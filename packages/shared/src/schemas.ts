@@ -98,6 +98,65 @@ export const MemoryUpdateInput = v.object({
   tags: v.optional(tagsSchema),
 });
 
+/** One entity referenced by a conversation (find-or-create on ingest). */
+export const ConversationEntity = v.object({
+  name: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
+  type: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+  summary: v.optional(v.string(), ""),
+});
+
+/**
+ * A distilled conversation (handoff digest). The DEPARTING agent builds this
+ * at the end of a session so the NEXT agent can continue without the raw
+ * transcript. One digest per major topic — group multiple digests with the
+ * same `conversation_id`.
+ *
+ * Technique (not dependency): query-aware compression — keep decisions,
+ * preferences, instructions, and exact observations VERBATIM; drop filler.
+ * The digest is the entry point; constituents are the evidence.
+ */
+export const ConversationInput = v.object({
+  /** The digest — structured markdown, ≤4000 chars (anti-dump: split into more digests, don't pad). */
+  summary: v.pipe(v.string(), v.minLength(1), v.maxLength(4000)),
+  /** Groups digests of the same conversation (one per major topic). */
+  conversation_id: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
+  /** Human-readable name — how you tell conversations apart when resuming. Stored in digest metadata. */
+  title: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(200))),
+  /** Lifecycle state: active (resume me) | paused | done. Default active. Stored in digest metadata. */
+  status: v.optional(v.picklist(["active", "paused", "done"]), "active"),
+  /** Decisions made (what + why). Stored as `fact` memories. */
+  decisions: v.optional(v.array(v.pipe(v.string(), v.maxLength(4000))), []),
+  /** User preferences stated. Stored as `preference` memories. */
+  preferences: v.optional(v.array(v.pipe(v.string(), v.maxLength(4000))), []),
+  /** Conventions / how-to-behave rules. Stored as `instruction` memories. */
+  instructions: v.optional(v.array(v.pipe(v.string(), v.maxLength(4000))), []),
+  /** Exact observations: errors, stack traces, verbatim quotes. Stored as `observation` memories. */
+  observations: v.optional(v.array(v.pipe(v.string(), v.maxLength(4000))), []),
+  /** Open questions / next steps. Stored as `observation` memories tagged `open-question`. */
+  open_questions: v.optional(
+    v.array(v.pipe(v.string(), v.maxLength(4000))),
+    [],
+  ),
+  /** Entities referenced — find-or-create in the namespace. */
+  entities: v.optional(v.array(ConversationEntity), []),
+  /** Source AI + pointer to the raw session (session log path or share URL). */
+  source: v.optional(
+    v.object({
+      ai: v.pipe(v.string(), v.minLength(1), v.maxLength(64)),
+      ref: v.optional(v.pipe(v.string(), v.maxLength(1000)), ""),
+    }),
+  ),
+  /**
+   * Optional verbatim transcript — ONLY if it exists (online chat models may
+   * not expose one; the `source.ref` pointer is the primary fidelity
+   * mechanism). Stored in digest metadata, excluded from search.
+   */
+  transcript: v.optional(v.pipe(v.string(), v.maxLength(100_000))),
+  namespace: v.optional(v.string(), DEFAULT_NAMESPACE),
+  /** Topic tags (e.g. auth, migration). `conversation` is added automatically. */
+  tags: v.optional(tagsSchema, []),
+});
+
 /** Unified search input. */
 export const SearchInput = v.object({
   // Empty q is allowed — it returns recent items (see search tool docs).
@@ -197,10 +256,13 @@ export const MemoryToolInput = v.object({
     v.literal("delete"),
     v.literal("query"),
     v.literal("batch_update"),
+    v.literal("ingest"),
   ]),
   id: v.optional(uuidSchema),
   memory: v.optional(MemoryInput),
   update: v.optional(MemoryUpdateInput),
+  /** ingest: the distilled conversation (digest + constituents + entities). */
+  conversation: v.optional(ConversationInput),
   /** query filters */
   type: v.optional(v.picklist(MEMORY_TYPES)),
   namespace: v.optional(v.string(), DEFAULT_NAMESPACE),

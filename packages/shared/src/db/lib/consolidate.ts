@@ -15,7 +15,9 @@ export interface ConsolidateResult {
 
 /**
  * Idempotent maintenance sweep — pure SQL, no LLM calls.
- * 1. Archive stale (importance < 0.3, untouched 90d).
+ * 1. Archive stale (importance < 0.3, untouched 90d). Conversation digests
+ *    (metadata.kind = "conversation") are NEVER archived by the sweep — they
+ *    are handoff entry points and must survive until the user deletes them.
  * 2. Dedup per namespace (trimmed case-insensitive content; keep highest
  *    importance, tie: oldest).
  * 3. Purge archived rows older than 30d.
@@ -26,6 +28,7 @@ export async function consolidate(db: Db): Promise<ConsolidateResult> {
     WHERE NOT archived
       AND importance < ${STALE_IMPORTANCE}
       AND updated_at < now() - (${STALE_AFTER_DAYS} * interval '1 day')
+      AND (metadata->>'kind') IS DISTINCT FROM 'conversation'
     RETURNING id
   `);
 

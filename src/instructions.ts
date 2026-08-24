@@ -44,8 +44,36 @@ manage_entity/manage_memory action=batch_update with a where filter (type, names
 query/q, tags) + update — it returns the count of rows changed. Prefer this over
 repeated single updates.
 
+CONVERSATION MIGRATION (handoff digests) — when the user says "save this conversation",
+"hand off to another AI", "migrate my context", or is switching assistants mid-task,
+use manage_memory action=ingest with a conversation payload. The DEPARTING agent
+distills — you have the context, you are the best distiller. Rules:
+- One digest per major topic, all grouped by the same conversation_id (metadata groups
+  them; search tags=["conversation"] lists them).
+- ALWAYS give a human-readable title (e.g. "Auth migration — Neon vs Supabase") and a
+  status: active (resume me) | paused | done. This is how conversations are told apart
+  when resuming — never skip it.
+- summary ≤4000 chars: context, decisions, open questions, pointers. Anti-dump: if it
+  doesn't fit, split into more digests — never pad.
+- Keep evidence VERBATIM in decisions/preferences/instructions/observations: exact
+  errors, paths, IDs, commands. Never soften them (summaries lose fidelity).
+- transcript is OPTIONAL — only include it if the raw log actually exists (online chat
+  models may not expose one); source.ref (session path or share URL) is the primary
+  fidelity pointer.
+- The server auto-tags digests with "conversation" and protects them from
+  consolidation. Constituents are regular memories with metadata.conversation_id.
+- When the user says "load my context" / "continue from my last conversation" /
+  "what did we do last session": search q="" tags=["conversation"] first, read the
+  digest, then pull constituents via query tags or the digest's entity links.
+- RESUME FLOW: prefer the digest with status=active (or the most recent). When a
+  conversation is finished, update its digest metadata.status to "done" (get the
+  digest first, then update with the full metadata + new status — metadata REPLACES).
+  When resuming a paused one, set it back to "active".
+
 TRIGGERS — always search when user says: "remember", "recall", "what do we know",
 "save this", "do you remember", prefers, decided, uses, chose, convention.
 ALSO search at session start for: project name, stack, deployment, auth, styling.
+ALSO ingest when user says: "save this conversation", "hand off", "migrate context",
+"switch to another AI", "continue this elsewhere".
 
 FAILURE MODE: if you answer without searching, you are guessing. Search first.`;

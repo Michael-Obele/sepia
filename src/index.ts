@@ -87,6 +87,7 @@ Bun.serve({
         health: "/healthz",
         skill: "/skill",
         install: "/install",
+        llms: "/llms.txt",
         instructions: {
           vscode: "/instructions/vscode",
           cursor: "/instructions/cursor",
@@ -101,6 +102,17 @@ Bun.serve({
             ? "bearer-token"
             : "dev-mode (MCP_BEARER_TOKEN not set)",
         tools: 7,
+      });
+    }
+
+    // llms.txt — the LLM-readable capability overview (llmstxt.org spec).
+    // Agents that can't see MCP tool schemas (online chat models, editors
+    // without MCP) fetch this to learn everything the server can do.
+    if (url.pathname === "/llms.txt") {
+      const file = Bun.file(new URL("../llms.txt", import.meta.url));
+      if (!file.exists()) return new Response("Not Found", { status: 404 });
+      return new Response(file, {
+        headers: { "content-type": "text/markdown; charset=utf-8" },
       });
     }
 

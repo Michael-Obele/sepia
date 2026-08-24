@@ -7,6 +7,7 @@ export * from "./db/lib/util.ts";
 export * from "./db/lib/entities.ts";
 export * from "./db/lib/memories.ts";
 export * from "./db/lib/relations.ts";
+export * from "./db/lib/conversations.ts";
 export * from "./db/lib/namespaces.ts";
 export * from "./db/lib/search.ts";
 export * from "./db/lib/graph.ts";

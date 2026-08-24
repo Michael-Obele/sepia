@@ -7,6 +7,7 @@ import {
   createMemory,
   deleteMemory,
   getMemory,
+  ingestConversation,
   queryMemories,
   updateMemory,
 } from "@sepia/shared";
@@ -21,7 +22,8 @@ export function registerMemoryTools(server: McpServer<any, any>) {
         "Actions: create (memory: {content, type?, importance?, namespace?, entity_ids? [0-3], metadata?, tags?} — source auto-set to client name) | " +
         "get (id — includes linked entities) | update (id + update — entity_ids REPLACES the link set, tags REPLACES the tag set) | " +
         "delete (id) | query (filters: type, namespace, importance_min, archived, tags; ordered importance DESC, updated_at DESC; limit max 50) | " +
-        "batch_update (where: {type?, namespace?, tags?, importance_min?, q?} — at least one; update: any subset; batch_limit? max 500) — updates ALL matching memories, returns count.",
+        "batch_update (where: {type?, namespace?, tags?, importance_min?, q?} — at least one; update: any subset; batch_limit? max 500) — updates ALL matching memories, returns count | " +
+        "ingest (conversation: {summary ≤4000, conversation_id, title?, status? active|paused|done, decisions?, preferences?, instructions?, observations?, open_questions?, entities?, source? {ai, ref?}, transcript? ≤100k, namespace?, tags?}) — atomically saves a distilled conversation as a digest (tag 'conversation', importance 0.85) + constituent memories + entities. Use when the user says 'save this conversation' or is switching AIs mid-task. One digest per major topic, same conversation_id groups them. Give it a human-readable title and status (active = resume me) so conversations are distinguishable when resuming.",
       schema: MemoryToolInput,
     },
     safe(async (args: v.InferInput<typeof MemoryToolInput>) => {
@@ -67,8 +69,10 @@ export function registerMemoryTools(server: McpServer<any, any>) {
           return { action: "query", count: memories.length, memories };
         }
         case "batch_update": {
-          if (!args.where) throw new Error("action=batch_update requires where");
-          if (!args.update) throw new Error("action=batch_update requires update");
+          if (!args.where)
+            throw new Error("action=batch_update requires where");
+          if (!args.update)
+            throw new Error("action=batch_update requires update");
           return {
             action: "batch_update",
             ...(await batchUpdateMemories(
@@ -77,6 +81,17 @@ export function registerMemoryTools(server: McpServer<any, any>) {
               args.update,
               args.batch_limit,
             )),
+          };
+        }
+        case "ingest": {
+          if (!args.conversation) {
+            throw new Error("action=ingest requires conversation");
+          }
+          const source =
+            server.ctx.sessionInfo?.clientInfo?.name ?? "unknown-client";
+          return {
+            action: "ingest",
+            ...(await ingestConversation(sql, args.conversation, source)),
           };
         }
       }

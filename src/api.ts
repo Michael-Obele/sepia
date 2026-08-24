@@ -16,6 +16,8 @@ import {
   updateMemory,
   deleteMemory,
   queryMemories,
+  ingestConversation,
+  getConversation,
   createRelation,
   deleteRelation,
   listRelations,
@@ -29,6 +31,7 @@ import {
   EntityUpdateInput,
   MemoryInput,
   MemoryUpdateInput,
+  ConversationInput,
   RelationInput,
   SearchInput,
   TraverseInput,
@@ -210,11 +213,8 @@ export async function handleApi(
       const memories = await queryMemories(sql, {
         type:
           (typeParam as
-            | "fact"
-            | "observation"
-            | "preference"
-            | "instruction"
-            | null) ?? undefined,
+            "fact" | "observation" | "preference" | "instruction" | null) ??
+          undefined,
         namespace: url.searchParams.get("namespace") ?? undefined,
         importance_min: url.searchParams.has("importance_min")
           ? numParam(url.searchParams.get("importance_min"), 0)
@@ -245,6 +245,31 @@ export async function handleApi(
       }
       if (method === "DELETE")
         return json({ deleted: await deleteMemory(sql, id) }, 200, cors);
+    }
+
+    // ── Conversations (handoff digests) ───────────────────────────────────
+    if (path === "/api/conversations" && method === "POST") {
+      const input = validate(ConversationInput, await readBody(request));
+      return json(
+        { result: await ingestConversation(sql, input, "dashboard") },
+        201,
+        cors,
+      );
+    }
+    if (path === "/api/conversations" && method === "GET") {
+      const conversationId = url.searchParams.get("conversation_id");
+      if (!conversationId)
+        return error(
+          "invalid_input",
+          "conversation_id query param is required",
+          422,
+        );
+      const memories = await getConversation(
+        sql,
+        conversationId,
+        url.searchParams.get("namespace") ?? undefined,
+      );
+      return json({ count: memories.length, memories }, 200, cors);
     }
 
     // ── Relations ─────────────────────────────────────────────────────────
