@@ -139,5 +139,7 @@
 	}
 	html {
 		@apply font-sans;
+		/* Smooth-scroll anchor links (e.g. the hero's "Install in one line" → #install) */
+		scroll-behavior: smooth;
 	}
 }

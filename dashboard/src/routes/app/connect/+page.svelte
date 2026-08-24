@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Copy, Check, Server, KeyRound, ExternalLink } from '@lucide/svelte';
+	import { Copy, Check, Server, KeyRound, ExternalLink, Globe } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
 		Card,
@@ -14,6 +14,8 @@
 	const MCP_URL = 'https://sepia.fly.dev/mcp';
 
 	let copied = $state('');
+	// Smart default: ChatGPT is pre-selected — the most common web AI.
+	let selected = $state('chatgpt');
 
 	async function copy(text: string, key: string) {
 		await navigator.clipboard.writeText(text);
@@ -21,8 +23,29 @@
 		setTimeout(() => (copied = ''), 1500);
 	}
 
-	const targets = [
+	type Target = {
+		id: string;
+		name: string;
+		auth: 'OAuth' | 'Bearer';
+		steps: string[];
+		popular?: boolean;
+	};
+
+	const targets: Target[] = [
 		{
+			id: 'chatgpt',
+			name: 'ChatGPT',
+			auth: 'OAuth',
+			popular: true,
+			steps: [
+				'Settings → Apps → Developer mode → Create',
+				'Choose "Custom app"',
+				'Paste the MCP URL',
+				'Complete OAuth sign-in'
+			]
+		},
+		{
+			id: 'claude-web',
 			name: 'Claude (web)',
 			auth: 'OAuth',
 			steps: [
@@ -33,16 +56,7 @@
 			]
 		},
 		{
-			name: 'ChatGPT',
-			auth: 'OAuth',
-			steps: [
-				'Settings → Apps → Developer mode → Create',
-				'Choose "Custom app"',
-				'Paste the MCP URL',
-				'Complete OAuth sign-in'
-			]
-		},
-		{
+			id: 'grok',
 			name: 'Grok (xAI)',
 			auth: 'OAuth',
 			steps: [
@@ -52,15 +66,7 @@
 			]
 		},
 		{
-			name: 'Gemini (Spark)',
-			auth: 'OAuth',
-			soon: true,
-			steps: [
-				'Not supported yet — coming soon.',
-				'Use Grok, ChatGPT, or a local editor in the meantime.'
-			]
-		},
-		{
+			id: 'perplexity',
 			name: 'Perplexity',
 			auth: 'OAuth',
 			steps: [
@@ -70,28 +76,44 @@
 			]
 		},
 		{
+			id: 'lechat',
 			name: 'Le Chat',
 			auth: 'OAuth',
 			steps: ['Connectors → + Add', 'Paste the MCP URL', 'Auto-detect OAuth 2.1']
 		},
 		{
+			id: 'other',
+			name: 'Other AI (Gemini, …)',
+			auth: 'OAuth',
+			steps: [
+				'Look for "Connectors", "Apps", or "Custom MCP" in settings',
+				'Choose "Custom" / "Remote" and paste the MCP URL',
+				'Complete the OAuth sign-in'
+			]
+		},
+		{
+			id: 'claude-code',
 			name: 'Claude Code',
 			auth: 'Bearer',
 			steps: ['Add the server to your MCP config', 'Set the Authorization header to your token']
 		},
 		{
+			id: 'cursor',
 			name: 'Cursor',
 			auth: 'Bearer',
 			steps: ['Add a remote MCP server', 'Paste the MCP URL', 'Set the Authorization header']
 		},
 		{
+			id: 'zed',
 			name: 'Zed',
 			auth: 'Bearer',
 			steps: ['Add a remote MCP server', 'Paste the MCP URL', 'Set the Authorization header']
 		}
 	];
 
-	const claudeCodeConfig = `{
+	const current = $derived(targets.find((t) => t.id === selected) ?? targets[0]);
+
+	const bearerConfig = `{
   "mcpServers": {
     "sepia": {
       "type": "http",
@@ -115,6 +137,138 @@
 			>.
 		</p>
 	</div>
+
+	<!-- Goal gradient: step 1 pre-completed, ChatGPT pre-selected -->
+	<Card>
+		<CardContent class="p-4">
+			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
+				{#each ['Pick your AI', 'Copy the URL', 'Authorize'] as step, i (step)}
+					<div class="flex items-center gap-2 sm:gap-3">
+						<div class="flex items-center gap-2">
+							<div
+								class="flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium {i ===
+								0
+									? 'bg-primary text-primary-foreground'
+									: 'bg-muted text-muted-foreground'}"
+							>
+								{#if i === 0}<Check class="size-3.5" />{:else}{i + 1}{/if}
+							</div>
+							<span
+								class="text-xs {i === 0 ? 'font-medium text-foreground' : 'text-muted-foreground'}"
+								>{step}</span
+							>
+						</div>
+						{#if i < 2}<div class="h-px w-4 bg-border sm:w-8"></div>{/if}
+					</div>
+				{/each}
+			</div>
+			<p class="mt-3 text-xs text-muted-foreground">
+				Step 1 of 3 — <span class="font-medium text-foreground">{current.name}</span> is pre-selected.
+				Pick a different AI below if you use one.
+			</p>
+		</CardContent>
+	</Card>
+
+	<!-- Step 1: pick your AI -->
+	<Card>
+		<CardHeader>
+			<CardTitle class="flex items-center gap-2 text-base">
+				<Globe class="size-4" /> 1. Pick your AI
+			</CardTitle>
+			<CardDescription
+				>Web AIs use OAuth 2.1 — paste the URL and sign in with your dashboard password. Local
+				editors use the Bearer token.</CardDescription
+			>
+		</CardHeader>
+		<CardContent>
+			<div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+				{#each targets as t (t.id)}
+					<button
+						type="button"
+						onclick={() => (selected = t.id)}
+						class="flex items-center justify-between gap-2 rounded-lg border px-4 py-3 text-left text-sm transition-colors {selected ===
+						t.id
+							? 'border-primary bg-primary/5 ring-1 ring-primary/30'
+							: 'border-border/60 bg-card/40 hover:border-border hover:bg-card'}"
+					>
+						<span
+							class="font-medium {selected === t.id ? 'text-foreground' : 'text-muted-foreground'}"
+							>{t.name}</span
+						>
+						<span class="flex shrink-0 items-center gap-1.5">
+							{#if t.popular}
+								<Badge class="bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15"
+									>Most popular</Badge
+								>
+							{/if}
+							<Badge variant={t.auth === 'OAuth' ? 'secondary' : 'outline'}>{t.auth}</Badge>
+						</span>
+					</button>
+				{/each}
+			</div>
+		</CardContent>
+	</Card>
+
+	<!-- Step 2: personalized setup -->
+	<Card>
+		<CardHeader>
+			<CardTitle class="flex items-center gap-2 text-base">
+				<Server class="size-4" /> 2. Your setup — {current.name}
+			</CardTitle>
+			<CardDescription>
+				{#if current.auth === 'OAuth'}
+					Paste the URL into your AI, then authorize with your dashboard password.
+				{:else}
+					Add this config to your MCP settings, then set the Authorization header.
+				{/if}
+			</CardDescription>
+		</CardHeader>
+		<CardContent class="space-y-4">
+			{#if current.auth === 'OAuth'}
+				<div class="flex items-center gap-2">
+					<code class="flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">{MCP_URL}</code>
+					<Button variant="outline" size="sm" onclick={() => copy(MCP_URL, 'url')} class="gap-1">
+						{#if copied === 'url'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
+						Copy URL
+					</Button>
+				</div>
+				<ol class="space-y-2">
+					{#each current.steps as step, i (i)}
+						<li class="flex items-start gap-3 text-sm text-muted-foreground">
+							<span
+								class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted/60 font-mono text-[11px] text-foreground"
+							>
+								{i + 1}
+							</span>
+							<span class="leading-relaxed">{step}</span>
+						</li>
+					{/each}
+				</ol>
+			{:else}
+				<pre class="overflow-x-auto rounded-md bg-muted p-4 text-xs leading-relaxed"><code
+						>{bearerConfig}</code
+					></pre>
+				<div class="flex flex-wrap items-center gap-2">
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => copy(bearerConfig, 'config')}
+						class="gap-1"
+					>
+						{#if copied === 'config'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
+						Copy config
+					</Button>
+					<p class="text-xs text-muted-foreground">
+						Cursor and Zed use slightly different config keys — see the
+						<a href="/#install" class="underline underline-offset-4 hover:text-foreground">
+							install guide
+						</a>
+						for per-editor snippets.
+					</p>
+				</div>
+			{/if}
+		</CardContent>
+	</Card>
 
 	<Card>
 		<CardHeader>
@@ -149,32 +303,7 @@
 
 	<Card>
 		<CardHeader>
-			<CardTitle class="flex items-center gap-2 text-base">
-				<Server class="size-4" /> Claude Code config
-			</CardTitle>
-			<CardDescription
-				>Add this to your <code class="rounded bg-muted px-1">.mcp.json</code> or user MCP config.</CardDescription
-			>
-		</CardHeader>
-		<CardContent class="space-y-3">
-			<pre class="overflow-x-auto rounded-md bg-muted p-4 text-xs leading-relaxed"><code
-					>{claudeCodeConfig}</code
-				></pre>
-			<Button
-				variant="outline"
-				size="sm"
-				onclick={() => copy(claudeCodeConfig, 'config')}
-				class="gap-1"
-			>
-				{#if copied === 'config'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
-				Copy config
-			</Button>
-		</CardContent>
-	</Card>
-
-	<Card>
-		<CardHeader>
-			<CardTitle class="text-base">Supported clients</CardTitle>
+			<CardTitle class="text-base">All supported clients</CardTitle>
 			<CardDescription>Web platforms use OAuth; local editors use the Bearer token.</CardDescription
 			>
 		</CardHeader>
@@ -189,23 +318,15 @@
 						</tr>
 					</thead>
 					<tbody>
-						{#each targets as t}
+						{#each targets as t (t.id)}
 							<tr class="border-b last:border-0">
-								<td class="py-3 pr-4 font-medium">
-									{t.name}
-									{#if t.soon}
-										<span
-											class="ml-2 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground"
-											>soon</span
-										>
-									{/if}
-								</td>
+								<td class="py-3 pr-4 font-medium">{t.name}</td>
 								<td class="py-3 pr-4">
 									<Badge variant={t.auth === 'OAuth' ? 'secondary' : 'outline'}>{t.auth}</Badge>
 								</td>
 								<td class="py-3">
 									<ol class="list-inside list-decimal space-y-0.5 text-xs text-muted-foreground">
-										{#each t.steps as s}
+										{#each t.steps as s (s)}
 											<li>{s}</li>
 										{/each}
 									</ol>

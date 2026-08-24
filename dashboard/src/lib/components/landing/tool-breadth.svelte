@@ -27,7 +27,7 @@
 				textAnchor: 'start',
 				dx: 6,
 				dy: 2,
-				class: 'text-xs fill-muted-foreground stroke-none'
+				class: 'text-xs fill-black stroke-none'
 			},
 			tickLength: 0
 		},

@@ -6,7 +6,6 @@
 		FileText,
 		Layers,
 		Zap,
-		Bot,
 		ExternalLink,
 		Shield
 	} from '@lucide/svelte';
@@ -21,13 +20,15 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Tabs, TabsContent, TabsList, TabsTrigger } from '$lib/components/ui/tabs/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { PersistedState } from 'runed';
 
 	const BASE = 'https://sepia.fly.dev';
 	const MCP_URL = `${BASE}/mcp`;
 
 	let copied = $state('');
-	let activeTab = $state('vscode');
-	let installScope = $state<'global' | 'both'>('global');
+	// Persisted across visits — the user's setup choices survive reloads (IKEA effect).
+	const activeTab = new PersistedState('sepia-install-tab', 'vscode');
+	const installScope = new PersistedState<'global' | 'both'>('sepia-install-scope', 'global');
 
 	async function copy(text: string, key: string) {
 		await navigator.clipboard.writeText(text);
@@ -107,7 +108,6 @@
 	type Editor = {
 		id: string;
 		label: string;
-		icon: typeof FileText;
 		badge: string;
 		files: string[];
 		mcpFiles: string[];
@@ -118,7 +118,6 @@
 		{
 			id: 'vscode',
 			label: 'VS Code',
-			icon: FileText,
 			badge: 'applyTo: "**"',
 			files: [
 				'.github/instructions/sepia.instructions.md',
@@ -130,7 +129,6 @@
 		{
 			id: 'cursor',
 			label: 'Cursor',
-			icon: Layers,
 			badge: 'alwaysApply: true',
 			files: ['.cursor/rules/sepia.mdc', '~/.cursor/rules/sepia.mdc'],
 			mcpFiles: ['.cursor/mcp.json → "mcpServers"'],
@@ -139,7 +137,6 @@
 		{
 			id: 'opencode',
 			label: 'OpenCode',
-			icon: Terminal,
 			badge: 'AGENTS.md + sepia.md',
 			files: ['./AGENTS.md', '~/.config/opencode/AGENTS.md', '~/.config/opencode/sepia.md'],
 			mcpFiles: ['opencode.json → "mcp.sepia"', '~/.config/opencode/opencode.json'],
@@ -148,7 +145,6 @@
 		{
 			id: 'zed',
 			label: 'Zed',
-			icon: Bot,
 			badge: 'context_servers',
 			files: ['./AGENTS.md (shared)', '~/.config/zed/sepia.md (reference)'],
 			mcpFiles: ['~/.config/zed/settings.json → "context_servers"'],
@@ -157,7 +153,6 @@
 		{
 			id: 'claude',
 			label: 'Claude Code',
-			icon: Shield,
 			badge: 'CLAUDE.md',
 			files: ['~/.claude/CLAUDE.md'],
 			mcpFiles: ['claude mcp add --transport http'],
@@ -203,29 +198,36 @@
 							>
 						</div>
 					</div>
-					<Badge variant="secondary" class="font-mono text-xs">curl → bash</Badge>
+					<div class="flex items-center gap-2">
+						<Badge variant="secondary" class="font-mono text-xs">curl → bash</Badge>
+						<Badge variant="outline" class="gap-1 text-xs">
+							<Check class="size-3 text-emerald-400" /> Remembered on this device
+						</Badge>
+					</div>
 				</div>
 				<!-- Scope toggle -->
 				<div class="mt-4 inline-flex rounded-lg bg-muted p-1 text-xs">
 					<button
-						class="rounded-md px-3 py-1.5 font-medium transition-colors {installScope === 'global'
+						class="rounded-md px-3 py-1.5 font-medium transition-colors {installScope.current ===
+						'global'
 							? 'bg-background text-foreground shadow-sm ring-1 ring-border'
 							: 'text-muted-foreground hover:text-foreground'}"
-						onclick={() => (installScope = 'global')}
+						onclick={() => (installScope.current = 'global')}
 					>
 						Global only — install once
 					</button>
 					<button
-						class="rounded-md px-3 py-1.5 font-medium transition-colors {installScope === 'both'
+						class="rounded-md px-3 py-1.5 font-medium transition-colors {installScope.current ===
+						'both'
 							? 'bg-background text-foreground shadow-sm ring-1 ring-border'
 							: 'text-muted-foreground hover:text-foreground'}"
-						onclick={() => (installScope = 'both')}
+						onclick={() => (installScope.current = 'both')}
 					>
 						Global + repo (share via git)
 					</button>
 				</div>
 				<p class="mt-2 text-xs leading-relaxed text-muted-foreground">
-					{#if installScope === 'global'}
+					{#if installScope.current === 'global'}
 						<span class="font-medium text-foreground">Recommended for solo use.</span> Installs to
 						<code class="rounded bg-muted px-1 font-mono">~/.config / ~/.cursor / ~/.claude</code> — every
 						repo on this machine remembers forever. Never run again.
@@ -241,13 +243,13 @@
 				<div class="flex items-center gap-2 rounded-lg bg-muted p-3 font-mono text-sm">
 					<span class="hidden text-muted-foreground sm:inline">$</span>
 					<code class="flex-1 truncate text-foreground"
-						>{installScope === 'global' ? oneLinerGlobal : oneLinerBoth}</code
+						>{installScope.current === 'global' ? oneLinerGlobal : oneLinerBoth}</code
 					>
 					<Button
 						variant="ghost"
 						size="icon-sm"
 						onclick={() =>
-							copy(installScope === 'global' ? oneLinerGlobal : oneLinerBoth, 'oneliner')}
+							copy(installScope.current === 'global' ? oneLinerGlobal : oneLinerBoth, 'oneliner')}
 						aria-label="Copy one-liner"
 					>
 						{#if copied === 'oneliner'}<Check class="size-4 text-green-500" />{:else}<Copy
@@ -258,14 +260,14 @@
 				<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
 					<span class="font-mono">With token (also patches MCP configs):</span>
 					<code class="rounded bg-muted px-1.5 py-1 font-mono text-xs"
-						>{installScope === 'global' ? oneLinerGlobalWithToken : oneLinerWithToken}</code
+						>{installScope.current === 'global' ? oneLinerGlobalWithToken : oneLinerWithToken}</code
 					>
 					<Button
 						variant="ghost"
 						size="xs"
 						onclick={() =>
 							copy(
-								installScope === 'global' ? oneLinerGlobalWithToken : oneLinerWithToken,
+								installScope.current === 'global' ? oneLinerGlobalWithToken : oneLinerWithToken,
 								'oneliner-token'
 							)}
 						class="h-6 gap-1"
@@ -286,7 +288,7 @@
 					<span class="inline-flex items-center gap-1.5"
 						><span class="size-1.5 rounded-full bg-violet-400"></span> MCP → headers</span
 					>
-					{#if installScope === 'global'}
+					{#if installScope.current === 'global'}
 						<span
 							class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary ring-1 ring-primary/20"
 							>Scope: global — no repo writes</span
@@ -305,7 +307,7 @@
 					or <code class="rounded bg-muted px-1 font-mono">npx skills add {BASE}/skill</code>.
 					Local:
 					<code class="rounded bg-muted px-1 font-mono">bun run scripts/install-skill.sh</code>
-					{#if installScope === 'global'}
+					{#if installScope.current === 'global'}
 						— add <code class="rounded bg-muted px-1 font-mono">SEPIA_SCOPE=global</code> to force global-only.
 					{/if}
 				</p>
@@ -352,13 +354,11 @@
 		</div>
 
 		<!-- Per-editor tabs -->
-		<Tabs bind:value={activeTab} class="mt-10">
+		<Tabs bind:value={activeTab.current} class="mt-10">
 			<div class="flex flex-wrap items-center justify-between gap-3">
 				<TabsList class="h-auto flex-wrap gap-1 p-1">
-					{#each editors as ed}
-						{@const Icon = ed.icon}
+					{#each editors as ed (ed.id)}
 						<TabsTrigger value={ed.id} class="gap-1.5 px-3 py-1.5 text-xs sm:text-sm">
-							<Icon class="size-3.5" />
 							{ed.label}
 						</TabsTrigger>
 					{/each}
@@ -371,18 +371,12 @@
 				</a>
 			</div>
 
-			{#each editors as ed}
-				{@const Icon = ed.icon}
+			{#each editors as ed (ed.id)}
 				<TabsContent value={ed.id} class="mt-6">
 					<Card class="border-border/60">
 						<CardHeader class="pb-3">
 							<div class="flex flex-wrap items-start justify-between gap-3">
 								<div class="flex gap-3">
-									<div
-										class="hidden size-10 items-center justify-center rounded-xl bg-muted ring-1 ring-border/50 sm:flex"
-									>
-										<Icon class="size-5 text-foreground" />
-									</div>
 									<div>
 										<CardTitle class="flex flex-wrap items-center gap-2 text-base">
 											{ed.label}
@@ -411,7 +405,7 @@
 									{#each ed.files as f}
 										{@const isGlobal = f.startsWith('~')}
 										{@const isRepo = !isGlobal}
-										{@const show = installScope === 'global' ? isGlobal : true}
+										{@const show = installScope.current === 'global' ? isGlobal : true}
 										{#if show}
 											<div
 												class="flex items-center gap-2 rounded-lg border px-3 py-2 font-mono text-xs {isGlobal
@@ -432,7 +426,7 @@
 										{/if}
 									{/each}
 								</div>
-								{#if installScope === 'global'}
+								{#if installScope.current === 'global'}
 									<p class="mt-2 text-xs text-muted-foreground">
 										Global files alone are enough — every repo on this machine will remember. Repo
 										files are optional (for team sharing).
