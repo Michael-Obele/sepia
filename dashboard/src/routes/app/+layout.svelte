@@ -13,11 +13,11 @@
 </svelte:head>
 
 {#if isAuthed()}
-	<Sidebar.Provider>
+	<Sidebar.Provider class="overflow-x-hidden">
 		<AppSidebar />
-		<main class="flex min-h-svh w-full flex-col">
-			<Sidebar.Trigger class="mt-2 ml-2" />
-			<div class="flex-1 p-4 md:p-6 lg:p-8">
+		<main class="flex min-h-svh min-w-0 flex-1 flex-col overflow-x-hidden">
+			<Sidebar.Trigger class="mt-2 ml-2 shrink-0" />
+			<div class="min-w-0 flex-1 overflow-hidden p-4 md:p-6 lg:p-8">
 				{@render children()}
 			</div>
 		</main>

@@ -68,7 +68,7 @@
 
 <svelte:head><title>Sepia — Search</title></svelte:head>
 
-<div class="space-y-6">
+<div class="max-w-full min-w-0 space-y-6 overflow-hidden">
 	<div class="flex flex-col gap-2">
 		<h1 class="text-2xl font-semibold tracking-tight">Memory</h1>
 		<p class="text-sm text-muted-foreground">
@@ -148,9 +148,9 @@
 			<CardTitle class="text-base">Search</CardTitle>
 			<CardDescription>Same engine as the MCP search tool.</CardDescription>
 		</CardHeader>
-		<CardContent class="space-y-3">
-			<div class="flex flex-col gap-2 sm:flex-row">
-				<div class="relative flex-1">
+		<CardContent class="min-w-0 space-y-3 overflow-hidden">
+			<div class="flex min-w-0 flex-col gap-2 sm:flex-row">
+				<div class="relative min-w-0 flex-1">
 					<Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 					<Input
 						bind:value={q}
@@ -192,16 +192,16 @@
 						{#each results as r}
 							<a
 								href={resultHref(r)}
-								class="flex items-start gap-3 rounded-md p-2 transition-colors hover:bg-accent"
+								class="flex min-w-0 items-start gap-3 overflow-hidden rounded-md p-2 transition-colors hover:bg-accent"
 							>
 								<Badge variant="outline" class="mt-0.5 shrink-0">
 									{r.kind === 'entity' ? 'Entity' : 'Memory'}
 								</Badge>
-								<div class="min-w-0 flex-1">
-									<p class="text-sm font-medium">
+								<div class="min-w-0 flex-1 overflow-hidden">
+									<p class="min-w-0 text-sm font-medium break-words wrap-break-word">
 										{r.kind === 'entity' ? r.name : truncate(r.content ?? '', 120)}
 									</p>
-									<p class="truncate text-xs text-muted-foreground">
+									<p class="min-w-0 truncate text-xs text-muted-foreground">
 										{r.kind === 'memory' ? truncate(r.content ?? '', 200) : r.snippet}
 									</p>
 								</div>
@@ -246,10 +246,12 @@
 						{#each s.recent_memories as m}
 							<a
 								href={`/app/memories/${m.id}`}
-								class="block rounded-md p-2 transition-colors hover:bg-accent"
+								class="block min-w-0 overflow-hidden rounded-md p-2 transition-colors hover:bg-accent"
 							>
-								<div class="flex items-start justify-between gap-3">
-									<p class="text-sm">{truncate(m.content, 200)}</p>
+								<div class="flex min-w-0 items-start justify-between gap-3 overflow-hidden">
+									<p class="min-w-0 flex-1 text-sm break-words wrap-break-word">
+										{truncate(m.content, 200)}
+									</p>
 									<span class="shrink-0 text-xs text-muted-foreground">{timeAgo(m.updated_at)}</span
 									>
 								</div>
