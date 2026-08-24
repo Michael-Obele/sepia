@@ -356,6 +356,125 @@ if (hasDb) {
     };
     check("consolidate runs", typeof cons.archived_stale === "number");
 
+    // ── Conversation migration: manage_memory action=ingest ────────────────
+    const ingest = (await callTool("manage_memory", {
+      action: "ingest",
+      conversation: {
+        summary:
+          "# Smoke handoff digest\nDecided to use Bun for cold start. Open question: migrate auth?",
+        conversation_id: "smoke-conv-1",
+        title: "Smoke handoff — Bun cold start",
+        status: "active",
+        decisions: ["Chose Bun over Node because cold start matters"],
+        preferences: ["Prefers tabs over spaces"],
+        instructions: ["Always run bun check before committing"],
+        observations: ["Error E123: exact stack trace"],
+        open_questions: ["Should we add a 5th memory type?"],
+        entities: [
+          { name: "Smoke Project", type: "project" },
+          { name: "Smoke Tool", type: "tool" },
+        ],
+        source: { ai: "smoke-test", ref: "https://example.com/session" },
+        tags: ["smoke", "migration"],
+        namespace: ns,
+      },
+    })) as {
+      digest_id: string;
+      conversation_id: string;
+      memories_created: number;
+      entities_created: number;
+      entities_linked: number;
+    };
+    check(
+      "ingest creates bundle (digest + 5 constituents)",
+      ingest.memories_created === 6,
+      `${ingest.memories_created} memories`,
+    );
+    check(
+      "ingest find-or-create entities (1 existing, 0 new)",
+      ingest.entities_created === 0,
+      `${ingest.entities_created} created`,
+    );
+    check(
+      "ingest links entities",
+      ingest.entities_linked === 2,
+      `${ingest.entities_linked} linked`,
+    );
+
+    const digestSearch = (await callTool("search", {
+      q: "",
+      namespace: ns,
+      tags: ["conversation"],
+    })) as { hits: unknown[] };
+    check(
+      "digest discoverable via tags=[conversation]",
+      digestSearch.hits.length === 1,
+      `${digestSearch.hits.length} hits`,
+    );
+
+    const decisionSearch = (await callTool("search", {
+      q: "cold start",
+      namespace: ns,
+      tags: ["decision"],
+    })) as { hits: unknown[] };
+    check(
+      "constituent discoverable via tags=[decision]",
+      decisionSearch.hits.length >= 1,
+      `${decisionSearch.hits.length} hits`,
+    );
+
+    const openQ = (await callTool("manage_memory", {
+      action: "query",
+      namespace: ns,
+      tags: ["open-question"],
+    })) as { memories: unknown[] };
+    check(
+      "open questions tagged open-question",
+      openQ.memories.length === 1,
+      `${openQ.memories.length} memories`,
+    );
+
+    const digestGet = (await callTool("manage_memory", {
+      action: "get",
+      id: ingest.digest_id,
+    })) as {
+      memory: { metadata: Record<string, unknown>; tags: string[] };
+    };
+    check(
+      "digest metadata has kind + conversation_id + source",
+      digestGet.memory.metadata?.kind === "conversation" &&
+        digestGet.memory.metadata?.conversation_id === "smoke-conv-1" &&
+        digestGet.memory.metadata?.source_ai === "smoke-test",
+      JSON.stringify(digestGet.memory.metadata),
+    );
+    check(
+      "digest metadata has title + status",
+      digestGet.memory.metadata?.title === "Smoke handoff — Bun cold start" &&
+        digestGet.memory.metadata?.status === "active",
+      JSON.stringify(digestGet.memory.metadata),
+    );
+    check(
+      "digest auto-tagged conversation",
+      Array.isArray(digestGet.memory.tags) &&
+        digestGet.memory.tags.includes("conversation"),
+      JSON.stringify(digestGet.memory.tags),
+    );
+
+    // REST regression: getConversation must not 500 — jsonb_build_object with
+    // a bare param fails in prepared statements; the fix uses a JSON literal
+    // with an explicit ::jsonb cast.
+    const restBase = BASE.replace(/\/mcp$/, "");
+    const convRes = await fetch(
+      `${restBase}/api/conversations?conversation_id=smoke-conv-1`,
+      { headers: token ? { authorization: `Bearer ${token}` } : {} },
+    );
+    const convJson = (await convRes.json()) as { count?: number };
+    check(
+      "REST getConversation returns digest + constituents",
+      convRes.status === 200 && convJson.count === 6,
+      `status ${convRes.status}, count ${convJson.count}`,
+    );
+
     await callTool("manage_namespace", { action: "delete", name: ns });
     ok("namespace delete (cascade cleanup)");
   } catch (error) {
