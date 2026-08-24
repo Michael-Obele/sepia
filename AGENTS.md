@@ -1,4 +1,3 @@
-
 Default to using Bun instead of Node.js.
 
 - Use `bun <file>` instead of `node <file>` or `ts-node <file>`
@@ -146,6 +145,6 @@ Sepia's docs are the agents' only window into the server. When you add a feature
 5. `scripts/gen-skill-ref.ts` — run `bun run scripts/gen-skill-ref.ts` to regenerate `skills/sepia/references/tools.md` from the schemas.
 6. `scripts/smoke.ts` — cover the new surface (a feature without a smoke check is untested).
 7. Installed copies — run `bash scripts/install-skill.sh` to sync ~/.config/Code/User/prompts, ~/.claude/CLAUDE.md, ~/.cursor/rules, ~/.codex/AGENTS.md, ~/.config/opencode/AGENTS.md.
-8. Deploy — `fly deploy` so the served versions (/llms.txt, /skill, /instructions/*, MCP instructions) update for everyone.
+8. Deploy — `fly deploy` so the served versions (/llms.txt, /skill, /instructions/\*, MCP instructions) update for everyone.
 
 Rule: no feature is done until its docs are updated. Check the diff of every always-on file before committing.
