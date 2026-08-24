@@ -120,7 +120,8 @@ Bun.serve({
           llms: "/llms.txt",
           skill: "/skill",
           install: "/install",
-          instructions: "/instructions/{vscode,cursor,claude,agents,opencode,zed}",
+          instructions:
+            "/instructions/{vscode,cursor,claude,agents,opencode,zed}",
         },
       });
     }

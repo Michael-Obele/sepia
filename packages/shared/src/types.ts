@@ -41,9 +41,10 @@ export type EntityType = (typeof ENTITY_TYPES)[number];
  * Deliberately NO alias map — semantic reclassification (e.g. "project-migration"
  * → project) is done via `manage_entity` action=batch_update, not hardcoded here.
  */
-export function normalizeEntityType(
-  type: string,
-): { type: EntityType; tag?: string } {
+export function normalizeEntityType(type: string): {
+  type: EntityType;
+  tag?: string;
+} {
   const key = type.trim().toLowerCase();
   if ((ENTITY_TYPES as readonly string[]).includes(key)) {
     return { type: key as EntityType };

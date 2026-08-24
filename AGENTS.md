@@ -114,15 +114,17 @@ Sepia's docs are the agents' only window into the server. When you add a feature
 4. `llms.txt` — full capability overview, served at /llms.txt. What agents fetch when they need the whole surface.
 5. `scripts/gen-skill-ref.ts` — run `bun run scripts/gen-skill-ref.ts` to regenerate `skills/sepia/references/tools.md` from the schemas.
 6. `scripts/smoke.ts` — cover the new surface (a feature without a smoke check is untested).
-7. Version — bump `DOCS_VERSION` in `packages/shared/src/types.ts` and run `bun run scripts/stamp-docs-version.ts` (stamps SKILL.md, always-on/*, llms.txt, AGENTS.md).
+7. Version — bump `DOCS_VERSION` in `packages/shared/src/types.ts` and run `bun run scripts/stamp-docs-version.ts` (stamps SKILL.md, always-on/\*, llms.txt, AGENTS.md).
 8. Installed copies — run `bash scripts/install-skill.sh` (block-marker sections update in place, never duplicate).
-9. Deploy — `fly deploy` so the served versions (/version, /llms.txt, /skill, /instructions/*, MCP instructions) update for everyone.
+9. Deploy — `fly deploy` so the served versions (/version, /llms.txt, /skill, /instructions/\*, MCP instructions) update for everyone.
 10. Check — `bun run scripts/check-docs-version.ts` after deploy to confirm installed copies are current.
 
 Rule: no feature is done until its docs are updated. Check the diff of every always-on file before committing.
 
 <!-- sepia:start -->
+
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
+
 <!-- sepia-docs-version: 1.0.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (any `AGENTS.md`-aware agent: Codex, OpenCode, Copilot, Cursor, Zed). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.

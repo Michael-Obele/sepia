@@ -18,7 +18,10 @@ const INSTALLED: { label: string; path: string }[] = [
     path: join(homedir(), ".config/Code/User/prompts/sepia.instructions.md"),
   },
   { label: "Cursor rules", path: join(homedir(), ".cursor/rules/sepia.mdc") },
-  { label: "Claude Code CLAUDE.md", path: join(homedir(), ".claude/CLAUDE.md") },
+  {
+    label: "Claude Code CLAUDE.md",
+    path: join(homedir(), ".claude/CLAUDE.md"),
+  },
   { label: "Codex AGENTS.md", path: join(homedir(), ".codex/AGENTS.md") },
   {
     label: "OpenCode AGENTS.md",
