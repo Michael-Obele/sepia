@@ -122,6 +122,30 @@ You are connected to the user's personal Sepia memory server (sepia) over MCP (a
 4. **Importance 0-1:** 0.9+ identity/core pref, 0.6-0.8 project fact/decision, 0.3-0.5 observation, ≤0.2 transient.
 5. **Never store:** ephemeral chat, code snippets, credentials/secrets.
 
-For full tool schemas, load the `sepia` skill (`SKILL.md`). Project `AGENTS.md` stacks with `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. See also `src/instructions.ts` (source of truth).
+### Conversation migration (handoff digests)
+
+When the user says **"save this conversation"**, **"hand off to another AI"**, **"migrate my context"**, or switches assistants mid-task, use `manage_memory` action=ingest with a `conversation` payload. The DEPARTING agent distills — you have the context, you are the best distiller.
+
+- Payload: `summary` (≤4000, structured markdown), `conversation_id` (groups digests of one conversation), `title` (human-readable — how you tell them apart), `status` (active|paused|done), `decisions`/`preferences`/`instructions`/`observations`/`open_questions` (keep evidence VERBATIM — exact errors, paths, IDs), `entities` (find-or-create), `source` {ai, ref}, optional `transcript` (only if the raw log exists).
+- The server atomically creates: digest (tag `conversation`, importance 0.85, protected from consolidation) + typed constituents + entities. One digest per major topic, same `conversation_id` groups them.
+- **Resume**: `search` q="" tags=["conversation"] → prefer status=active → read the digest → pull constituents via `query` tags (decision, open-question, …).
+- **Mark done**: `manage_memory` action=update on the digest with `metadata: {...existing, status: "done"}` (metadata REPLACES — get first, then merge).
+
+This file has the essentials; for full tool schemas and examples, load the `sepia` skill (`SKILL.md`) if available. For the full capability overview (all 7 tools, conversation migration, REST API), fetch https://sepia.fly.dev/llms.txt. Project `AGENTS.md` stacks with `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. See also `src/instructions.ts` (source of truth).
 
 <!-- Source of truth: src/instructions.ts (MEMORY_CONTRACT). Keep in sync. -->
+
+## Sepia docs — keep in sync when adding features
+
+Sepia's docs are the agents' only window into the server. When you add a feature (new tool, action, field, endpoint, or behavior change), update ALL of these before calling it done:
+
+1. `src/instructions.ts` (MEMORY_CONTRACT) — the MCP `instructions` field, injected fresh every session. THE source of truth.
+2. `skills/sepia/SKILL.md` — the on-demand agent skill.
+3. `skills/sepia/always-on/*` (vscode, claude, cursor, agents, opencode, zed) — always-on essentials. Keep them minimal + stable: new depth goes in llms.txt / SKILL.md, not here.
+4. `llms.txt` — full capability overview, served at /llms.txt. What agents fetch when they need the whole surface.
+5. `scripts/gen-skill-ref.ts` — run `bun run scripts/gen-skill-ref.ts` to regenerate `skills/sepia/references/tools.md` from the schemas.
+6. `scripts/smoke.ts` — cover the new surface (a feature without a smoke check is untested).
+7. Installed copies — run `bash scripts/install-skill.sh` to sync ~/.config/Code/User/prompts, ~/.claude/CLAUDE.md, ~/.cursor/rules, ~/.codex/AGENTS.md, ~/.config/opencode/AGENTS.md.
+8. Deploy — `fly deploy` so the served versions (/llms.txt, /skill, /instructions/*, MCP instructions) update for everyone.
+
+Rule: no feature is done until its docs are updated. Check the diff of every always-on file before committing.
