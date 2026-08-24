@@ -125,7 +125,7 @@ check(
 check(
   "instructions contract sent",
   typeof init.instructions === "string" &&
-    init.instructions.includes("Usage contract"),
+    init.instructions.includes("RULE 0"),
   `${init.instructions?.slice(0, 40)}…`,
 );
 check("tools capability advertised", Boolean(init.capabilities?.tools));
@@ -249,6 +249,18 @@ if (hasDb) {
       "search finds memory",
       searchRes.hits.length > 0,
       `${searchRes.hits.length} hits`,
+    );
+
+    // Regression: multi-word queries must match ANY word order (AND-of-words),
+    // not just the verbatim phrase. "starts cold" is reversed vs the content.
+    const searchRes2 = (await callTool("search", {
+      q: "starts cold",
+      namespace: ns,
+    })) as { hits: unknown[] };
+    check(
+      "search AND-of-words (reversed order)",
+      searchRes2.hits.length > 0,
+      `${searchRes2.hits.length} hits`,
     );
 
     const trav = (await callTool("traverse_graph", {

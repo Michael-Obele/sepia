@@ -25,8 +25,8 @@ export interface SearchHit {
 
 const WORD_RE = /[a-z0-9]+/gi;
 
-/** 2 points per exact whole-word match, 1 per substring match. */
-function matchScore(text: string, words: string[]): number {
+/** 2 points per exact whole-word match, 1 per substring match, +2 if the full phrase matches verbatim. */
+function matchScore(text: string, words: string[], phrase: string): number {
   const lower = text.toLowerCase();
   let score = 0;
   for (const word of words) {
@@ -34,6 +34,7 @@ function matchScore(text: string, words: string[]): number {
     const re = new RegExp(`(^|[^a-z0-9])${escapeRegExp(word)}([^a-z0-9]|$)`);
     if (re.test(lower)) score += 1;
   }
+  if (phrase && lower.includes(phrase)) score += 2;
   return score;
 }
 
@@ -51,6 +52,11 @@ function snippet(text: string, max = 200): string {
  * Case-insensitive substring matching in SQL, then ranked in JS:
  * exact word match > substring match, then importance DESC, then
  * updated_at DESC. Empty `q` returns recent items.
+ *
+ * Multi-word queries require EVERY word to appear (AND, any order) — the
+ * old single-phrase ILIKE returned 0 for natural queries like
+ * "bun runtime preference". Exact-phrase matches still rank first via the
+ * phrase bonus in matchScore.
  */
 export async function search(
   db: Db,
@@ -113,6 +119,20 @@ export async function search(
   const words = (opts.q.match(WORD_RE) ?? []).map((w) => w.toLowerCase());
   // Escape LIKE metacharacters so input matches literally.
   const like = `%${opts.q.replace(/[%_\\]/g, "\\$&")}%`;
+  // AND-of-words filter: every word must appear, any order. Words come from
+  // WORD_RE so they are alphanumeric-only — no LIKE metacharacters to escape.
+  // Falls back to the phrase filter when the query has no words (e.g. "!!!").
+  const wordArray = words.length
+    ? sql`ARRAY[${sql.join(words.map((w) => sql`${`%${w}%`}`), sql`, `)}]::text[]`
+    : null;
+  const memWordFilter = wordArray
+    ? sql`AND m.content ILIKE ALL (${wordArray})`
+    : sql`AND m.content ILIKE ${like} ESCAPE '\\'`;
+  const entWordFilter = wordArray
+    ? sql`(e.name ILIKE ALL (${wordArray}) OR e.summary ILIKE ALL (${wordArray}))`
+    : sql`(e.name ILIKE ${like} ESCAPE '\\' OR e.summary ILIKE ${like} ESCAPE '\\')`;
+  // Normalized phrase for the exact-match ranking bonus.
+  const phrase = opts.q.trim().toLowerCase().replace(/\s+/g, " ");
 
   // Each UNION branch has a different alias (m vs e) — build predicates
   // per-branch (a shared one referencing both aliases is invalid SQL).
@@ -136,11 +156,11 @@ export async function search(
   const res = await db.execute(sql`
     SELECT 'memory' AS kind, m.id, m.content AS text, m.type, m.importance, m.updated_at, n.name AS namespace
       FROM ${memories} m JOIN ${namespaces} n ON n.id = m.namespace_id
-      WHERE NOT m.archived AND m.content ILIKE ${like} ESCAPE '\\' ${memWhereSql}
+      WHERE NOT m.archived ${memWordFilter} ${memWhereSql}
     UNION ALL
     SELECT 'entity' AS kind, e.id, e.name AS text, e.type, e.importance, e.updated_at, n.name AS namespace
       FROM ${entities} e JOIN ${namespaces} n ON n.id = e.namespace_id
-      WHERE (e.name ILIKE ${like} ESCAPE '\\' OR e.summary ILIKE ${like} ESCAPE '\\') ${entWhereSql}
+      WHERE ${entWordFilter} ${entWhereSql}
     ORDER BY updated_at DESC
     LIMIT ${limit * 4}
   `);
@@ -154,7 +174,7 @@ export async function search(
     if (seen.has(key)) continue;
     seen.add(key);
     const text = String(row.text);
-    const score = matchScore(text, words);
+    const score = matchScore(text, words, phrase);
     hits.push({
       kind,
       id: String(row.id),
