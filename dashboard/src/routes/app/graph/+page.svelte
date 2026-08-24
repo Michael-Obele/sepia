@@ -338,24 +338,27 @@
 								<ChevronDown class="size-4" />
 							</Button>
 						</DropdownMenu.Trigger>
-						<DropdownMenu.Content align="start" class="max-h-80">
-							<DropdownMenu.Item onclick={() => (typeFilter = new Set())}>
+						<DropdownMenu.Content
+							align="start"
+							class="max-h-80 w-auto max-w-[min(92vw,22rem)] min-w-[var(--bits-dropdown-menu-anchor-width)]"
+						>
+							<DropdownMenu.Item onclick={() => (typeFilter = new Set())} class="whitespace-nowrap">
 								{#if typeFilter.size === 0}
-									<Check class="size-4" />
+									<Check class="size-4 shrink-0" />
 								{:else}
-									<span class="size-4"></span>
+									<span class="size-4 shrink-0"></span>
 								{/if}
-								All types
+								<span class="truncate">All types</span>
 							</DropdownMenu.Item>
 							<DropdownMenu.Separator />
 							{#each allTypes as type (type)}
-								<DropdownMenu.Item onclick={() => toggleType(type)}>
+								<DropdownMenu.Item onclick={() => toggleType(type)} class="whitespace-nowrap">
 									{#if typeFilter.has(type)}
-										<Check class="size-4" />
+										<Check class="size-4 shrink-0" />
 									{:else}
-										<span class="size-4"></span>
+										<span class="size-4 shrink-0"></span>
 									{/if}
-									{type}
+									<span class="min-w-0 flex-1 truncate" title={type}>{type}</span>
 								</DropdownMenu.Item>
 							{/each}
 						</DropdownMenu.Content>
