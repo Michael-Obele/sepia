@@ -114,7 +114,7 @@ Sepia's docs are the agents' only window into the server. When you add a feature
 4. `llms.txt` — full capability overview, served at /llms.txt. What agents fetch when they need the whole surface.
 5. `scripts/gen-skill-ref.ts` — run `bun run scripts/gen-skill-ref.ts` to regenerate `skills/sepia/references/tools.md` from the schemas.
 6. `scripts/smoke.ts` — cover the new surface (a feature without a smoke check is untested).
-7. Version — bump `DOCS_VERSION` in `packages/shared/src/types.ts` and run `bun run scripts/stamp-docs-version.ts` (stamps SKILL.md, always-on/\*, llms.txt, AGENTS.md).
+7. Version — bump `DOCS_VERSION` in `packages/shared/src/types.ts` and run `bun run scripts/stamp-docs-version.ts` (stamps the shared `sepia-docs-version` marker into always-on/*, llms.txt, AGENTS.md). NOTE: the `version:` frontmatter keys in SKILL.md / vscode / cursor are those files' OWN versions (managed by the skill system) — the stamp script never touches them.
 8. Installed copies — run `bash scripts/install-skill.sh` (block-marker sections update in place, never duplicate).
 9. Deploy — `fly deploy` so the served versions (/version, /llms.txt, /skill, /instructions/\*, MCP instructions) update for everyone.
 10. Check — `bun run scripts/check-docs-version.ts` after deploy to confirm installed copies are current.
