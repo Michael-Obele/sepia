@@ -11,7 +11,8 @@ export function registerSearchTools(server: McpServer<any, any>) {
       name: "search",
       description:
         "Unified keyword + metadata search across memories, entity names, and entity summaries. " +
-        "Input: q (required; empty string returns recent items), namespace?, type?, limit? (max 25). " +
+        "Input: q (required; empty string returns recent items), namespace?, type? (memory type OR entity type), tags? (match ALL), limit? (max 25). " +
+        "Multi-word q = AND-of-words (every word must appear, any order); exact-phrase matches rank first. " +
         "Ranked: exact word match > substring match, then importance, then recency. Returns merged, de-duplicated hits with kind (memory|entity), id, snippet, score.",
       schema: SearchToolInput,
     },

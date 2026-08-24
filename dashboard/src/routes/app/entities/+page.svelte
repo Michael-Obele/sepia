@@ -12,6 +12,7 @@
 	import EntityFormDialog from '$lib/components/entity-form-dialog.svelte';
 	import { page } from '$app/state';
 	import { Trash2 } from '@lucide/svelte';
+	import { ENTITY_TYPES } from '@sepia/shared';
 
 	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
 	let namespaceList = $state<string[]>([]);
@@ -142,7 +143,16 @@
 					<option value={n}>{n}</option>
 				{/each}
 			</select>
-			<Input bind:value={type} placeholder="Entity type (e.g. tool)" class="w-40" />
+			<select
+				bind:value={type}
+				class="h-9 w-40 rounded-md border border-input bg-background px-3 text-sm"
+				aria-label="Entity type filter"
+			>
+				<option value="">All types</option>
+				{#each ENTITY_TYPES as t}
+					<option value={t}>{t}</option>
+				{/each}
+			</select>
 			<Button variant="outline" onclick={load}>Apply</Button>
 		</CardContent>
 	</Card>
@@ -183,6 +193,17 @@
 										<span class="text-xs text-muted-foreground">{importancePct(e.importance)}%</span
 										>
 									</div>
+									{#if e.tags?.length}
+										<div class="mt-2 flex flex-wrap gap-1">
+											{#each e.tags as tag (tag)}
+												<span
+													class="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+												>
+													{tag}
+												</span>
+											{/each}
+										</div>
+									{/if}
 								</a>
 								<Button
 									variant="ghost"

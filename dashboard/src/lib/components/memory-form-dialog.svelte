@@ -29,6 +29,7 @@
 	let importance = $state(0.5);
 	let namespace = $state('personal');
 	let entityIds = $state<string[]>([]);
+	let tagsText = $state('');
 	let saving = $state(false);
 
 	let entityQuery = $state('');
@@ -43,6 +44,7 @@
 			importance = typeof memory?.importance === 'number' ? memory.importance : 0.5;
 			namespace = memory?.namespace ? String(memory.namespace) : (namespaces[0] ?? 'personal');
 			entityIds = memory?.entity_ids ? (memory.entity_ids as string[]) : [];
+			tagsText = Array.isArray(memory?.tags) ? (memory.tags as string[]).join(', ') : '';
 			entityQuery = '';
 			entityResults = [];
 		}
@@ -71,6 +73,13 @@
 		}
 	}
 
+	function parseTags(text: string): string[] {
+		return text
+			.split(',')
+			.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
+			.filter(Boolean);
+	}
+
 	async function save() {
 		if (!content.trim()) {
 			toast.error('Memory content is required');
@@ -78,17 +87,18 @@
 		}
 		saving = true;
 		try {
+			const tags = parseTags(tagsText);
 			if (memory?.id) {
 				await updateMemoryData([
 					auth.token,
 					String(memory.id),
-					{ content, type, importance, entity_ids: entityIds }
+					{ content, type, importance, entity_ids: entityIds, tags }
 				]);
 				toast.success('Memory updated');
 			} else {
 				await addMemory([
 					auth.token,
-					{ content, type, importance, namespace, entity_ids: entityIds }
+					{ content, type, importance, namespace, entity_ids: entityIds, tags }
 				]);
 				toast.success('Memory created');
 			}
@@ -149,6 +159,15 @@
 						{/each}
 					</select>
 				</div>
+			</div>
+
+			<div class="space-y-2">
+				<Label for="mem-tags">Tags</Label>
+				<Input
+					id="mem-tags"
+					bind:value={tagsText}
+					placeholder="comma-separated, e.g. user-experience, auth, performance"
+				/>
 			</div>
 
 			<div class="space-y-2">

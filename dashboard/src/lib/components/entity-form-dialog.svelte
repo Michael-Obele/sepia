@@ -8,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 	import { addEntity, updateEntityData } from '$lib/remote/index.js';
 	import { auth } from '$lib/auth.svelte';
+	import { ENTITY_TYPES } from '@sepia/shared';
 
 	let {
 		open = $bindable(false),
@@ -26,6 +27,7 @@
 	let summary = $state('');
 	let importance = $state(0.5);
 	let namespace = $state('personal');
+	let tagsText = $state('');
 	let saving = $state(false);
 
 	$effect(() => {
@@ -35,8 +37,16 @@
 			summary = entity?.summary ? String(entity.summary) : '';
 			importance = typeof entity?.importance === 'number' ? entity.importance : 0.5;
 			namespace = entity?.namespace ? String(entity.namespace) : (namespaces[0] ?? 'personal');
+			tagsText = Array.isArray(entity?.tags) ? (entity.tags as string[]).join(', ') : '';
 		}
 	});
+
+	function parseTags(text: string): string[] {
+		return text
+			.split(',')
+			.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
+			.filter(Boolean);
+	}
 
 	async function save() {
 		if (!name.trim() || !type.trim()) {
@@ -45,15 +55,16 @@
 		}
 		saving = true;
 		try {
+			const tags = parseTags(tagsText);
 			if (entity?.id) {
 				await updateEntityData([
 					auth.token,
 					String(entity.id),
-					{ name, type, summary, importance }
+					{ name, type, summary, importance, tags }
 				]);
 				toast.success('Entity updated');
 			} else {
-				await addEntity([auth.token, namespace, { name, type, summary, importance }]);
+				await addEntity([auth.token, namespace, { name, type, summary, importance, tags }]);
 				toast.success('Entity created');
 			}
 			open = false;
@@ -85,8 +96,16 @@
 
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<Label for="ent-type">Type</Label>
-					<Input id="ent-type" bind:value={type} placeholder="e.g. tool" />
+					<Label for="ent-type">Entity type</Label>
+					<select
+						id="ent-type"
+						bind:value={type}
+						class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+					>
+						{#each ENTITY_TYPES as t}
+							<option value={t}>{t}</option>
+						{/each}
+					</select>
 				</div>
 				<div class="space-y-2">
 					<Label for="ent-ns">Namespace</Label>
@@ -100,6 +119,15 @@
 						{/each}
 					</select>
 				</div>
+			</div>
+
+			<div class="space-y-2">
+				<Label for="ent-tags">Tags</Label>
+				<Input
+					id="ent-tags"
+					bind:value={tagsText}
+					placeholder="comma-separated, e.g. svelte, auth, performance"
+				/>
 			</div>
 
 			<div class="space-y-2">

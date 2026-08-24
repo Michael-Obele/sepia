@@ -124,8 +124,7 @@ check(
 );
 check(
   "instructions contract sent",
-  typeof init.instructions === "string" &&
-    init.instructions.includes("RULE 0"),
+  typeof init.instructions === "string" && init.instructions.includes("RULE 0"),
   `${init.instructions?.slice(0, 40)}…`,
 );
 check("tools capability advertised", Boolean(init.capabilities?.tools));
@@ -161,8 +160,9 @@ if (hasDb) {
         type: "project",
         summary: "test",
         importance: 0.8,
+        tags: ["smoke", "test"],
       },
-    })) as { entity: { id: string } };
+    })) as { entity: { id: string; type: string; tags: string[] } };
     const toolEntity = (await callTool("manage_entity", {
       action: "create",
       namespace: ns,
@@ -178,6 +178,38 @@ if (hasDb) {
       [project.entity.id, toolEntity.entity.id, person.entity.id]
         .join(",")
         .slice(0, 12) + "…",
+    );
+    check(
+      "entity tags stored",
+      Array.isArray(project.entity.tags) &&
+        project.entity.tags.includes("smoke"),
+      JSON.stringify(project.entity.tags),
+    );
+
+    // Type normalization: unknown type → concept + tag.
+    const weird = (await callTool("manage_entity", {
+      action: "create",
+      namespace: ns,
+      entity: { name: "Smoke Weird", type: "svelte-pattern" },
+    })) as { entity: { type: string; tags: string[] } };
+    check(
+      "entity type normalized (unknown → concept + tag)",
+      weird.entity.type === "concept" &&
+        Array.isArray(weird.entity.tags) &&
+        weird.entity.tags.includes("svelte-pattern"),
+      `${weird.entity.type} ${JSON.stringify(weird.entity.tags)}`,
+    );
+
+    // Batch update: reclassify all entities of a type in one call.
+    const batch = (await callTool("manage_entity", {
+      action: "batch_update",
+      where: { type: "concept", namespace: ns },
+      update: { type: "project", tags: ["reclassified"] },
+    })) as { count: number };
+    check(
+      "entity batch_update (reclassify concept → project)",
+      batch.count === 1,
+      `${batch.count} updated`,
     );
 
     await callTool("manage_relation", {
@@ -229,6 +261,7 @@ if (hasDb) {
         importance: 0.7,
         namespace: ns,
         entity_ids: [project.entity.id, toolEntity.entity.id],
+        tags: ["smoke", "cold-start"],
       },
     })) as { memory: { id: string } };
     ok("memory create (linked to 2 entities)");
@@ -261,6 +294,30 @@ if (hasDb) {
       "search AND-of-words (reversed order)",
       searchRes2.hits.length > 0,
       `${searchRes2.hits.length} hits`,
+    );
+
+    // Tag search: filter by tag across memories + entities.
+    const tagSearch = (await callTool("search", {
+      q: "",
+      namespace: ns,
+      tags: ["smoke"],
+    })) as { hits: unknown[] };
+    check(
+      "search by tag",
+      tagSearch.hits.length >= 2,
+      `${tagSearch.hits.length} hits`,
+    );
+
+    // Memory batch_update: reclassify by content match.
+    const memBatch = (await callTool("manage_memory", {
+      action: "batch_update",
+      where: { q: "cold starts", namespace: ns },
+      update: { type: "observation", tags: ["reclassified"] },
+    })) as { count: number };
+    check(
+      "memory batch_update (reclassify by q)",
+      memBatch.count === 1,
+      `${memBatch.count} updated`,
     );
 
     const trav = (await callTool("traverse_graph", {

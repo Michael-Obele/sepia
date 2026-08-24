@@ -15,6 +15,60 @@ export const MEMORY_TYPES = [
 ] as const;
 export type MemoryType = (typeof MEMORY_TYPES)[number];
 
+/** The five canonical entity types. */
+export const ENTITY_TYPES = [
+  "person",
+  "project",
+  "tool",
+  "concept",
+  "repo",
+] as const;
+export type EntityType = (typeof ENTITY_TYPES)[number];
+
+/**
+ * Normalize a free-form entity type to a canonical one. Case-insensitive
+ * match against the canonical list; anything unknown becomes `concept` with
+ * the original value preserved as a tag so no information is lost.
+ *
+ * Deliberately NO alias map — semantic reclassification (e.g. "project-migration"
+ * → project) is done via `manage_entity` action=batch_update, not hardcoded here.
+ */
+export function normalizeEntityType(
+  type: string,
+): { type: EntityType; tag?: string } {
+  const key = type.trim().toLowerCase();
+  if ((ENTITY_TYPES as readonly string[]).includes(key)) {
+    return { type: key as EntityType };
+  }
+  return { type: "concept", tag: key };
+}
+
+/** Upper bounds for tags. */
+export const MAX_TAGS = 10;
+export const TAG_MAX_LENGTH = 32;
+
+/**
+ * Normalize a tag list: lowercase, trim, spaces → dashes, dedupe, cap
+ * length + count. Empty/whitespace entries are dropped.
+ */
+export function normalizeTags(tags?: string[]): string[] {
+  if (!tags) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of tags) {
+    const t = raw
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .slice(0, TAG_MAX_LENGTH);
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+    if (out.length >= MAX_TAGS) break;
+  }
+  return out;
+}
+
 /** Importance is a 0-1 score; higher decays slower. */
 export const IMPORTANCE_MIN = 0;
 export const IMPORTANCE_MAX = 1;

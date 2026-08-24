@@ -1,13 +1,23 @@
 import type { Db } from "../client.ts";
 import { MemoryError } from "../errors.ts";
 import type { BatchItem } from "drizzle-orm/batch";
-import { and, desc, eq, getTableColumns, gte, inArray, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  ilike,
+  inArray,
+  sql,
+} from "drizzle-orm";
 import {
   entities,
   memories,
   memoryEntityLinks,
   namespaces,
 } from "../schema.ts";
+import { normalizeTags } from "../../types.ts";
 import { resolveNamespaceId } from "./util.ts";
 
 export interface MemoryCreate {
@@ -17,6 +27,7 @@ export interface MemoryCreate {
   namespace?: string;
   entity_ids?: string[];
   metadata?: Record<string, unknown>;
+  tags?: string[];
 }
 
 export interface MemoryUpdate {
@@ -27,6 +38,8 @@ export interface MemoryUpdate {
   archived?: boolean;
   /** If provided, REPLACES the entity link set. */
   entity_ids?: string[];
+  /** REPLACES the tag set. */
+  tags?: string[];
 }
 
 /** A full memory row as stored in the DB. */
@@ -71,6 +84,7 @@ export async function createMemory(
   const type = input.type ?? "fact";
   const importance = input.importance ?? 0.5;
   const metadata = input.metadata ?? {};
+  const tags = normalizeTags(input.tags);
 
   // db.batch() = memory + link inserts in ONE Neon HTTP call (atomic).
   const queries: BatchItem<"pg">[] = [
@@ -82,6 +96,7 @@ export async function createMemory(
       importance,
       source: source ?? null,
       metadata,
+      tags,
     }),
     ...(input.entity_ids ?? []).map((entityId) =>
       db.insert(memoryEntityLinks).values({ memoryId: id, entityId }),
@@ -135,6 +150,7 @@ export async function updateMemory(db: Db, id: string, update: MemoryUpdate) {
   if (update.importance !== undefined) sets.importance = update.importance;
   if (update.metadata !== undefined) sets.metadata = update.metadata;
   if (update.archived !== undefined) sets.archived = update.archived;
+  if (update.tags !== undefined) sets.tags = normalizeTags(update.tags);
 
   const queries: BatchItem<"pg">[] = [];
   if (Object.keys(sets).length > 0) {
@@ -201,6 +217,8 @@ export interface MemoryQueryFilters {
   namespace?: string;
   importance_min?: number;
   archived?: boolean;
+  /** match memories carrying ALL of these tags */
+  tags?: string[];
   limit?: number;
   offset?: number;
 }
@@ -218,6 +236,10 @@ export async function queryMemories(db: Db, filters: MemoryQueryFilters = {}) {
   if (filters.importance_min !== undefined) {
     conditions.push(gte(memories.importance, filters.importance_min));
   }
+  if (filters.tags !== undefined && filters.tags.length) {
+    const tagArray = sql`ARRAY[${sql.join(filters.tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+    conditions.push(sql`${memories.tags} @> ${tagArray}`);
+  }
   const limit = Math.min(filters.limit ?? 20, 10000);
   const offset = Math.max(filters.offset ?? 0, 0);
   return db
@@ -231,4 +253,76 @@ export async function queryMemories(db: Db, filters: MemoryQueryFilters = {}) {
     .orderBy(desc(memories.importance), desc(memories.updatedAt))
     .limit(limit)
     .offset(offset);
+}
+
+export interface MemoryWhere {
+  type?: "fact" | "observation" | "preference" | "instruction";
+  namespace?: string;
+  tags?: string[];
+  importance_min?: number;
+  q?: string;
+}
+
+/**
+ * Batch-update all memories matching `where` (at least one filter required).
+ * Returns the number of rows updated. `tags` in the update REPLACES the set.
+ */
+export async function batchUpdateMemories(
+  db: Db,
+  where: MemoryWhere,
+  update: MemoryUpdate,
+  limit = 100,
+): Promise<{ count: number }> {
+  const conditions = [];
+  if (where.type !== undefined) {
+    conditions.push(eq(memories.type, where.type));
+  }
+  if (where.namespace !== undefined) {
+    const nsId = await resolveNamespaceId(db, where.namespace);
+    conditions.push(eq(memories.namespaceId, nsId));
+  }
+  if (where.tags !== undefined && where.tags.length) {
+    const tagArray = sql`ARRAY[${sql.join(where.tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+    conditions.push(sql`${memories.tags} @> ${tagArray}`);
+  }
+  if (where.importance_min !== undefined) {
+    conditions.push(gte(memories.importance, where.importance_min));
+  }
+  if (where.q !== undefined) {
+    conditions.push(ilike(memories.content, `%${where.q}%`));
+  }
+  if (conditions.length === 0) {
+    throw new MemoryError(
+      "invalid_input",
+      "batch_update requires at least one where filter",
+    );
+  }
+
+  const sets: Partial<typeof memories.$inferInsert> = {};
+  if (update.content !== undefined) sets.content = update.content;
+  if (update.type !== undefined) sets.type = update.type;
+  if (update.importance !== undefined) sets.importance = update.importance;
+  if (update.metadata !== undefined) sets.metadata = update.metadata;
+  if (update.archived !== undefined) sets.archived = update.archived;
+  if (update.tags !== undefined) sets.tags = normalizeTags(update.tags);
+  if (Object.keys(sets).length === 0) {
+    throw new MemoryError(
+      "invalid_input",
+      "batch_update requires at least one update field",
+    );
+  }
+
+  const ids = await db
+    .select({ id: memories.id })
+    .from(memories)
+    .where(and(...conditions))
+    .limit(Math.min(limit, 500));
+  if (ids.length === 0) return { count: 0 };
+
+  const res = await db
+    .update(memories)
+    .set({ ...sets, updatedAt: sql`now()` })
+    .where(inArray(memories.id, ids.map((r) => r.id)))
+    .returning({ id: memories.id });
+  return { count: res.length };
 }

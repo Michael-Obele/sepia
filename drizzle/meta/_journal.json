@@ -29,6 +29,20 @@
       "when": 1787517013396,
       "tag": "0003_plain_captain_america",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1787559148997,
+      "tag": "0004_real_loki",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787559539699,
+      "tag": "0005_free_shockwave",
+      "breakpoints": true
     }
   ]
 }

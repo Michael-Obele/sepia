@@ -15,13 +15,14 @@ Actions: `create` | `list` | `get` | `delete`
 
 ## manage_entity
 
-Actions: `create` | `get` | `update` | `delete` | `find`
+Actions: `create` | `get` | `update` | `delete` | `find` | `batch_update`
 
-- `create`: entity { name (1-200), type (1-64), summary? (""), importance? (0-1, default 0.5), metadata? ({}) }
+- `create`: entity { name (1-200), type (1-64), summary? (""), importance? (0-1, default 0.5), metadata? ({}), tags? (string[], max 10) } — type auto-normalized to person|project|tool|concept|repo (unknown → concept + tag)
 - `get`: id (uuid) — returns entity + linked memories + in/out relations
-- `update`: id (uuid) + update { any subset of name/type/summary/importance/metadata }
+- `update`: id (uuid) + update { any subset of name/type/summary/importance/metadata/tags } — tags REPLACES the set
 - `delete`: id (uuid)
 - `find`: query (name to match, exact or substring) + type? (filter) + namespace? (default "personal") — up to 10 results
+- `batch_update`: where { type? / namespace? / query? } (at least one) + update { any subset } + batch_limit? (default 100, max 500) — updates ALL matching entities, returns count
 
 ## manage_relation
 
@@ -33,20 +34,23 @@ Actions: `create` | `delete` | `list`
 
 ## manage_memory
 
-Actions: `create` | `get` | `update` | `delete` | `query`
+Actions: `create` | `get` | `update` | `delete` | `query` | `batch_update`
 
-- `create`: memory { content (1-4000), type? (fact|observation|preference|instruction, default fact), importance? (0-1, default 0.5), namespace? (default "personal"), entity_ids? (uuid[], max 3), metadata? ({}) }
+- `create`: memory { content (1-4000), type? (fact|observation|preference|instruction, default fact), importance? (0-1, default 0.5), namespace? (default "personal"), entity_ids? (uuid[], max 3), metadata? ({}), tags? (string[], max 10) }
 - `get`: id (uuid) — includes entity links
-- `update`: id (uuid) + update { any subset of content/type/importance/metadata; entity_ids REPLACES the link set }
+- `update`: id (uuid) + update { any subset of content/type/importance/metadata/tags; entity_ids REPLACES the link set, tags REPLACES the tag set }
 - `delete`: id (uuid)
-- `query`: filters type? / namespace? (default "personal") / importance_min? (0-1) / archived? (default false); order importance DESC, updated_at DESC; limit default 20, max 50
+- `query`: filters type? / namespace? (default "personal") / importance_min? (0-1) / archived? (default false) / tags? (match ALL); order importance DESC, updated_at DESC; limit default 20, max 50
+- `batch_update`: where { type? / namespace? / tags? / importance_min? / q? } (at least one) + update { any subset } + batch_limit? (default 100, max 500) — updates ALL matching memories, returns count
 
 ## search
 
 - `q` (string, 0-200, required) — case-insensitive substring match over `memories.content`, `entities.name`, `entities.summary`; empty string returns recent items
 - `namespace`? (string) — scope the search
-- `type`? (fact|observation|preference|instruction) — filter memories by type
+- `type`? (string) — memory type (fact|observation|preference|instruction) OR entity type (person|project|tool|concept|repo)
+- `tags`? (string[]) — match memories/entities carrying ALL of these tags
 - `limit`? (1-25, default 10)
+- Multi-word `q` = AND-of-words (every word must appear, any order); exact-phrase matches rank first.
 - Returns merged, de-duplicated list with `kind` (memory|entity), id, snippet, score. Rank: exact word match > substring match, then importance DESC, then updated_at DESC. Empty `q` → recent items.
 
 ## traverse_graph

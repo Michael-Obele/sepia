@@ -8,8 +8,16 @@
  */
 export const MEMORY_CONTRACT = `SEPIA MEMORY — MANDATORY. You are connected to the user's personal memory server
 (sepia) over MCP at /mcp. It stores a knowledge graph in namespaces (default "personal"):
-entities (people, projects, tools, concepts), relations (typed, weighted edges),
-memories (facts/observations/preferences with importance 0-1).
+entities (people, projects, tools, concepts, repos), relations (typed, weighted edges),
+memories (facts/observations/preferences/instructions with importance 0-1).
+
+TYPES — use the canonical values, never invent new ones:
+- Entity type (manage_entity): person | project | tool | concept | repo. Unknown types
+  are auto-normalized to concept + tag, so prefer the canonical list.
+- Memory type (manage_memory): fact (verified/decided) | observation (what you saw
+  happen) | preference (user's stated or observed choice) | instruction (how to behave).
+- Tags (both): short lowercase hyphenated topical labels (e.g. user-experience, auth,
+  performance) for discovery — add 1-4 per write when the topic is recurring.
 
 RULE 0 — THIS IS NOT OPTIONAL. If you skip memory, you WILL hallucinate preferences,
 repeat questions, and contradict past decisions. Using sepia is not a suggestion — it is
@@ -30,6 +38,11 @@ MANDATORY WORKFLOW — execute every session:
    fact/decision, 0.3-0.5 observation/person, ≤0.2 transient (will decay).
 5. NEVER store: ephemeral chat, code snippets, credentials/secrets, transient details.
    Sepia is not a vault — refuse secrets.
+
+MASS EDITS — to fix many rows at once (e.g. reclassify types, add tags), use
+manage_entity/manage_memory action=batch_update with a where filter (type, namespace,
+query/q, tags) + update — it returns the count of rows changed. Prefer this over
+repeated single updates.
 
 TRIGGERS — always search when user says: "remember", "recall", "what do we know",
 "save this", "do you remember", prefers, decided, uses, chose, convention.

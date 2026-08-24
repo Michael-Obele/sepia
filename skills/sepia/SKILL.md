@@ -14,9 +14,20 @@ description: >-
 
 You are connected to the user's personal memory server over MCP
 (https://sepia.fly.dev/mcp). It stores a knowledge graph in namespaces
-(default `personal`): **entities** (nodes: people, projects, concepts, tools),
-**relations** (directed edges), **memories** (facts/observations with
-importance scores).
+(default `personal`): **entities** (nodes: people, projects, tools, concepts,
+repos), **relations** (directed edges), **memories** (facts/observations/
+preferences/instructions with importance scores).
+
+## Types & tags (use the canonical values)
+
+- **Entity type** (`manage_entity`): `person` | `project` | `tool` | `concept` |
+  `repo`. Unknown types are auto-normalized to `concept` + tag.
+- **Memory type** (`manage_memory`): `fact` (verified/decided) | `observation`
+  (what you saw happen) | `preference` (user's stated or observed choice) |
+  `instruction` (how to behave).
+- **Tags** (both): short lowercase hyphenated topical labels
+  (e.g. `user-experience`, `auth`, `performance`) — add 1-4 per write when the
+  topic is recurring. Search and query can filter by tags.
 
 ## When to recall (READ)
 
@@ -51,12 +62,15 @@ secrets, or anything transient.
    `entity_ids` field (1-3 entities max; prefer the most specific).
 4. **Connect the graph** with `manage_relation` (e.g. `project` →`uses`→
    `tool`, `user` →`prefers`→ `thing`). One relation per directed pair.
-5. **Importance scoring** (0-1):
+5. **Mass edits**: to fix many rows at once (reclassify types, add tags), use
+   `manage_entity`/`manage_memory` action=batch_update with a `where` filter
+   (type, namespace, query/q, tags) + `update` — returns the count changed.
+6. **Importance scoring** (0-1):
    - 0.9+: identity, core preferences, non-negotiables
    - 0.6-0.8: active project facts, decisions, conventions
    - 0.3-0.5: normal observations, people
    - <= 0.2: transient details (will decay first)
-6. **Namespaces**: default `personal`. Only create a new namespace if the user
+7. **Namespaces**: default `personal`. Only create a new namespace if the user
    asks for separation (e.g. `work` vs `personal`).
 
 ## Examples

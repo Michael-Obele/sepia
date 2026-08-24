@@ -278,6 +278,17 @@
 										<Badge variant="outline">archived</Badge>
 									{/if}
 								</div>
+								{#if m.tags?.length}
+									<div class="mt-2 flex flex-wrap gap-1">
+										{#each m.tags as tag (tag)}
+											<span
+												class="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+											>
+												{tag}
+											</span>
+										{/each}
+									</div>
+								{/if}
 							</a>
 							<div class="flex shrink-0 gap-1">
 								<Button

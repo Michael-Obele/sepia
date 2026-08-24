@@ -3,6 +3,7 @@ import * as v from "valibot";
 import { DEFAULT_NAMESPACE, EntityToolInput } from "@sepia/shared";
 import { db } from "../db.ts";
 import {
+  batchUpdateEntities,
   createEntity,
   deleteEntity,
   findEntities,
@@ -16,10 +17,12 @@ export function registerEntityTools(server: McpServer<any, any>) {
     {
       name: "manage_entity",
       description:
-        "Create, get, update, delete, or find entities — knowledge graph nodes (people, projects, concepts, tools). " +
-        "Actions: create (entity: {name, type, summary?, importance?, metadata?}) | get (id — includes linked memories and relations) | " +
-        "update (id + update: any subset of name/type/summary/importance/metadata) | delete (id — cascades relations, unlinks memories) | " +
-        "find (query, optional type + namespace — up to 10 matches).",
+        "Create, get, update, delete, find, or batch-update entities — knowledge graph nodes (people, projects, tools, concepts, repos). " +
+        "Type is normalized to one of: person, project, tool, concept, repo (unknown → concept + tag). " +
+        "Actions: create (entity: {name, type, summary?, importance?, metadata?, tags?}) | get (id — includes linked memories and relations) | " +
+        "update (id + update: any subset of name/type/summary/importance/metadata/tags) | delete (id — cascades relations, unlinks memories) | " +
+        "find (query, optional type + namespace — up to 10 matches) | " +
+        "batch_update (where: {type?, namespace?, query?} — at least one; update: any subset; batch_limit? max 500) — updates ALL matching entities, returns count.",
       schema: EntityToolInput,
     },
     safe(async (args: v.InferInput<typeof EntityToolInput>) => {
@@ -63,6 +66,19 @@ export function registerEntityTools(server: McpServer<any, any>) {
             args.type,
           );
           return { action: "find", count: entities.length, entities };
+        }
+        case "batch_update": {
+          if (!args.where) throw new Error("action=batch_update requires where");
+          if (!args.update) throw new Error("action=batch_update requires update");
+          return {
+            action: "batch_update",
+            ...(await batchUpdateEntities(
+              sql,
+              args.where,
+              args.update,
+              args.batch_limit,
+            )),
+          };
         }
       }
     }),

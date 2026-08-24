@@ -5,9 +5,11 @@ import {
   IMPORTANCE_MAX,
   IMPORTANCE_MIN,
   MAX_ENTITY_LINKS,
+  MAX_TAGS,
   MEMORY_TYPES,
   QUERY_LIMIT_MAX,
   SEARCH_LIMIT_MAX,
+  TAG_MAX_LENGTH,
   TRAVERSE_DEPTH_MAX,
 } from "./types.ts";
 
@@ -35,6 +37,12 @@ export const NamespaceInput = v.object({
   description: v.optional(v.string(), ""),
 });
 
+/** Tags: lowercase, trimmed, deduped, capped. */
+export const tagsSchema = v.pipe(
+  v.array(v.pipe(v.string(), v.maxLength(TAG_MAX_LENGTH))),
+  v.maxLength(MAX_TAGS),
+);
+
 /** Entity input for create. */
 export const EntityInput = v.object({
   name: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),
@@ -42,6 +50,7 @@ export const EntityInput = v.object({
   summary: v.optional(v.string(), ""),
   importance: v.optional(importanceSchema, DEFAULT_IMPORTANCE),
   metadata: v.optional(metadataSchema, {}),
+  tags: v.optional(tagsSchema, []),
 });
 
 /** Entity input for update — any subset of fields. */
@@ -51,6 +60,7 @@ export const EntityUpdateInput = v.object({
   summary: v.optional(v.string()),
   importance: v.optional(importanceSchema),
   metadata: v.optional(metadataSchema),
+  tags: v.optional(tagsSchema),
 });
 
 /** Relation input for create. */
@@ -72,9 +82,10 @@ export const MemoryInput = v.object({
     [],
   ),
   metadata: v.optional(metadataSchema, {}),
+  tags: v.optional(tagsSchema, []),
 });
 
-/** Memory update — content/type/importance/metadata/archived; entity_ids REPLACES the link set. */
+/** Memory update — content/type/importance/metadata/archived/tags; entity_ids REPLACES the link set. */
 export const MemoryUpdateInput = v.object({
   content: v.optional(v.pipe(v.string(), v.minLength(1), v.maxLength(4000))),
   type: v.optional(v.picklist(MEMORY_TYPES)),
@@ -84,6 +95,7 @@ export const MemoryUpdateInput = v.object({
   entity_ids: v.optional(
     v.pipe(v.array(uuidSchema), v.maxLength(MAX_ENTITY_LINKS)),
   ),
+  tags: v.optional(tagsSchema),
 });
 
 /** Unified search input. */
@@ -91,7 +103,11 @@ export const SearchInput = v.object({
   // Empty q is allowed — it returns recent items (see search tool docs).
   q: v.pipe(v.string(), v.maxLength(200)),
   namespace: v.optional(v.string()),
-  type: v.optional(v.picklist(MEMORY_TYPES)),
+  // Memory type (fact/observation/preference/instruction) OR entity type
+  // (person/project/tool/concept/repo) — search covers both axes.
+  type: v.optional(v.pipe(v.string(), v.maxLength(64))),
+  /** match memories/entities carrying ALL of these tags */
+  tags: v.optional(tagsSchema),
   limit: v.optional(
     v.pipe(v.number(), v.minValue(1), v.maxValue(SEARCH_LIMIT_MAX)),
     10,
@@ -135,6 +151,7 @@ export const EntityToolInput = v.object({
     v.literal("update"),
     v.literal("delete"),
     v.literal("find"),
+    v.literal("batch_update"),
   ]),
   namespace: v.optional(v.string(), DEFAULT_NAMESPACE),
   id: v.optional(uuidSchema),
@@ -144,6 +161,19 @@ export const EntityToolInput = v.object({
   query: v.optional(v.string()),
   /** find: optional type filter */
   type: v.optional(v.string()),
+  /** batch_update: update all entities matching these filters (at least one required) */
+  where: v.optional(
+    v.object({
+      type: v.optional(v.string()),
+      namespace: v.optional(v.string()),
+      query: v.optional(v.string()),
+    }),
+  ),
+  /** batch_update: max rows to touch (default 100, max 500) */
+  batch_limit: v.optional(
+    v.pipe(v.number(), v.minValue(1), v.maxValue(500)),
+    100,
+  ),
 });
 
 export const RelationToolInput = v.object({
@@ -166,6 +196,7 @@ export const MemoryToolInput = v.object({
     v.literal("update"),
     v.literal("delete"),
     v.literal("query"),
+    v.literal("batch_update"),
   ]),
   id: v.optional(uuidSchema),
   memory: v.optional(MemoryInput),
@@ -175,9 +206,26 @@ export const MemoryToolInput = v.object({
   namespace: v.optional(v.string(), DEFAULT_NAMESPACE),
   importance_min: v.optional(importanceSchema),
   archived: v.optional(v.boolean(), false),
+  /** query: match memories carrying ALL of these tags */
+  tags: v.optional(tagsSchema),
   limit: v.optional(
     v.pipe(v.number(), v.minValue(1), v.maxValue(QUERY_LIMIT_MAX)),
     20,
+  ),
+  /** batch_update: update all memories matching these filters (at least one required) */
+  where: v.optional(
+    v.object({
+      type: v.optional(v.picklist(MEMORY_TYPES)),
+      namespace: v.optional(v.string()),
+      tags: v.optional(tagsSchema),
+      importance_min: v.optional(importanceSchema),
+      q: v.optional(v.string()),
+    }),
+  ),
+  /** batch_update: max rows to touch (default 100, max 500) */
+  batch_limit: v.optional(
+    v.pipe(v.number(), v.minValue(1), v.maxValue(500)),
+    100,
   ),
 });
 

@@ -54,6 +54,7 @@ export const entities = pgTable(
     metadata: jsonb().default({}),
     importance: real().default(0.5),
     accessCount: integer("access_count").default(0),
+    tags: text("tags").array().default([]),
     createdAt: timestamp("created_at", {
       withTimezone: true,
       mode: "string",
@@ -83,12 +84,20 @@ export const entities = pgTable(
       "entities_importance_check",
       sql`${table.importance} >= 0 AND ${table.importance} <= 1`,
     ),
+    // New: type must be one of the five canonical entity types.
+    // (Added in migration 0005 — after existing data was normalized.)
+    check(
+      "entities_type_check",
+      sql`${table.type} IN ('person', 'project', 'tool', 'concept', 'repo')`,
+    ),
     // New: trigram indexes for ILIKE '%x%' name/summary search.
     index("idx_entities_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
     index("idx_entities_summary_trgm").using(
       "gin",
       table.summary.op("gin_trgm_ops"),
     ),
+    // New: GIN index for tag containment queries (tags @> ARRAY[...]).
+    index("idx_entities_tags").using("gin", table.tags),
     foreignKey({
       columns: [table.namespaceId],
       foreignColumns: [namespaces.id],
@@ -158,6 +167,7 @@ export const memories = pgTable(
     importance: real().default(0.5),
     source: text(),
     metadata: jsonb().default({}),
+    tags: text("tags").array().default([]),
     createdAt: timestamp("created_at", {
       withTimezone: true,
       mode: "string",
@@ -196,6 +206,8 @@ export const memories = pgTable(
       "gin",
       table.content.op("gin_trgm_ops"),
     ),
+    // New: GIN index for tag containment queries (tags @> ARRAY[...]).
+    index("idx_memories_tags").using("gin", table.tags),
     // New: partial index for the queryMemories hot path (importance DESC, updated_at DESC).
     index("idx_memories_active")
       .on(

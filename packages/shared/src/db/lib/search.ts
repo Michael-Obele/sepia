@@ -1,12 +1,15 @@
 import type { Db } from "../client.ts";
 import { SEARCH_LIMIT_MAX } from "../../types.ts";
-import { desc, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { entities, memories, namespaces } from "../schema.ts";
+import { resolveNamespaceId } from "./util.ts";
 
 export interface SearchOptions {
   q: string;
   namespace?: string;
   type?: string;
+  /** match memories/entities carrying ALL of these tags */
+  tags?: string[];
   limit?: number;
 }
 
@@ -65,6 +68,20 @@ export async function search(
   const limit = Math.min(opts.limit ?? 10, SEARCH_LIMIT_MAX);
 
   if (!opts.q.trim()) {
+    // Recent-items path: still honor namespace + tags filters so tag-only
+    // searches work (e.g. q="" + tags=["user-experience"]).
+    const memConditions = [eq(memories.archived, false)];
+    const entConditions: SQL[] = [];
+    if (opts.namespace !== undefined) {
+      const nsId = await resolveNamespaceId(db, opts.namespace);
+      memConditions.push(eq(memories.namespaceId, nsId));
+      entConditions.push(eq(entities.namespaceId, nsId));
+    }
+    if (opts.tags !== undefined && opts.tags.length) {
+      const tagArray = sql`ARRAY[${sql.join(opts.tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+      memConditions.push(sql`${memories.tags} @> ${tagArray}`);
+      entConditions.push(sql`${entities.tags} @> ${tagArray}`);
+    }
     const [memoriesRows, entitiesRows] = await Promise.all([
       db
         .select({
@@ -73,7 +90,7 @@ export async function search(
         })
         .from(memories)
         .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
-        .where(eq(memories.archived, false))
+        .where(and(...memConditions))
         .orderBy(desc(memories.updatedAt))
         .limit(limit),
       db
@@ -83,6 +100,7 @@ export async function search(
         })
         .from(entities)
         .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
+        .where(entConditions.length ? and(...entConditions) : undefined)
         .orderBy(desc(entities.updatedAt))
         .limit(limit),
     ]);
@@ -145,6 +163,11 @@ export async function search(
   if (opts.type !== undefined) {
     memWhere.push(sql`m.type = ${opts.type}`);
     entWhere.push(sql`e.type = ${opts.type}`);
+  }
+  if (opts.tags !== undefined && opts.tags.length) {
+    const tagArray = sql`ARRAY[${sql.join(opts.tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+    memWhere.push(sql`m.tags @> ${tagArray}`);
+    entWhere.push(sql`e.tags @> ${tagArray}`);
   }
   const memWhereSql = memWhere.length
     ? sql`AND ${sql.join(memWhere, sql` AND `)}`

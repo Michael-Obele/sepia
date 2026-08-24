@@ -3,6 +3,7 @@ import * as v from "valibot";
 import { MemoryToolInput } from "@sepia/shared";
 import { db } from "../db.ts";
 import {
+  batchUpdateMemories,
   createMemory,
   deleteMemory,
   getMemory,
@@ -16,10 +17,11 @@ export function registerMemoryTools(server: McpServer<any, any>) {
     {
       name: "manage_memory",
       description:
-        "Create, get, update, delete, or query memories — knowledge fragments (facts, observations, preferences, instructions) with importance scoring. " +
-        "Actions: create (memory: {content, type?, importance?, namespace?, entity_ids? [0-3], metadata?} — source auto-set to client name) | " +
-        "get (id — includes linked entities) | update (id + update — entity_ids REPLACES the link set) | " +
-        "delete (id) | query (filters: type, namespace, importance_min, archived; ordered importance DESC, updated_at DESC; limit max 50).",
+        "Create, get, update, delete, query, or batch-update memories — knowledge fragments (facts, observations, preferences, instructions) with importance scoring and optional tags. " +
+        "Actions: create (memory: {content, type?, importance?, namespace?, entity_ids? [0-3], metadata?, tags?} — source auto-set to client name) | " +
+        "get (id — includes linked entities) | update (id + update — entity_ids REPLACES the link set, tags REPLACES the tag set) | " +
+        "delete (id) | query (filters: type, namespace, importance_min, archived, tags; ordered importance DESC, updated_at DESC; limit max 50) | " +
+        "batch_update (where: {type?, namespace?, tags?, importance_min?, q?} — at least one; update: any subset; batch_limit? max 500) — updates ALL matching memories, returns count.",
       schema: MemoryToolInput,
     },
     safe(async (args: v.InferInput<typeof MemoryToolInput>) => {
@@ -59,9 +61,23 @@ export function registerMemoryTools(server: McpServer<any, any>) {
             namespace: args.namespace,
             importance_min: args.importance_min,
             archived: args.archived,
+            tags: args.tags,
             limit: args.limit,
           });
           return { action: "query", count: memories.length, memories };
+        }
+        case "batch_update": {
+          if (!args.where) throw new Error("action=batch_update requires where");
+          if (!args.update) throw new Error("action=batch_update requires update");
+          return {
+            action: "batch_update",
+            ...(await batchUpdateMemories(
+              sql,
+              args.where,
+              args.update,
+              args.batch_limit,
+            )),
+          };
         }
       }
     }),

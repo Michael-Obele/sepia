@@ -1,0 +1,1 @@
+ALTER TABLE "entities" ADD CONSTRAINT "entities_type_check" CHECK ("entities"."type" IN ('person', 'project', 'tool', 'concept', 'repo'));
