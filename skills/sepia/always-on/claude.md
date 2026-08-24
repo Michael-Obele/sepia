@@ -15,6 +15,15 @@ You are connected to the user's personal Sepia memory server (sepia) over MCP (`
 4. **Importance 0-1:** 0.9+ identity/core pref, 0.6-0.8 project fact/decision, 0.3-0.5 observation, ≤0.2 transient.
 5. **Never store:** ephemeral chat, code snippets, credentials/secrets.
 
-For full tool schemas, load the `sepia` skill (`SKILL.md`). See also `src/instructions.ts` (source of truth).
+### Conversation migration (handoff digests)
+
+When the user says **"save this conversation"**, **"hand off to another AI"**, **"migrate my context"**, or switches assistants mid-task, use `manage_memory` action=ingest with a `conversation` payload. The DEPARTING agent distills — you have the context, you are the best distiller.
+
+- Payload: `summary` (≤4000, structured markdown), `conversation_id` (groups digests of one conversation), `title` (human-readable — how you tell them apart), `status` (active|paused|done), `decisions`/`preferences`/`instructions`/`observations`/`open_questions` (keep evidence VERBATIM — exact errors, paths, IDs), `entities` (find-or-create), `source` {ai, ref}, optional `transcript` (only if the raw log exists).
+- The server atomically creates: digest (tag `conversation`, importance 0.85, protected from consolidation) + typed constituents + entities. One digest per major topic, same `conversation_id` groups them.
+- **Resume**: `search` q="" tags=["conversation"] → prefer status=active → read the digest → pull constituents via `query` tags (decision, open-question, …).
+- **Mark done**: `manage_memory` action=update on the digest with `metadata: {...existing, status: "done"}` (metadata REPLACES — get first, then merge).
+
+This file has the essentials; for full tool schemas and examples, load the `sepia` skill (`SKILL.md`) if available. See also `src/instructions.ts` (source of truth).
 
 <!-- Source of truth: src/instructions.ts (MEMORY_CONTRACT). Keep in sync. -->
