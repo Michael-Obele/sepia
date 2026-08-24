@@ -144,59 +144,97 @@
 	</div>
 
 	<Card>
-		<CardHeader>
+		<CardHeader class="pb-3">
 			<CardTitle class="flex items-center gap-2 text-base">
 				<SlidersHorizontal class="size-4" /> Filters
 			</CardTitle>
+			<p class="text-sm text-muted-foreground">Refine by text, type, namespace and importance.</p>
 		</CardHeader>
-		<CardContent class="flex flex-wrap items-end gap-3">
-			<div class="relative min-w-48 flex-1">
-				<Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+		<CardContent class="space-y-4">
+			<!-- Search row -->
+			<div class="relative">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
 				<Input
 					bind:value={q}
 					placeholder="Filter by text…"
-					class="pl-9"
+					class="w-full pl-9"
 					onkeydown={(e) => {
 						if (e.key === 'Enter') load();
 					}}
 				/>
 			</div>
-			<select
-				bind:value={type}
-				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
-				aria-label="Type filter"
-			>
-				<option value="all">All types</option>
-				{#each MEMORY_TYPES as t}
-					<option value={t}>{t}</option>
-				{/each}
-			</select>
-			<select
-				bind:value={namespace}
-				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
-				aria-label="Namespace filter"
-			>
-				<option value="all">All namespaces</option>
-				{#each namespaceList as n}
-					<option value={n}>{n}</option>
-				{/each}
-			</select>
-			<select
-				bind:value={minImportance}
-				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
-				aria-label="Minimum importance"
-			>
-				<option value={0}>Any importance</option>
-				<option value={0.3}>≥ 30%</option>
-				<option value={0.5}>≥ 50%</option>
-				<option value={0.7}>≥ 70%</option>
-				<option value={0.9}>≥ 90%</option>
-			</select>
-			<label class="flex items-center gap-2 text-sm">
-				<Switch bind:checked={archived} />
-				Show archived
-			</label>
-			<Button variant="outline" onclick={load}>Apply</Button>
+			<!-- Controls row: fixed-width selects + actions -->
+			<div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+				<div class="flex flex-wrap items-end gap-3">
+					<div class="flex min-w-0 flex-col gap-1.5">
+						<label for="filter-type" class="text-xs font-medium text-muted-foreground">Type</label>
+						<select
+							id="filter-type"
+							bind:value={type}
+							class="h-9 w-full min-w-[160px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							aria-label="Type filter"
+						>
+							<option value="all">All types</option>
+							{#each MEMORY_TYPES as t}
+								<option value={t}>{t}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex min-w-0 flex-col gap-1.5">
+						<label for="filter-ns" class="text-xs font-medium text-muted-foreground"
+							>Namespace</label
+						>
+						<select
+							id="filter-ns"
+							bind:value={namespace}
+							class="h-9 w-full min-w-[180px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							aria-label="Namespace filter"
+						>
+							<option value="all">All namespaces</option>
+							{#each namespaceList as n}
+								<option value={n}>{n}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex min-w-0 flex-col gap-1.5">
+						<label for="filter-imp" class="text-xs font-medium text-muted-foreground"
+							>Importance</label
+						>
+						<select
+							id="filter-imp"
+							bind:value={minImportance}
+							class="h-9 w-full min-w-[160px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							aria-label="Minimum importance"
+						>
+							<option value={0}>Any importance</option>
+							<option value={0.3}>≥ 30%</option>
+							<option value={0.5}>≥ 50%</option>
+							<option value={0.7}>≥ 70%</option>
+							<option value={0.9}>≥ 90%</option>
+						</select>
+					</div>
+				</div>
+				<div class="flex flex-wrap items-center gap-3 xl:justify-end">
+					<label
+						for="filter-archived"
+						class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-colors has-[[data-state=checked]]:bg-muted"
+					>
+						<Switch id="filter-archived" bind:checked={archived} />
+						<span>Show archived</span>
+					</label>
+					<Button
+						variant="default"
+						onclick={load}
+						class="h-9 shrink-0 px-5 font-medium shadow-xs"
+						aria-label="Apply filters"
+					>
+						<Search class="size-4" />
+						Apply
+					</Button>
+				</div>
+			</div>
 		</CardContent>
 	</Card>
 
