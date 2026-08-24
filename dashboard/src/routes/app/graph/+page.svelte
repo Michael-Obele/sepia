@@ -326,7 +326,7 @@
 
 			{#if mode === 'full' && allTypes.length > 0}
 				<div class="space-y-1">
-					<span class="text-xs text-muted-foreground">Filter by type</span>
+					<span class="text-xs text-muted-foreground">Filter by entity type</span>
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger>
 							<Button variant="outline" class="gap-2">

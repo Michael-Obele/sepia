@@ -169,12 +169,14 @@
 			<div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
 				<div class="flex flex-wrap items-end gap-3">
 					<div class="flex min-w-0 flex-col gap-1.5">
-						<label for="filter-type" class="text-xs font-medium text-muted-foreground">Type</label>
+						<label for="filter-type" class="text-xs font-medium text-muted-foreground"
+							>Memory type</label
+						>
 						<select
 							id="filter-type"
 							bind:value={type}
 							class="h-9 w-full min-w-[160px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
-							aria-label="Type filter"
+							aria-label="Memory type filter"
 						>
 							<option value="all">All types</option>
 							{#each MEMORY_TYPES as t}

@@ -126,7 +126,7 @@
 
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
-					<Label for="mem-type">Type</Label>
+					<Label for="mem-type">Memory type</Label>
 					<select
 						id="mem-type"
 						bind:value={type}

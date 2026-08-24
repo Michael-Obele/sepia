@@ -142,7 +142,7 @@
 					<option value={n}>{n}</option>
 				{/each}
 			</select>
-			<Input bind:value={type} placeholder="Type (e.g. tool)" class="w-40" />
+			<Input bind:value={type} placeholder="Entity type (e.g. tool)" class="w-40" />
 			<Button variant="outline" onclick={load}>Apply</Button>
 		</CardContent>
 	</Card>
@@ -180,7 +180,8 @@
 									</p>
 									<div class="mt-2 flex flex-wrap items-center gap-2">
 										<Badge class={entityTypeBadge(e.type)}>{e.type}</Badge>
-										<span class="text-xs text-muted-foreground">{importancePct(e.importance)}%</span>
+										<span class="text-xs text-muted-foreground">{importancePct(e.importance)}%</span
+										>
 									</div>
 								</a>
 								<Button
