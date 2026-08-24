@@ -73,6 +73,45 @@ secrets, or anything transient.
 7. **Namespaces**: default `personal`. Only create a new namespace if the user
    asks for separation (e.g. `work` vs `personal`).
 
+## Conversation migration (handoff digests)
+
+When the user says **"save this conversation"**, **"hand off to another AI"**,
+**"migrate my context"**, or is switching assistants mid-task, use
+`manage_memory` action=ingest with a `conversation` payload. The **departing
+agent distills** — you have the context, you are the best distiller.
+
+The server atomically saves a bundle: a **digest** (entry point, auto-tagged
+`conversation`, importance 0.85, protected from consolidation) + **constituent
+memories** (the evidence) + **entities** (find-or-create).
+
+Rules:
+
+1. **One digest per major topic**, all grouped by the same `conversation_id`.
+   Multiple digests = one conversation. Search `q=""` + `tags=["conversation"]`
+   lists them all.
+2. **Always give a human-readable `title`** (e.g. "Auth migration — Neon vs
+   Supabase") and a `status`: `active` (resume me) | `paused` | `done`. This is
+   how conversations are told apart when resuming — never skip it.
+3. **`summary` ≤4000 chars** — context, decisions, open questions, pointers.
+   Anti-dump: if it doesn't fit, split into more digests — never pad.
+4. **Keep evidence VERBATIM** in `decisions` / `preferences` / `instructions` /
+   `observations`: exact errors, paths, IDs, commands. Never soften them.
+5. **`transcript` is optional** — only if the raw log actually exists (online
+   chat models may not expose one). `source.ref` (session path or share URL)
+   is the primary fidelity pointer.
+6. **`open_questions`** become observation memories tagged `open-question` —
+   the next agent's starting point.
+
+When the user says **"load my context"** / **"continue from my last
+conversation"** / **"what did we do last session"**: `search` with
+`q=""` + `tags=["conversation"]` first, read the digest, then pull
+constituents via `query` (tags) or the digest's entity links.
+
+**Resume flow**: prefer the digest with `status=active` (or the most recent).
+When a conversation is finished, update its digest `metadata.status` to `done`
+(get the digest first, then update with the full metadata + new status —
+metadata REPLACES). When resuming a paused one, set it back to `active`.
+
 ## Examples
 
 - User says "we went with Bun for the server because cold start matters"

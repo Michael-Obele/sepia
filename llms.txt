@@ -1,0 +1,61 @@
+# Sepia — MCP Memory Server
+
+> Sepia is a personal knowledge-graph memory server for AI assistants, exposed over Model Context Protocol (MCP) at `https://sepia.fly.dev/mcp`. It stores **entities** (people, projects, tools, concepts, repos), **relations** (typed, weighted edges), and **memories** (facts, observations, preferences, instructions with importance 0-1) in namespaces. It also ingests **conversation handoff digests** so context survives migration between AIs. Read this file to learn everything the server can do — then follow the links for full detail.
+
+## What Sepia is for
+
+Sepia gives an AI assistant durable memory across sessions, tools, and editors. Instead of re-asking the user or hallucinating, the assistant recalls what it already knows, persists what it learns, and hands off context when the user switches assistants. The server is stateless between calls — everything lives in Postgres (Neon), so it survives scale-to-zero.
+
+Key concepts:
+
+- **Entities** — graph nodes. Five canonical types: `person`, `project`, `tool`, `concept`, `repo`. Unknown types auto-normalize to `concept` with the original value preserved as a tag. Entities have a name, summary, importance, metadata, and up to 10 tags.
+- **Relations** — directed, weighted edges between entities (e.g. `project —uses→ tool`). On duplicate (source, target, relation_type) the weight is updated, not erroring.
+- **Memories** — knowledge fragments. Four types: `fact` (verified/decided), `observation` (what you saw happen), `preference` (user's stated or observed choice), `instruction` (how to behave). Each has content (≤4000 chars), importance (0-1), optional entity links (0-3), metadata, and tags.
+- **Namespaces** — isolated containers (default `personal`). Create more only when the user asks for separation.
+- **Tags** — short lowercase hyphenated topical labels (e.g. `auth`, `user-experience`) on both entities and memories. Search and query filter by tags (ALL match). GIN-indexed.
+- **Consolidation** — an idempotent maintenance sweep: archives stale memories (importance < 0.3, untouched 90 days), de-duplicates exact content, purges archived rows older than 30 days. Conversation digests are exempt from stale archiving.
+
+## The 7 MCP tools
+
+All tools are registered on the MCP server at `/mcp`. Every `manage_*` tool uses an `action` enum to keep the surface small.
+
+1. **`manage_namespace`** — actions: `create` | `list` | `get` | `delete`. Namespaces isolate knowledge (e.g. `work` vs `personal`).
+2. **`manage_entity`** — actions: `create` | `get` | `update` | `delete` | `find` | `batch_update`. Entities are graph nodes; `find` matches by name (exact or substring); `batch_update` mass-edits rows matching a `where` filter (type, namespace, query) with a `batch_limit` (max 500).
+3. **`manage_relation`** — actions: `create` | `delete` | `list`. Typed, weighted edges; `list` by entity (in + out) or namespace.
+4. **`manage_memory`** — actions: `create` | `get` | `update` | `delete` | `query` | `batch_update` | **`ingest`**. Memories are knowledge fragments; `query` filters by type/namespace/importance_min/archived/tags, ordered importance DESC then updated_at DESC; `batch_update` mass-edits with a `where` filter (type, namespace, tags, importance_min, q).
+5. **`search`** — unified keyword search over `memories.content`, `entities.name`, `entities.summary`. Case-insensitive substring matching, ranked: exact word match > substring, then importance, then recency. Multi-word queries are AND-of-words. Empty `q` returns recent items (honors namespace + tags filters — so `q=""` + `tags=["conversation"]` lists all conversation digests). Returns merged, de-duplicated hits with `kind` (memory|entity), id, snippet, score.
+6. **`traverse_graph`** — BFS walk from a start entity (depth 1-3), returns nodes + edges in the neighborhood.
+7. **`consolidate`** — no args. Runs the maintenance sweep; returns counts of archived/purged rows.
+
+## Conversation migration (handoff digests) — `manage_memory` action=ingest
+
+When the user switches between AI assistants mid-task ("save this conversation", "hand off to another AI", "migrate my context"), the **departing agent** distills the conversation into a structured payload and calls `manage_memory` with `action: "ingest"` and a `conversation` object. The server atomically saves a bundle in one transaction:
+
+- **Digest memory** — the entry point: structured markdown summary (≤4000 chars), type `fact`, importance 0.85 (consolidation never touches it), auto-tagged `conversation`, metadata `{kind: "conversation", conversation_id, title?, status, source_ai, source_ref, transcript?}`.
+- **Constituent memories** — the evidence, each a regular memory with `metadata.conversation_id` linking back: `decisions` → fact (tagged `decision`), `preferences` → preference (tagged `preference`), `instructions` → instruction (tagged `instruction`), `observations` → observation (tagged `observation`), `open_questions` → observation (tagged `open-question`).
+- **Entities** — find-or-create by name in the namespace; digest and constituents link to up to 3.
+
+Rules the distilling agent must follow:
+
+- **One digest per major topic**, all grouped by the same `conversation_id`. Multiple digests = one conversation.
+- **Always give a human-readable `title`** (e.g. "Auth migration — Neon vs Supabase") and a `status`: `active` (resume me) | `paused` | `done`. This is how conversations are told apart when resuming — never skip it.
+- **Keep evidence verbatim** — exact errors, paths, IDs, commands in the constituent arrays. Never soften them; summaries lose fidelity.
+- **`transcript` is optional** — only include it if the raw log actually exists (online chat models may not expose one). The `source.ref` pointer (session log path or share URL) is the primary fidelity mechanism.
+- **Retrieval**: "list my conversations" → `search` with `q=""` + `tags=["conversation"]`. "Continue from my last conversation" → prefer the digest with `status=active` (or the most recent), read it, then pull constituents via `query` (tags or metadata) or the digest's entity links.
+- **Resume flow**: when a conversation is finished, update its digest `metadata.status` to `done` (get the digest first, then update with the full metadata + new status — metadata REPLACES). When resuming a paused one, set it back to `active`.
+
+## How to connect
+
+- **MCP endpoint**: `https://sepia.fly.dev/mcp` (Streamable HTTP). Auth: OAuth 2.1 when enabled, else `Authorization: Bearer <MCP_BEARER_TOKEN>`.
+- **REST API**: `/api/*` — thin JSON wrapper over the same business logic (namespaces, entities, memories, relations, search, graph, consolidate, stats, conversations).
+- **Agent Skill**: installable via `npx skills add https://sepia.fly.dev/skill` — the full usage contract with examples.
+- **Always-on instructions**: `/instructions/vscode`, `/instructions/cursor`, `/instructions/claude`, `/instructions/agents`, `/instructions/opencode`, `/instructions/zed` — injected into every session by the editor's instruction system.
+- **Remote installer**: `curl -fsSL https://sepia.fly.dev/install | bash`.
+- **Health**: `/healthz`.
+
+## Optional
+
+- [Tool reference (full schemas + examples)](https://sepia.fly.dev/skill/references/tools.md)
+- [Agent Skill (SKILL.md)](https://sepia.fly.dev/skill)
+- [Project repository](https://github.com/Michael-Obele/sepia)
+- [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)

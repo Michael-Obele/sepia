@@ -34,7 +34,7 @@ Actions: `create` | `delete` | `list`
 
 ## manage_memory
 
-Actions: `create` | `get` | `update` | `delete` | `query` | `batch_update`
+Actions: `create` | `get` | `update` | `delete` | `query` | `batch_update` | `ingest`
 
 - `create`: memory { content (1-4000), type? (fact|observation|preference|instruction, default fact), importance? (0-1, default 0.5), namespace? (default "personal"), entity_ids? (uuid[], max 3), metadata? ({}), tags? (string[], max 10) }
 - `get`: id (uuid) — includes entity links
@@ -42,6 +42,7 @@ Actions: `create` | `get` | `update` | `delete` | `query` | `batch_update`
 - `delete`: id (uuid)
 - `query`: filters type? / namespace? (default "personal") / importance_min? (0-1) / archived? (default false) / tags? (match ALL); order importance DESC, updated_at DESC; limit default 20, max 50
 - `batch_update`: where { type? / namespace? / tags? / importance_min? / q? } (at least one) + update { any subset } + batch_limit? (default 100, max 500) — updates ALL matching memories, returns count
+- `ingest`: conversation { summary (1-4000), conversation_id (1-200), title? (1-200, human-readable name — how conversations are told apart when resuming), status? (active|paused|done, default active), decisions? / preferences? / instructions? / observations? / open_questions? (string[], each ≤4000), entities? [{name, type, summary?}], source? {ai, ref?}, transcript? (≤100k, optional — only if the raw log exists), namespace?, tags? } — atomically saves a distilled conversation: digest memory (tag `conversation`, importance 0.85, metadata.kind=conversation + title/status, protected from consolidation) + constituent memories (decisions→fact, preferences→preference, instructions→instruction, observations→observation, open_questions→observation tagged `open-question`, all with metadata.conversation_id) + entities (find-or-create). One digest per major topic, same conversation_id groups them. Use when the user says 'save this conversation' or switches AIs mid-task. Resume: prefer status=active; mark done by updating digest metadata.status (metadata REPLACES — get first).
 
 ## search
 
