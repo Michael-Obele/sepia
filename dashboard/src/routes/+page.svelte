@@ -18,6 +18,7 @@
 		Gauge,
 		Download,
 		ShieldCheck,
+		Code,
 		KeyRound
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -224,7 +225,7 @@
 </section>
 
 <!-- Trust strip -->
-<section class="border-y border-border/50 bg-card/30">
+<section class="border-y border-border/50">
 	<div
 		class="mx-auto flex max-w-6xl flex-wrap items-center justify-center gap-x-8 gap-y-3 px-4 py-5 text-sm text-muted-foreground"
 	>
@@ -234,6 +235,7 @@
 			rel="noopener"
 			class="flex items-center gap-2 transition-colors hover:text-foreground"
 		>
+			<Code class="size-4 text-brand" />
 			Open source on GitHub
 		</a>
 		<span class="flex items-center gap-2">
