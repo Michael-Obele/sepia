@@ -1,5 +1,7 @@
 # Sepia — Memory MCP Server
 
+[![License: AGPL-3.0](https://img.shields.io/github/license/Michael-Obele/sepia)](LICENSE)
+
 > **7 tools. 1 purpose: remember everything so your AI doesn't forget — and never needs to be reminded.**
 
 A personal, self-hosted **remote knowledge-graph memory server for AI coding agents** — a drop-in upgrade from the official local-file memory MCP server, with:
@@ -327,6 +329,16 @@ Restart your editor to pick it up. Claude Code users can also invoke the skill o
 | Neon Postgres free tier                     | **$0** (0.5 GB, 100 CU-hours — fine for ~10K memories) |
 | Domains                                     | $0–12/yr                                               |
 | **Total**                                   | **$0/mo** (always-on variant: ~$1–3/mo)                |
+
+## License
+
+[AGPL-3.0](LICENSE) — GNU Affero General Public License v3.0. Copyright © 2026 Michael Obele.
+
+**Self-host free.** You may run, modify, and redistribute Sepia for any purpose — personal or commercial — as long as modified versions offered as a network service publish their source under AGPL-3.0 (section 13).
+
+**Hosted service (optional, paid).** The maintainers run a hosted, multi-account instance of Sepia on shared infrastructure (always-on availability, multiple machines for uptime and speed). Using that hosted service is a separate paid offering that covers the always-on infrastructure cost — the AGPL does not require hosted services to be free. Self-hosting remains free forever.
+
+**Contributions.** By submitting a pull request, you agree that your contributions are licensed under AGPL-3.0-or-later, so the project can keep this license (and dual-license later if needed).
 
 ## Security & Privacy
 
