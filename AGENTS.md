@@ -104,7 +104,26 @@ bun --hot ./index.ts
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
 
+## Sepia docs — keep in sync when adding features
+
+Sepia's docs are the agents' only window into the server. When you add a feature (new tool, action, field, endpoint, or behavior change), update ALL of these before calling it done:
+
+1. `src/instructions.ts` (MEMORY_CONTRACT) — the MCP `instructions` field, injected fresh every session. THE source of truth.
+2. `skills/sepia/SKILL.md` — the on-demand agent skill.
+3. `skills/sepia/always-on/*` (vscode, claude, cursor, agents, opencode, zed) — always-on essentials. Keep them minimal + stable: new depth goes in llms.txt / SKILL.md, not here.
+4. `llms.txt` — full capability overview, served at /llms.txt. What agents fetch when they need the whole surface.
+5. `scripts/gen-skill-ref.ts` — run `bun run scripts/gen-skill-ref.ts` to regenerate `skills/sepia/references/tools.md` from the schemas.
+6. `scripts/smoke.ts` — cover the new surface (a feature without a smoke check is untested).
+7. Version — bump `DOCS_VERSION` in `packages/shared/src/types.ts` and run `bun run scripts/stamp-docs-version.ts` (stamps SKILL.md, always-on/*, llms.txt, AGENTS.md).
+8. Installed copies — run `bash scripts/install-skill.sh` (block-marker sections update in place, never duplicate).
+9. Deploy — `fly deploy` so the served versions (/version, /llms.txt, /skill, /instructions/*, MCP instructions) update for everyone.
+10. Check — `bun run scripts/check-docs-version.ts` after deploy to confirm installed copies are current.
+
+Rule: no feature is done until its docs are updated. Check the diff of every always-on file before committing.
+
+<!-- sepia:start -->
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
+<!-- sepia-docs-version: 1.0.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (any `AGENTS.md`-aware agent: Codex, OpenCode, Copilot, Cursor, Zed). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
@@ -133,18 +152,4 @@ When the user says **"save this conversation"**, **"hand off to another AI"**, *
 This file has the essentials; for full tool schemas and examples, load the `sepia` skill (`SKILL.md`) if available. For the full capability overview (all 7 tools, conversation migration, REST API), fetch https://sepia.fly.dev/llms.txt. Project `AGENTS.md` stacks with `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. See also `src/instructions.ts` (source of truth).
 
 <!-- Source of truth: src/instructions.ts (MEMORY_CONTRACT). Keep in sync. -->
-
-## Sepia docs — keep in sync when adding features
-
-Sepia's docs are the agents' only window into the server. When you add a feature (new tool, action, field, endpoint, or behavior change), update ALL of these before calling it done:
-
-1. `src/instructions.ts` (MEMORY_CONTRACT) — the MCP `instructions` field, injected fresh every session. THE source of truth.
-2. `skills/sepia/SKILL.md` — the on-demand agent skill.
-3. `skills/sepia/always-on/*` (vscode, claude, cursor, agents, opencode, zed) — always-on essentials. Keep them minimal + stable: new depth goes in llms.txt / SKILL.md, not here.
-4. `llms.txt` — full capability overview, served at /llms.txt. What agents fetch when they need the whole surface.
-5. `scripts/gen-skill-ref.ts` — run `bun run scripts/gen-skill-ref.ts` to regenerate `skills/sepia/references/tools.md` from the schemas.
-6. `scripts/smoke.ts` — cover the new surface (a feature without a smoke check is untested).
-7. Installed copies — run `bash scripts/install-skill.sh` to sync ~/.config/Code/User/prompts, ~/.claude/CLAUDE.md, ~/.cursor/rules, ~/.codex/AGENTS.md, ~/.config/opencode/AGENTS.md.
-8. Deploy — `fly deploy` so the served versions (/llms.txt, /skill, /instructions/\*, MCP instructions) update for everyone.
-
-Rule: no feature is done until its docs are updated. Check the diff of every always-on file before committing.
+<!-- sepia:end -->

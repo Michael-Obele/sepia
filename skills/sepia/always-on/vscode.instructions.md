@@ -1,4 +1,5 @@
 ---
+version: "1.0.0"
 applyTo: "**"
 description: "Sepia memory — MANDATORY recall before work, persist after. Always-on."
 ---

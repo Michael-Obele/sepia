@@ -138,6 +138,15 @@ for (const expected of TOOL_NAMES) {
 }
 check("exactly 7 tools", names.length === 7, names.length.toString());
 
+// ── 2.5 Version endpoint (public, no auth) ────────────────────────────────
+const versionRes = await fetch(`${BASE.replace(/\/mcp$/, "")}/version`);
+const versionJson = (await versionRes.json()) as { docs_version?: string };
+check(
+  "version endpoint serves docs_version",
+  versionRes.status === 200 && typeof versionJson.docs_version === "string",
+  versionJson.docs_version ?? "missing",
+);
+
 // ── 3. CRUD scenario (requires DATABASE_URL) ────────────────────────────────
 if (hasDb) {
   console.log("crud scenario (throwaway namespace):");

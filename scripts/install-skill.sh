@@ -26,16 +26,28 @@ install_to() {
   echo "installed → $1"
 }
 
-# Append a section to a file idempotently (marker-based, never duplicates).
+# Replace or append a section to a file idempotently. The section is wrapped
+# in block markers (<!-- sepia:start --> … <!-- sepia:end -->) so re-running
+# UPDATES the section in place instead of duplicating it — this is how
+# installed copies get new docs versions.
 append_section() {
-  local file="$1" section="$2" marker="$3"
-  if [ -f "$file" ] && grep -qF "$marker" "$file"; then
-    echo "already present → $file"
-    return
-  fi
+  local file="$1" section="$2"
+  local start_marker="<!-- sepia:start -->"
+  local end_marker="<!-- sepia:end -->"
   mkdir -p "$(dirname "$file")"
-  { [ -f "$file" ] && printf '\n'; cat "$section"; } >> "$file"
-  echo "appended → $file"
+  if [ -f "$file" ] && grep -qF "$start_marker" "$file"; then
+    # Replace everything between the markers (inclusive) with the new section.
+    {
+      sed "/^${start_marker}$/,/^${end_marker}$/d" "$file"
+      printf '%s\n' "$start_marker"
+      cat "$section"
+      printf '%s\n' "$end_marker"
+    } > "$file.tmp" && mv "$file.tmp" "$file"
+    echo "updated → $file"
+  else
+    { [ -f "$file" ] && printf '\n'; printf '%s\n' "$start_marker"; cat "$section"; printf '%s\n' "$end_marker"; } >> "$file"
+    echo "appended → $file"
+  fi
 }
 
 # ── Channel 1: the Agent Skill (on-demand) ────────────────────────────────
@@ -63,13 +75,13 @@ fi
 
 # Claude Code — user-global CLAUDE.md (loaded at the start of every session).
 if [ -d "$HOME/.claude" ]; then
-  append_section "$HOME/.claude/CLAUDE.md" "$SRC/always-on/claude.md" "## Sepia memory (always-on)"
+  append_section "$HOME/.claude/CLAUDE.md" "$SRC/always-on/claude.md"
 fi
 
 # AGENTS.md (Codex, Cursor, Copilot, any agentsmd-compliant agent) — install
 # into the current repo's AGENTS.md if one exists, else print the snippet.
 if [ -f "AGENTS.md" ]; then
-  append_section "AGENTS.md" "$SRC/always-on/agents.md" "## Sepia memory (always-on)"
+  append_section "AGENTS.md" "$SRC/always-on/agents.md"
 else
   echo "note: no AGENTS.md in $(pwd) — append skills/sepia/always-on/agents.md manually for repo-level agents"
 fi

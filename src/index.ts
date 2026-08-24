@@ -1,6 +1,7 @@
 import { McpServer } from "tmcp";
 import { HttpTransport } from "@tmcp/transport-http";
 import { ValibotJsonSchemaAdapter } from "@tmcp/adapter-valibot";
+import { DOCS_VERSION } from "@sepia/shared";
 import { MEMORY_CONTRACT } from "./instructions.ts";
 import { authEnabled, requireAuth } from "./auth.ts";
 import { handleOAuthRequest, oauthEnabled } from "./oauth.ts";
@@ -83,6 +84,7 @@ Bun.serve({
       return Response.json({
         name: "sepia",
         version: "1.0.0",
+        docs_version: DOCS_VERSION,
         mcp: "/mcp",
         health: "/healthz",
         skill: "/skill",
@@ -102,6 +104,24 @@ Bun.serve({
             ? "bearer-token"
             : "dev-mode (MCP_BEARER_TOKEN not set)",
         tools: 7,
+      });
+    }
+
+    // /version — the served truth for docs staleness checks. Installed
+    // copies (always-on files, skills) carry a stamped version marker;
+    // scripts/check-docs-version.ts compares them against this.
+    if (url.pathname === "/version") {
+      return Response.json({
+        name: "sepia",
+        version: "1.0.0",
+        docs_version: DOCS_VERSION,
+        endpoints: {
+          mcp: "/mcp",
+          llms: "/llms.txt",
+          skill: "/skill",
+          install: "/install",
+          instructions: "/instructions/{vscode,cursor,claude,agents,opencode,zed}",
+        },
       });
     }
 

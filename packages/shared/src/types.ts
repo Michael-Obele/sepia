@@ -6,6 +6,14 @@
 /** Default namespace for all tools when none is specified. */
 export const DEFAULT_NAMESPACE = "personal";
 
+/**
+ * Version of the agent-facing docs (contract, SKILL.md, always-on files,
+ * llms.txt). Bump when any of them change, then run
+ * `bun run scripts/stamp-docs-version.ts` to stamp it into every file.
+ * Served at /version so installed copies can be checked for staleness.
+ */
+export const DOCS_VERSION = "1.0.0";
+
 /** The four memory types. */
 export const MEMORY_TYPES = [
   "fact",

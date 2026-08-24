@@ -59,3 +59,5 @@ Rules the distilling agent must follow:
 - [Agent Skill (SKILL.md)](https://sepia.fly.dev/skill)
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
+
+Docs version: 1.0.0
