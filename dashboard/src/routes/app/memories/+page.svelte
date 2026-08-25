@@ -61,6 +61,7 @@
 			const result = await getMemories([
 				auth.token,
 				{
+					q: params.q || undefined,
 					type: params.type === 'all' ? undefined : params.type,
 					namespace: params.namespace === 'all' ? undefined : params.namespace,
 					archived: params.archived,
@@ -88,6 +89,7 @@
 			const next = await getMemories([
 				auth.token,
 				{
+					q: params.q || undefined,
 					type: params.type === 'all' ? undefined : params.type,
 					namespace: params.namespace === 'all' ? undefined : params.namespace,
 					archived: params.archived,

@@ -381,7 +381,7 @@
 		<div class="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
 			<!-- Featured: conversation ingest — the headline new capability -->
 			<div
-				class="relative overflow-hidden rounded-xl border border-brand/30 bg-gradient-to-br from-brand/10 via-card/50 to-card/50 p-6 sm:col-span-2 lg:col-span-3"
+				class="relative overflow-hidden rounded-xl border border-brand/30 bg-linear-to-br from-brand/10 via-card/50 to-card/50 p-6 sm:col-span-2 lg:col-span-3"
 			>
 				<Badge class="mb-4 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15">New</Badge>
 				<div class="flex items-start gap-4">
@@ -765,27 +765,3 @@
 		</div>
 	</div>
 </section>
-
-<!-- Footer -->
-<footer class="border-t border-border/50 px-4 py-8">
-	<div
-		class="mx-auto flex max-w-5xl flex-col items-center gap-4 text-sm text-muted-foreground sm:flex-row sm:justify-between"
-	>
-		<div class="flex items-center gap-2">
-			<img src={favicon} alt="" class="size-4" />
-			<span class="font-medium text-foreground">Sepia</span>
-			<span>· Memory server for AI agents</span>
-		</div>
-		<div class="flex items-center gap-4">
-			<a
-				href="https://github.com/Michael-Obele/sepia"
-				target="_blank"
-				rel="noopener"
-				class="transition-colors hover:text-foreground"
-			>
-				GitHub
-			</a>
-			<a href="/app" class="transition-colors hover:text-foreground">Dashboard</a>
-		</div>
-	</div>
-</footer>

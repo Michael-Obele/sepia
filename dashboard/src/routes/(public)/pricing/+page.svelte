@@ -9,14 +9,12 @@
 		RefreshCw,
 		ArrowRight,
 		Infinity,
-		Globe,
 		BadgeCheck,
 		Code
 	} from '@lucide/svelte';
 	import { buttonVariants } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
-	import favicon from '$lib/assets/favicon.svg?no-inline';
 
 	let billing = $state<'annual' | 'monthly'>('annual');
 
@@ -133,22 +131,6 @@
 		content="Sepia Hosted — one memory graph for every AI you use. Free tier for your first 1,000 memories, Pro at $50/yr (≈ $4.17/mo). Locked-in beta pricing, export everything, cancel anytime. Self-host free forever."
 	/>
 </svelte:head>
-
-<!-- Top bar -->
-<header class="relative z-10 border-b border-border/40">
-	<div class="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
-		<a href="/" class="flex items-center gap-2.5">
-			<img src={favicon} alt="" class="size-7" />
-			<span class="text-sm font-semibold tracking-tight">Sepia</span>
-		</a>
-		<a
-			href="/"
-			class="flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-		>
-			Home <ArrowRight class="size-3.5 -rotate-180" />
-		</a>
-	</div>
-</header>
 
 <!-- Hero + toggle -->
 <section class="relative overflow-hidden px-4 pt-20 pb-12 sm:pt-28">
@@ -428,7 +410,7 @@
 
 <!-- FAQ -->
 <section class="relative border-t border-border/40 px-4 py-24 sm:py-28">
-	<div class="mx-auto max-w-2xl">
+	<div class="mx-auto max-w-3xl">
 		<div class="text-center">
 			<h2 class="text-3xl font-semibold tracking-tight sm:text-4xl" style="letter-spacing: -0.03em">
 				Fair questions.
@@ -456,10 +438,6 @@
 
 <!-- Final CTA -->
 <section class="relative overflow-hidden px-4 pb-28">
-	<div
-		class="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-[radial-gradient(ellipse_at_bottom,rgba(212,149,106,0.08)_0%,transparent_60%)]"
-		aria-hidden="true"
-	></div>
 	<div class="relative z-10 mx-auto max-w-2xl text-center">
 		<h2 class="text-3xl font-semibold tracking-tight sm:text-4xl" style="letter-spacing: -0.03em">
 			Your AI starts at zero every session.
@@ -480,26 +458,3 @@
 		</p>
 	</div>
 </section>
-
-<!-- Footer -->
-<footer class="border-t border-border/40">
-	<div
-		class="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-4 px-4 py-8 text-sm text-muted-foreground"
-	>
-		<div class="flex items-center gap-2.5">
-			<img src={favicon} alt="" class="size-6" />
-			<span>Sepia — memory server for AI agents</span>
-		</div>
-		<div class="flex items-center gap-5">
-			<a
-				href="https://github.com/Michael-Obele/sepia"
-				target="_blank"
-				rel="noopener"
-				class="flex items-center gap-1.5 transition-colors hover:text-foreground"
-			>
-				<Globe class="size-4" /> Open source
-			</a>
-			<a href="/" class="transition-colors hover:text-foreground">Home</a>
-		</div>
-	</div>
-</footer>

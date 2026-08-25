@@ -32,6 +32,7 @@
 	import { goto } from '$app/navigation';
 	import { useSearchParams } from 'runed/kit';
 	import { conversationsSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
+	import { onMount } from 'svelte';
 
 	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
 	let namespaceList = $state<string[]>([]);
@@ -53,6 +54,18 @@
 	const params = useSearchParams(conversationsSearchSchema, SEARCH_PARAMS_OPTIONS);
 	const STATUS_OPTIONS = ['all', ...CONVERSATION_STATUSES] as const;
 
+	// The applied text filter — only updates on Enter / Search click, so
+	// typing never filters until you submit (same as the other routes).
+	// Initialized from the URL on mount so a shared link resumes the search.
+	let appliedQ = $state('');
+	onMount(() => {
+		appliedQ = params.q;
+	});
+
+	function submitSearch() {
+		appliedQ = params.q;
+	}
+
 	async function load() {
 		loading = true;
 		error = '';
@@ -72,9 +85,9 @@
 
 	/** Group digests by conversation_id, most recent first. */
 	const groups = $derived.by(() => {
-		// Client-side filter: status + name search (title, conversation_id,
-		// or content). Instant — no fetch, so no debounce/Enter needed.
-		const q = params.q.trim().toLowerCase();
+		// Client-side filter: status + applied name search (title,
+		// conversation_id, or content).
+		const q = appliedQ.trim().toLowerCase();
 		const filtered = digests.filter((d) => {
 			if (params.status !== 'all' && conversationStatus(d) !== params.status) return false;
 			if (!q) return true;
@@ -182,16 +195,24 @@
 
 	<!-- Search by name + status filter -->
 	<div class="flex flex-col gap-3">
-		<div class="relative">
-			<Search
-				class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-			/>
-			<Input
-				bind:value={params.q}
-				placeholder="Search by name…"
-				class="w-full pl-9"
-				aria-label="Search conversations by name"
-			/>
+		<div class="flex min-w-0 flex-col gap-2 sm:flex-row">
+			<div class="relative min-w-0 flex-1">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<Input
+					bind:value={params.q}
+					placeholder="Search by name…"
+					class="w-full pl-9"
+					aria-label="Search conversations by name"
+					onkeydown={(e) => {
+						if (e.key === 'Enter') submitSearch();
+					}}
+				/>
+			</div>
+			<Button onclick={submitSearch}>
+				<Search class="size-4" /> Search
+			</Button>
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
 			{#each STATUS_OPTIONS as s (s)}
@@ -212,7 +233,10 @@
 				variant="outline"
 				size="sm"
 				class="h-7 px-2 text-xs"
-				onclick={() => params.reset()}
+				onclick={() => {
+					params.reset();
+					appliedQ = '';
+				}}
 				aria-label="Reset filters"
 			>
 				<RotateCcw class="size-3.5" /> Reset
@@ -247,7 +271,13 @@
 					</p>
 				</div>
 				{#if digests.length > 0}
-					<Button variant="outline" onclick={() => params.reset()}>
+					<Button
+						variant="outline"
+						onclick={() => {
+							params.reset();
+							appliedQ = '';
+						}}
+					>
 						<RotateCcw class="size-4" /> Clear filters
 					</Button>
 				{:else}
