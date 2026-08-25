@@ -6,7 +6,8 @@
 		ArchiveRestore,
 		Search,
 		SlidersHorizontal,
-		LoaderCircle
+		LoaderCircle,
+		RotateCcw
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -21,6 +22,9 @@
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import { page } from '$app/state';
 	import { MEMORY_TYPES } from '@sepia/shared';
+	import { useSearchParams } from 'runed/kit';
+	import { memoriesSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
+	import { onMount } from 'svelte';
 
 	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
 	let namespaceList = $state<string[]>([]);
@@ -31,11 +35,9 @@
 		});
 	});
 
-	let type = $state('all');
-	let namespace = $state('all');
-	let archived = $state(false);
-	let q = $state('');
-	let minImportance = $state(0);
+	// URL-backed filters — validated with valibot, restored on back/forward.
+	const params = useSearchParams(memoriesSearchSchema, SEARCH_PARAMS_OPTIONS);
+
 	let limit = $state(20);
 	let offset = $state(0);
 
@@ -47,30 +49,34 @@
 
 	let showCreate = $state(false);
 
+	// Guard against out-of-order responses when filters change mid-flight.
+	let loadSeq = 0;
+
 	async function load() {
+		const seq = ++loadSeq;
 		loading = true;
 		error = '';
 		offset = 0;
 		try {
-			memories = await getMemories([
+			const result = await getMemories([
 				auth.token,
 				{
-					type:
-						type === 'all'
-							? undefined
-							: (type as 'fact' | 'observation' | 'preference' | 'instruction'),
-					namespace: namespace === 'all' ? undefined : namespace,
-					archived,
-					importance_min: minImportance > 0 ? minImportance : undefined,
+					type: params.type === 'all' ? undefined : params.type,
+					namespace: params.namespace === 'all' ? undefined : params.namespace,
+					archived: params.archived,
+					importance_min: params.minImportance > 0 ? params.minImportance : undefined,
 					limit,
 					offset: 0
 				}
 			]);
-			hasMore = memories.length >= limit;
+			if (seq !== loadSeq) return;
+			memories = result;
+			hasMore = result.length >= limit;
 		} catch (e) {
+			if (seq !== loadSeq) return;
 			error = (e as Error)?.message ?? 'Failed to load memories';
 		} finally {
-			loading = false;
+			if (seq === loadSeq) loading = false;
 		}
 	}
 
@@ -82,13 +88,10 @@
 			const next = await getMemories([
 				auth.token,
 				{
-					type:
-						type === 'all'
-							? undefined
-							: (type as 'fact' | 'observation' | 'preference' | 'instruction'),
-					namespace: namespace === 'all' ? undefined : namespace,
-					archived,
-					importance_min: minImportance > 0 ? minImportance : undefined,
+					type: params.type === 'all' ? undefined : params.type,
+					namespace: params.namespace === 'all' ? undefined : params.namespace,
+					archived: params.archived,
+					importance_min: params.minImportance > 0 ? params.minImportance : undefined,
 					limit,
 					offset: offset + limit
 				}
@@ -116,18 +119,28 @@
 		load();
 	}
 
-	// Open the create dialog when navigated with ?new=1
+	// Open the create dialog when navigated with ?new=1, then strip the param
+	// (preserving any active filter params in the URL).
 	$effect(() => {
 		if (page.url.searchParams.get('new') === '1') {
 			showCreate = true;
-			history.replaceState(null, '', '/memories');
+			const sp = new URLSearchParams(page.url.searchParams);
+			sp.delete('new');
+			const qs = sp.toString();
+			history.replaceState(null, '', qs ? `${page.url.pathname}?${qs}` : page.url.pathname);
 		}
 	});
 
-	// Initial load
-	$effect(() => {
+	// Load once on mount (with any URL-restored filters). Searches run on
+	// Enter/Apply — typing only updates the URL, never the results.
+	onMount(() => {
 		load();
 	});
+
+	function resetFilters() {
+		params.reset();
+		load();
+	}
 </script>
 
 <svelte:head><title>Sepia — Memories</title></svelte:head>
@@ -157,9 +170,10 @@
 					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
 				/>
 				<Input
-					bind:value={q}
+					bind:value={params.q}
 					placeholder="Filter by text…"
 					class="w-full pl-9"
+					aria-label="Filter by text"
 					onkeydown={(e) => {
 						if (e.key === 'Enter') load();
 					}}
@@ -174,12 +188,12 @@
 						>
 						<select
 							id="filter-type"
-							bind:value={type}
+							bind:value={params.type}
 							class="h-9 w-full min-w-[160px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
 							aria-label="Memory type filter"
 						>
 							<option value="all">All types</option>
-							{#each MEMORY_TYPES as t}
+							{#each MEMORY_TYPES as t (t)}
 								<option value={t}>{t}</option>
 							{/each}
 						</select>
@@ -190,12 +204,12 @@
 						>
 						<select
 							id="filter-ns"
-							bind:value={namespace}
+							bind:value={params.namespace}
 							class="h-9 w-full min-w-[180px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
 							aria-label="Namespace filter"
 						>
 							<option value="all">All namespaces</option>
-							{#each namespaceList as n}
+							{#each namespaceList as n (n)}
 								<option value={n}>{n}</option>
 							{/each}
 						</select>
@@ -206,7 +220,7 @@
 						>
 						<select
 							id="filter-imp"
-							bind:value={minImportance}
+							bind:value={params.minImportance}
 							class="h-9 w-full min-w-[160px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
 							aria-label="Minimum importance"
 						>
@@ -223,7 +237,7 @@
 						for="filter-archived"
 						class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-colors has-[[data-state=checked]]:bg-muted"
 					>
-						<Switch id="filter-archived" bind:checked={archived} />
+						<Switch id="filter-archived" bind:checked={params.archived} />
 						<span>Show archived</span>
 					</label>
 					<Button
@@ -234,6 +248,15 @@
 					>
 						<Search class="size-4" />
 						Apply
+					</Button>
+					<Button
+						variant="outline"
+						onclick={resetFilters}
+						class="h-9 shrink-0 px-5 font-medium shadow-xs"
+						aria-label="Reset filters"
+					>
+						<RotateCcw class="size-4" />
+						Reset
 					</Button>
 				</div>
 			</div>
@@ -246,7 +269,7 @@
 
 	{#if loading}
 		<div class="space-y-2">
-			{#each [0, 1, 2, 3, 4] as _}
+			{#each [0, 1, 2, 3, 4] as _, i (i)}
 				<Skeleton class="h-20 w-full" />
 			{/each}
 		</div>
@@ -261,7 +284,7 @@
 			<p class="text-xs text-muted-foreground">
 				Showing {memories.length} memories{hasMore ? ' — load more to see the rest' : ''}
 			</p>
-			{#each memories as m}
+			{#each memories as m (m.id)}
 				<Card>
 					<CardContent class="p-4">
 						<div class="flex items-start justify-between gap-3">

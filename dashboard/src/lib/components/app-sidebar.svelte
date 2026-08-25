@@ -42,7 +42,7 @@
 			<Sidebar.MenuItem>
 				<Sidebar.MenuButton size="lg" class="gap-2">
 					{#snippet child({ props })}
-						<a href="/app" {...props}>
+						<a href="/" {...props}>
 							<div
 								class="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground"
 							>

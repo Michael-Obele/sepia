@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Plus, Search, SlidersHorizontal, LoaderCircle } from '@lucide/svelte';
+	import { Plus, Search, SlidersHorizontal, LoaderCircle, RotateCcw } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
@@ -13,6 +13,9 @@
 	import { page } from '$app/state';
 	import { Trash2 } from '@lucide/svelte';
 	import { ENTITY_TYPES } from '@sepia/shared';
+	import { useSearchParams } from 'runed/kit';
+	import { entitiesSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
+	import { onMount } from 'svelte';
 
 	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
 	let namespaceList = $state<string[]>([]);
@@ -20,9 +23,9 @@
 		namespaces?.then((ns) => (namespaceList = ns.map((n) => n.name)));
 	});
 
-	let q = $state('');
-	let namespace = $state('all');
-	let type = $state('');
+	// URL-backed filters — validated with valibot, restored on back/forward.
+	const params = useSearchParams(entitiesSearchSchema, SEARCH_PARAMS_OPTIONS);
+
 	let entities = $state<Awaited<ReturnType<typeof getEntities>>>([]);
 	let loading = $state(true);
 	let loadingMore = $state(false);
@@ -31,24 +34,31 @@
 	let showCreate = $state(false);
 	const PAGE_SIZE = 50;
 
+	// Guard against out-of-order responses when filters change mid-flight.
+	let loadSeq = 0;
+
 	async function load() {
+		const seq = ++loadSeq;
 		loading = true;
 		error = '';
 		try {
-			entities = await getEntities([
+			const result = await getEntities([
 				auth.token,
 				{
-					q: q || undefined,
-					namespace: namespace === 'all' ? undefined : namespace,
-					type: type || undefined,
+					q: params.q || undefined,
+					namespace: params.namespace === 'all' ? undefined : params.namespace,
+					type: params.type || undefined,
 					limit: PAGE_SIZE
 				}
 			]);
-			hasMore = entities.length >= PAGE_SIZE;
+			if (seq !== loadSeq) return;
+			entities = result;
+			hasMore = result.length >= PAGE_SIZE;
 		} catch (e) {
+			if (seq !== loadSeq) return;
 			error = (e as Error)?.message ?? 'Failed to load entities';
 		} finally {
-			loading = false;
+			if (seq === loadSeq) loading = false;
 		}
 	}
 
@@ -60,9 +70,9 @@
 			const next = await getEntities([
 				auth.token,
 				{
-					q: q || undefined,
-					namespace: namespace === 'all' ? undefined : namespace,
-					type: type || undefined,
+					q: params.q || undefined,
+					namespace: params.namespace === 'all' ? undefined : params.namespace,
+					type: params.type || undefined,
 					limit: PAGE_SIZE,
 					offset: entities.length
 				}
@@ -88,16 +98,28 @@
 		load();
 	}
 
+	// Open the create dialog when navigated with ?new=1, then strip the param
+	// (preserving any active filter params in the URL).
 	$effect(() => {
 		if (page.url.searchParams.get('new') === '1') {
 			showCreate = true;
-			history.replaceState(null, '', '/entities');
+			const sp = new URLSearchParams(page.url.searchParams);
+			sp.delete('new');
+			const qs = sp.toString();
+			history.replaceState(null, '', qs ? `${page.url.pathname}?${qs}` : page.url.pathname);
 		}
 	});
 
-	$effect(() => {
+	// Load once on mount (with any URL-restored filters). Searches run on
+	// Enter/Apply — typing only updates the URL, never the results.
+	onMount(() => {
 		load();
 	});
+
+	function resetFilters() {
+		params.reset();
+		load();
+	}
 </script>
 
 <svelte:head><title>Sepia — Entities</title></svelte:head>
@@ -125,35 +147,41 @@
 			<div class="relative min-w-48 flex-1">
 				<Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 				<Input
-					bind:value={q}
+					bind:value={params.q}
 					placeholder="Search by name…"
 					class="pl-9"
+					aria-label="Search by name"
 					onkeydown={(e) => {
 						if (e.key === 'Enter') load();
 					}}
 				/>
 			</div>
 			<select
-				bind:value={namespace}
+				bind:value={params.namespace}
 				class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 				aria-label="Namespace filter"
 			>
 				<option value="all">All namespaces</option>
-				{#each namespaceList as n}
+				{#each namespaceList as n (n)}
 					<option value={n}>{n}</option>
 				{/each}
 			</select>
 			<select
-				bind:value={type}
+				bind:value={params.type}
 				class="h-9 w-40 rounded-md border border-input bg-background px-3 text-sm"
 				aria-label="Entity type filter"
 			>
 				<option value="">All types</option>
-				{#each ENTITY_TYPES as t}
+				{#each ENTITY_TYPES as t (t)}
 					<option value={t}>{t}</option>
 				{/each}
 			</select>
-			<Button variant="outline" onclick={load}>Apply</Button>
+			<Button variant="default" onclick={load}>
+				<Search class="size-4" /> Apply
+			</Button>
+			<Button variant="outline" onclick={resetFilters}>
+				<RotateCcw class="size-4" /> Reset
+			</Button>
 		</CardContent>
 	</Card>
 
@@ -163,7 +191,7 @@
 
 	{#if loading}
 		<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-			{#each [0, 1, 2, 3, 4, 5] as _}
+			{#each [0, 1, 2, 3, 4, 5] as _, i (i)}
 				<Skeleton class="h-28 w-full" />
 			{/each}
 		</div>
@@ -179,7 +207,7 @@
 				Showing {entities.length} entities{hasMore ? ' — load more to see the rest' : ''}
 			</p>
 			<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{#each entities as e}
+				{#each entities as e (e.id)}
 					<Card>
 						<CardContent class="p-4">
 							<div class="flex items-start justify-between gap-2">

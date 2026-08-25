@@ -2,14 +2,16 @@
 	import {
 		Plus,
 		MessagesSquare,
-		ExternalLink,
 		ChevronRight,
 		Trash2,
 		CheckCircle2,
 		PauseCircle,
-		PlayCircle
+		PlayCircle,
+		Search,
+		RotateCcw
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
@@ -18,10 +20,8 @@
 	import { auth, isAuthed } from '$lib/auth.svelte';
 	import {
 		timeAgo,
-		truncate,
 		sourceBadge,
 		sourceAi,
-		sourceRef,
 		conversationTitle,
 		conversationStatus,
 		statusBadge,
@@ -30,6 +30,8 @@
 	import ConversationFormDialog from '$lib/components/conversation-form-dialog.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
+	import { useSearchParams } from 'runed/kit';
+	import { conversationsSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
 
 	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
 	let namespaceList = $state<string[]>([]);
@@ -46,7 +48,10 @@
 	let loading = $state(true);
 	let error = $state('');
 	let showCreate = $state(false);
-	let statusFilter = $state<'all' | 'active' | 'paused' | 'done'>('all');
+
+	// URL-backed status filter — validated with valibot, restored on back/forward.
+	const params = useSearchParams(conversationsSearchSchema, SEARCH_PARAMS_OPTIONS);
+	const STATUS_OPTIONS = ['all', ...CONVERSATION_STATUSES] as const;
 
 	async function load() {
 		loading = true;
@@ -67,10 +72,22 @@
 
 	/** Group digests by conversation_id, most recent first. */
 	const groups = $derived.by(() => {
-		const filtered =
-			statusFilter === 'all'
-				? digests
-				: digests.filter((d) => conversationStatus(d) === statusFilter);
+		// Client-side filter: status + name search (title, conversation_id,
+		// or content). Instant — no fetch, so no debounce/Enter needed.
+		const q = params.q.trim().toLowerCase();
+		const filtered = digests.filter((d) => {
+			if (params.status !== 'all' && conversationStatus(d) !== params.status) return false;
+			if (!q) return true;
+			const meta = d.metadata as Record<string, unknown> | null | undefined;
+			const cid = typeof meta?.conversation_id === 'string' ? meta.conversation_id : '';
+			return (
+				conversationTitle(d).toLowerCase().includes(q) ||
+				cid.toLowerCase().includes(q) ||
+				String(d.content ?? '')
+					.toLowerCase()
+					.includes(q)
+			);
+		});
 		const map = new Map<string, Digest[]>();
 		for (const d of filtered) {
 			const meta = d.metadata as Record<string, unknown> | null | undefined;
@@ -99,10 +116,14 @@
 			);
 	});
 
-	/** Set a conversation's status (metadata REPLACES — merge first). */
-	async function setStatus(d: Digest, status: 'active' | 'paused' | 'done') {
-		const meta = (d.metadata ?? {}) as Record<string, unknown>;
-		await updateMemoryData([auth.token, String(d.id), { metadata: { ...meta, status } }]);
+	/** Set a conversation's status — applies to every digest in the group. */
+	async function setStatus(group: { items: Digest[] }, status: 'active' | 'paused' | 'done') {
+		await Promise.all(
+			group.items.map(async (d) => {
+				const meta = (d.metadata ?? {}) as Record<string, unknown>;
+				await updateMemoryData([auth.token, String(d.id), { metadata: { ...meta, status } }]);
+			})
+		);
 		toast.success(
 			status === 'active' ? 'Resumed — this is the one to continue' : `Marked ${status}`
 		);
@@ -113,23 +134,28 @@
 		goto(`/app/conversations/${encodeURIComponent(conversationId)}`);
 	}
 
-	async function del(id: string) {
+	/** Delete the whole conversation — every digest in the group. */
+	async function delConversation(group: { items: Digest[] }) {
 		if (
 			!confirm(
-				'Delete this digest permanently? Constituent memories stay (they are regular memories).'
+				`Delete this conversation (${group.items.length} digest${group.items.length > 1 ? 's' : ''}) permanently? Constituent memories stay (they are regular memories).`
 			)
 		)
 			return;
-		await removeMemory([auth.token, id]);
-		toast.success('Digest deleted');
+		await Promise.all(group.items.map((d) => removeMemory([auth.token, String(d.id)])));
+		toast.success('Conversation deleted');
 		load();
 	}
 
-	// Open the create dialog when navigated with ?new=1
+	// Open the create dialog when navigated with ?new=1, then strip the param
+	// (preserving any active filter params in the URL).
 	$effect(() => {
 		if (page.url.searchParams.get('new') === '1') {
 			showCreate = true;
-			history.replaceState(null, '', '/conversations');
+			const sp = new URLSearchParams(page.url.searchParams);
+			sp.delete('new');
+			const qs = sp.toString();
+			history.replaceState(null, '', qs ? `${page.url.pathname}?${qs}` : page.url.pathname);
 		}
 	});
 
@@ -154,22 +180,44 @@
 		</Button>
 	</div>
 
-	<!-- Status filter: which one to resume -->
-	<div class="flex flex-wrap items-center gap-2">
-		{#each ['all', ...CONVERSATION_STATUSES] as s (s)}
-			<button
-				type="button"
-				onclick={() => (statusFilter = s as typeof statusFilter)}
-				class={[
-					'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-					statusFilter === s
-						? 'border-primary bg-primary text-primary-foreground'
-						: 'border-input bg-background text-muted-foreground hover:text-foreground'
-				].join(' ')}
+	<!-- Search by name + status filter -->
+	<div class="flex flex-col gap-3">
+		<div class="relative">
+			<Search
+				class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+			/>
+			<Input
+				bind:value={params.q}
+				placeholder="Search by name…"
+				class="w-full pl-9"
+				aria-label="Search conversations by name"
+			/>
+		</div>
+		<div class="flex flex-wrap items-center gap-2">
+			{#each STATUS_OPTIONS as s (s)}
+				<button
+					type="button"
+					onclick={() => (params.status = s)}
+					class={[
+						'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+						params.status === s
+							? 'border-primary bg-primary text-primary-foreground'
+							: 'border-input bg-background text-muted-foreground hover:text-foreground'
+					].join(' ')}
+				>
+					{s === 'all' ? 'All' : s}
+				</button>
+			{/each}
+			<Button
+				variant="outline"
+				size="sm"
+				class="h-7 px-2 text-xs"
+				onclick={() => params.reset()}
+				aria-label="Reset filters"
 			>
-				{s === 'all' ? 'All' : s}
-			</button>
-		{/each}
+				<RotateCcw class="size-3.5" /> Reset
+			</Button>
+		</div>
 	</div>
 
 	{#if loading}
@@ -187,20 +235,31 @@
 			<CardContent class="flex flex-col items-center gap-3 py-12 text-center">
 				<MessagesSquare class="size-8 text-muted-foreground" />
 				<div>
-					<p class="font-medium">No conversations saved yet</p>
+					<p class="font-medium">
+						{digests.length > 0
+							? 'No conversations match your search'
+							: 'No conversations saved yet'}
+					</p>
 					<p class="text-sm text-muted-foreground">
-						When an AI finishes a session, ask it to "save this conversation" — or distill one
-						manually here.
+						{digests.length > 0
+							? 'Try a different name or clear the filters.'
+							: 'When an AI finishes a session, ask it to "save this conversation" — or distill one manually here.'}
 					</p>
 				</div>
-				<Button variant="outline" onclick={() => (showCreate = true)}>
-					<Plus class="size-4" /> Save a conversation
-				</Button>
+				{#if digests.length > 0}
+					<Button variant="outline" onclick={() => params.reset()}>
+						<RotateCcw class="size-4" /> Clear filters
+					</Button>
+				{:else}
+					<Button variant="outline" onclick={() => (showCreate = true)}>
+						<Plus class="size-4" /> Save a conversation
+					</Button>
+				{/if}
 			</CardContent>
 		</Card>
 	{:else}
 		<div class="space-y-4">
-			{#each groups as group}
+			{#each groups as group (group.id)}
 				<Card>
 					<CardHeader class="pb-3">
 						<div class="flex flex-wrap items-center justify-between gap-2">
@@ -233,85 +292,70 @@
 						</div>
 					</CardHeader>
 					<CardContent class="space-y-3">
-						{#each group.items as d}
-							<div class="rounded-lg border p-3">
-								<div class="mb-1.5 flex flex-wrap items-center gap-2">
-									<Badge class={sourceBadge(sourceAi(d))}>{sourceAi(d)}</Badge>
-									{#if Array.isArray(d.tags) && d.tags.length > 0}
-										{#each d.tags.filter((t) => t !== 'conversation') as tag}
-											<Badge variant="outline" class="text-xs">{tag}</Badge>
-										{/each}
-									{/if}
-									{#if sourceRef(d)}
-										<a
-											href={sourceRef(d)}
-											target="_blank"
-											rel="noreferrer"
-											class="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-										>
-											source <ExternalLink class="size-3" />
-										</a>
-									{/if}
-									<div class="ml-auto flex items-center gap-1.5">
-										{#if conversationStatus(d) === 'active'}
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-7 px-2 text-xs"
-												onclick={() => setStatus(d, 'paused')}
-											>
-												<PauseCircle class="size-3.5" /> Pause
-											</Button>
-											<Button
-												variant="secondary"
-												size="sm"
-												class="h-7 px-2 text-xs"
-												onclick={() => setStatus(d, 'done')}
-											>
-												<CheckCircle2 class="size-3.5" /> Done
-											</Button>
-										{:else if conversationStatus(d) === 'paused'}
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-7 px-2 text-xs"
-												onclick={() => setStatus(d, 'active')}
-											>
-												<PlayCircle class="size-3.5" /> Resume
-											</Button>
-											<Button
-												variant="secondary"
-												size="sm"
-												class="h-7 px-2 text-xs"
-												onclick={() => setStatus(d, 'done')}
-											>
-												<CheckCircle2 class="size-3.5" /> Done
-											</Button>
-										{:else}
-											<Button
-												variant="outline"
-												size="sm"
-												class="h-7 px-2 text-xs"
-												onclick={() => setStatus(d, 'active')}
-											>
-												<PlayCircle class="size-3.5" /> Undo done
-											</Button>
-										{/if}
-										<button
-											type="button"
-											onclick={() => del(String(d.id))}
-											class="inline-flex items-center rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-destructive"
-											aria-label="Delete digest"
-										>
-											<Trash2 class="size-3.5" />
-										</button>
-									</div>
-								</div>
-								<p class="text-sm whitespace-pre-wrap text-muted-foreground">
-									{truncate(String(d.content), 400)}
-								</p>
+						<!-- Preview: the latest digest, a few lines. Full detail lives on the
+						     conversation page, where every digest + connection is visible. -->
+						<p class="line-clamp-2 text-sm text-muted-foreground">
+							{String(group.items[0].content)}
+						</p>
+						<div class="flex flex-wrap items-center gap-2">
+							<Badge class={sourceBadge(sourceAi(group.items[0]))}>
+								{sourceAi(group.items[0])}
+							</Badge>
+							<div class="ml-auto flex items-center gap-1.5">
+								{#if conversationStatus(group.items[0]) === 'active'}
+									<Button
+										variant="outline"
+										size="sm"
+										class="h-7 px-2 text-xs"
+										onclick={() => setStatus(group, 'paused')}
+									>
+										<PauseCircle class="size-3.5" /> Pause
+									</Button>
+									<Button
+										variant="secondary"
+										size="sm"
+										class="h-7 px-2 text-xs"
+										onclick={() => setStatus(group, 'done')}
+									>
+										<CheckCircle2 class="size-3.5" /> Done
+									</Button>
+								{:else if conversationStatus(group.items[0]) === 'paused'}
+									<Button
+										variant="outline"
+										size="sm"
+										class="h-7 px-2 text-xs"
+										onclick={() => setStatus(group, 'active')}
+									>
+										<PlayCircle class="size-3.5" /> Resume
+									</Button>
+									<Button
+										variant="secondary"
+										size="sm"
+										class="h-7 px-2 text-xs"
+										onclick={() => setStatus(group, 'done')}
+									>
+										<CheckCircle2 class="size-3.5" /> Done
+									</Button>
+								{:else}
+									<Button
+										variant="outline"
+										size="sm"
+										class="h-7 px-2 text-xs"
+										onclick={() => setStatus(group, 'active')}
+									>
+										<PlayCircle class="size-3.5" /> Undo done
+									</Button>
+								{/if}
+								<Button
+									variant="ghost"
+									size="sm"
+									class="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+									onclick={() => delConversation(group)}
+								>
+									<Trash2 class="size-3.5" /> Delete
+								</Button>
 							</div>
-						{/each}
+						</div>
 					</CardContent>
 				</Card>
 			{/each}
