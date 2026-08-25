@@ -2,6 +2,7 @@
 	import {
 		Check,
 		Minus,
+		Plus,
 		Sparkles,
 		Lock,
 		ShieldCheck,
@@ -15,6 +16,7 @@
 	import { buttonVariants } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
+	import * as Accordion from '$lib/components/ui/accordion/index.js';
 
 	let billing = $state<'annual' | 'monthly'>('annual');
 
@@ -418,21 +420,26 @@
 			<p class="mt-4 text-muted-foreground">Straight answers — same as the product.</p>
 		</div>
 
-		<div class="mt-12 space-y-3">
+		<Accordion.Root type="single" class="my-12 space-y-3">
 			{#each faqs as faq (faq.q)}
-				<details
-					class="group rounded-xl border border-border/60 bg-card/30 px-5 py-4 transition-colors open:border-brand/30"
+				<Accordion.Item
+					value={faq.q}
+					class="rounded-xl border bg-card/30 px-5 transition-colors data-[state=closed]:border-transparent data-[state=open]:border-brand/30"
 				>
-					<summary
-						class="flex cursor-pointer list-none items-center justify-between gap-4 text-sm font-medium text-foreground"
+					<Accordion.Trigger
+						class="items-center gap-4 hover:no-underline **:data-[slot=accordion-trigger-icon]:hidden"
 					>
 						{faq.q}
-						<span class="text-muted-foreground transition-transform group-open:rotate-45">+</span>
-					</summary>
-					<p class="mt-3 text-sm leading-relaxed text-muted-foreground">{faq.a}</p>
-				</details>
+						<Plus
+							class="ml-auto size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-aria-expanded/accordion-trigger:rotate-45"
+						/>
+					</Accordion.Trigger>
+					<Accordion.Content class="leading-relaxed text-muted-foreground">
+						{faq.a}
+					</Accordion.Content>
+				</Accordion.Item>
 			{/each}
-		</div>
+		</Accordion.Root>
 	</div>
 </section>
 
