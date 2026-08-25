@@ -15,6 +15,7 @@ export function registerConsolidateTools(server: McpServer<any, any>) {
         "2) De-duplicates exact content within each namespace (keeps highest importance, oldest on tie). " +
         "3) Hard-deletes rows archived > 30 days. Returns counts of what it did.",
       schema: ConsolidateToolInput,
+      annotations: { destructiveHint: true },
     },
     safe(async () => consolidate(db())),
   );

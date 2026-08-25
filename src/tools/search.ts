@@ -15,6 +15,7 @@ export function registerSearchTools(server: McpServer<any, any>) {
         "Multi-word q = AND-of-words (every word must appear, any order); exact-phrase matches rank first. " +
         "Ranked: exact word match > substring match, then importance, then recency. Returns merged, de-duplicated hits with kind (memory|entity), id, snippet, score.",
       schema: SearchToolInput,
+      annotations: { readOnlyHint: true },
     },
     safe(async (args: v.InferInput<typeof SearchToolInput>) => {
       const hits = await search(db(), args);

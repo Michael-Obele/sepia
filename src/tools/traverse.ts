@@ -13,6 +13,7 @@ export function registerTraverseTools(server: McpServer<any, any>) {
         "BFS-walk the knowledge graph from a start entity (both directions). " +
         "Input: start_id (entity id), depth? (default 1, max 3). Returns nodes (id, label, type, importance) and edges (source, target, label, weight) — same shape as the dashboard graph view.",
       schema: TraverseToolInput,
+      annotations: { readOnlyHint: true },
     },
     safe(async (args: v.InferInput<typeof TraverseToolInput>) => {
       const graph = await traverseGraph(db(), args.start_id, args.depth);
