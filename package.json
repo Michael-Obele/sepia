@@ -24,11 +24,14 @@
     "gen:skill-ref": "bun run scripts/gen-skill-ref.ts"
   },
   "dependencies": {
+    "@better-auth/api-key": "^1.7.1",
+    "@better-auth/drizzle-adapter": "^1.7.1",
     "@neondatabase/serverless": "^1.1.0",
     "@sepia/shared": "workspace:*",
     "@tmcp/adapter-valibot": "^0.1.6",
     "@tmcp/auth": "^0.5.0",
     "@tmcp/transport-http": "^0.9.0",
+    "better-auth": "^1.7.1",
     "drizzle-orm": "^0.45.2",
     "pkce-challenge": "^6.0.0",
     "tmcp": "^1.20.0",
