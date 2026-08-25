@@ -1,21 +1,27 @@
 <script lang="ts">
 	import { AlertDialog as AlertDialogPrimitive } from "bits-ui";
-	import { Button } from "$lib/components/ui/button/index.js";
+	import {
+		buttonVariants,
+		type ButtonVariant,
+		type ButtonSize,
+	} from "$lib/components/ui/button/index.js";
 	import { cn } from "$lib/utils.js";
-	import type { Snippet } from "svelte";
 
 	let {
 		ref = $bindable(null),
 		class: className,
-		children,
+		variant = "outline",
+		size = "default",
 		...restProps
-	}: AlertDialogPrimitive.CancelProps & { children?: Snippet } = $props();
+	}: AlertDialogPrimitive.CancelProps & {
+		variant?: ButtonVariant;
+		size?: ButtonSize;
+	} = $props();
 </script>
 
-<AlertDialogPrimitive.Cancel bind:ref data-slot="alert-dialog-cancel" {...restProps}>
-	{#snippet child({ props })}
-		<Button variant="outline" class={cn(className)} {...props}>
-			{@render children?.()}
-		</Button>
-	{/snippet}
-</AlertDialogPrimitive.Cancel>
+<AlertDialogPrimitive.Cancel
+	bind:ref
+	data-slot="alert-dialog-cancel"
+	class={cn(buttonVariants({ variant, size }), "cn-alert-dialog-cancel", className)}
+	{...restProps}
+/>
