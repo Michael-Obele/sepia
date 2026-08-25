@@ -154,12 +154,12 @@ export async function getStats(db: Db): Promise<Stats> {
         namespace: unknown;
         updated_at: unknown;
       }) => ({
-        id: String(m.id),
-        content: String(m.content),
-        type: String(m.type),
-        importance: Number(m.importance),
-        namespace: String(m.namespace),
-        updated_at: String(m.updated_at),
+        id: String(m.id ?? ""),
+        content: String(m.content ?? ""),
+        type: String(m.type ?? ""),
+        importance: Number(m.importance ?? 0),
+        namespace: String(m.namespace ?? ""),
+        updated_at: String(m.updated_at ?? ""),
       }),
     ),
   };
