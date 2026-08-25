@@ -104,6 +104,10 @@ bun --hot ./index.ts
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
 
+## Dev servers & builds — ASK FIRST
+
+Do NOT start new dev servers (vite, `bun run dev`, `bun --hot`, etc.) and do NOT run builds/deploys on your own initiative. The user always has dev servers running on specific ports. Ask the user which server/port the dev environment is running on, then use it (e.g. for browser preview). If you think a build or deploy is needed, ask first — the user knows the setup.
+
 ## Sepia docs — keep in sync when adding features
 
 Sepia's docs are the agents' only window into the server. When you add a feature (new tool, action, field, endpoint, or behavior change), update ALL of these before calling it done:
