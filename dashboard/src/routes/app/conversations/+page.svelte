@@ -28,6 +28,7 @@
 		CONVERSATION_STATUSES
 	} from '$lib/format.js';
 	import ConversationFormDialog from '$lib/components/conversation-form-dialog.svelte';
+	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { useSearchParams } from 'runed/kit';
@@ -49,6 +50,13 @@
 	let loading = $state(true);
 	let error = $state('');
 	let showCreate = $state(false);
+
+	// Delete confirmation — the dialog gates the actual delete.
+	let pendingDelete = $state<{
+		title: string;
+		description: string;
+		run: () => void | Promise<void>;
+	} | null>(null);
 
 	// URL-backed status filter — validated with valibot, restored on back/forward.
 	const params = useSearchParams(conversationsSearchSchema, SEARCH_PARAMS_OPTIONS);
@@ -149,12 +157,6 @@
 
 	/** Delete the whole conversation — every digest in the group. */
 	async function delConversation(group: { items: Digest[] }) {
-		if (
-			!confirm(
-				`Delete this conversation (${group.items.length} digest${group.items.length > 1 ? 's' : ''}) permanently? Constituent memories stay (they are regular memories).`
-			)
-		)
-			return;
 		await Promise.all(group.items.map((d) => removeMemory([auth.token, String(d.id)])));
 		toast.success('Conversation deleted');
 		load();
@@ -384,7 +386,12 @@
 								variant="ghost"
 								size="sm"
 								class="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-								onclick={() => delConversation(group)}
+								onclick={() =>
+									(pendingDelete = {
+										title: 'Delete this conversation?',
+										description: `${group.items.length} digest${group.items.length > 1 ? 's' : ''} will be permanently lost. Constituent memories stay (they are regular memories).`,
+										run: () => delConversation(group)
+									})}
 							>
 								<Trash2 class="size-3.5" /> Delete
 							</Button>
@@ -399,3 +406,11 @@
 <!-- Drill-down is now a dedicated page: /app/conversations/[id] -->
 
 <ConversationFormDialog bind:open={showCreate} namespaces={namespaceList} onSaved={load} />
+
+<ConfirmDeleteDialog
+	open={pendingDelete !== null}
+	onClose={() => (pendingDelete = null)}
+	title={pendingDelete?.title ?? 'Delete this item?'}
+	description={pendingDelete?.description ?? ''}
+	onConfirm={pendingDelete?.run}
+/>

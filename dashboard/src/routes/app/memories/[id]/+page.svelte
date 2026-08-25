@@ -14,6 +14,7 @@
 	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { formatDate, importancePct, TYPE_BADGE } from '$lib/format.js';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
+	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { goto } from '$app/navigation';
 
 	let { params } = $props();
@@ -27,6 +28,13 @@
 	});
 
 	let showEdit = $state(false);
+
+	// Delete confirmation — the dialog gates the actual delete.
+	let pendingDelete = $state<{
+		title: string;
+		description: string;
+		run: () => void | Promise<void>;
+	} | null>(null);
 
 	// The memory object passed to the edit dialog (mapped to entity_ids).
 	let editMemory = $state<Record<string, unknown> | null>(null);
@@ -45,7 +53,6 @@
 	});
 
 	async function del() {
-		if (!confirm('Delete this memory permanently?')) return;
 		await removeMemory([auth.token, params.id]);
 		toast.success('Memory deleted');
 		goto('/app/memories');
@@ -61,7 +68,7 @@
 <svelte:head><title>Sepia — Memory</title></svelte:head>
 
 <div class="space-y-4">
-		<Button variant="ghost" onclick={() => goto('/app/memories')} class="gap-1">
+	<Button variant="ghost" onclick={() => goto('/app/memories')} class="gap-1">
 		<ArrowLeft class="size-4" /> Back to memories
 	</Button>
 
@@ -94,7 +101,17 @@
 						<Button variant="ghost" size="icon" onclick={() => (showEdit = true)} aria-label="Edit">
 							<Pencil class="size-4" />
 						</Button>
-						<Button variant="ghost" size="icon" onclick={del} aria-label="Delete">
+						<Button
+							variant="ghost"
+							size="icon"
+							onclick={() =>
+								(pendingDelete = {
+									title: 'Delete this memory?',
+									description: 'This memory will be permanently lost. This cannot be undone.',
+									run: del
+								})}
+							aria-label="Delete"
+						>
 							<Trash2 class="size-4 text-destructive" />
 						</Button>
 					</div>
@@ -143,5 +160,13 @@
 		namespaces={namespaceList}
 		memory={editMemory}
 		onSaved={() => memory?.refresh()}
+	/>
+
+	<ConfirmDeleteDialog
+		open={pendingDelete !== null}
+		onClose={() => (pendingDelete = null)}
+		title={pendingDelete?.title ?? 'Delete this item?'}
+		description={pendingDelete?.description ?? ''}
+		onConfirm={pendingDelete?.run}
 	/>
 </div>

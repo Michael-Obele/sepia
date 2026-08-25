@@ -20,6 +20,7 @@
 	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { formatDate, importancePct, entityTypeBadge, TYPE_BADGE, truncate } from '$lib/format.js';
 	import EntityFormDialog from '$lib/components/entity-form-dialog.svelte';
+	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { goto } from '$app/navigation';
 
 	let { params } = $props();
@@ -28,6 +29,13 @@
 
 	let showEdit = $state(false);
 	let editEntity = $state<Record<string, unknown> | null>(null);
+
+	// Delete confirmation — the dialog gates the actual delete.
+	let pendingDelete = $state<{
+		title: string;
+		description: string;
+		run: () => void | Promise<void>;
+	} | null>(null);
 
 	$effect(() => {
 		entity?.then((e) => {
@@ -43,12 +51,6 @@
 	});
 
 	async function del() {
-		if (
-			!confirm(
-				'Delete this entity? Its relations are removed and linked memories are unlinked (not deleted).'
-			)
-		)
-			return;
 		await removeEntity([auth.token, entityId]);
 		toast.success('Entity deleted');
 		goto('/app/entities');
@@ -113,7 +115,7 @@
 <svelte:head><title>Sepia — Entity</title></svelte:head>
 
 <div class="space-y-4">
-		<Button variant="ghost" onclick={() => goto('/app/entities')} class="gap-1">
+	<Button variant="ghost" onclick={() => goto('/app/entities')} class="gap-1">
 		<ArrowLeft class="size-4" /> Back to entities
 	</Button>
 
@@ -145,7 +147,18 @@
 						<Button variant="ghost" size="icon" onclick={() => (showEdit = true)} aria-label="Edit">
 							<Pencil class="size-4" />
 						</Button>
-						<Button variant="ghost" size="icon" onclick={del} aria-label="Delete">
+						<Button
+							variant="ghost"
+							size="icon"
+							onclick={() =>
+								(pendingDelete = {
+									title: 'Delete this entity?',
+									description:
+										'Its relations are removed and linked memories are unlinked (not deleted).',
+									run: del
+								})}
+							aria-label="Delete"
+						>
 							<Trash2 class="size-4 text-destructive" />
 						</Button>
 					</div>
@@ -202,7 +215,12 @@
 										<Button
 											variant="ghost"
 											size="icon"
-											onclick={() => delMemory(String(m.id))}
+											onclick={() =>
+												(pendingDelete = {
+													title: 'Delete this memory?',
+													description: `"${truncate(m.content, 80)}" will be permanently lost. This cannot be undone.`,
+													run: () => delMemory(String(m.id))
+												})}
 											aria-label="Delete memory"
 										>
 											<Trash2 class="size-4 text-destructive" />
@@ -301,7 +319,7 @@
 									<div
 										class="flex items-center justify-between gap-2 rounded-md p-2 hover:bg-accent"
 									>
-									<a href={`/app/entities/${r.other_id}`} class="flex min-w-0 items-center gap-2">
+										<a href={`/app/entities/${r.other_id}`} class="flex min-w-0 items-center gap-2">
 											<span class="text-sm font-medium">{e.name}</span>
 											<span class="text-xs text-muted-foreground">—{r.relation_type}→</span>
 											<span class="truncate text-sm font-medium">{r.other_name}</span>
@@ -313,7 +331,12 @@
 											<Button
 												variant="ghost"
 												size="icon"
-												onclick={() => delRelation(String(r.id))}
+												onclick={() =>
+													(pendingDelete = {
+														title: 'Delete this relation?',
+														description: `The "${r.relation_type}" relation between "${e.name}" and "${r.other_name}" will be removed. This cannot be undone.`,
+														run: () => delRelation(String(r.id))
+													})}
 												aria-label="Delete relation"
 											>
 												<Unlink class="size-4 text-destructive" />
@@ -333,7 +356,7 @@
 									<div
 										class="flex items-center justify-between gap-2 rounded-md p-2 hover:bg-accent"
 									>
-									<a href={`/app/entities/${r.other_id}`} class="flex min-w-0 items-center gap-2">
+										<a href={`/app/entities/${r.other_id}`} class="flex min-w-0 items-center gap-2">
 											<span class="truncate text-sm font-medium">{r.other_name}</span>
 											<span class="text-xs text-muted-foreground">—{r.relation_type}→</span>
 											<span class="text-sm font-medium">{e.name}</span>
@@ -345,7 +368,12 @@
 											<Button
 												variant="ghost"
 												size="icon"
-												onclick={() => delRelation(String(r.id))}
+												onclick={() =>
+													(pendingDelete = {
+														title: 'Delete this relation?',
+														description: `The "${r.relation_type}" relation between "${r.other_name}" and "${e.name}" will be removed. This cannot be undone.`,
+														run: () => delRelation(String(r.id))
+													})}
 												aria-label="Delete relation"
 											>
 												<Unlink class="size-4 text-destructive" />
@@ -366,4 +394,12 @@
 	{/if}
 
 	<EntityFormDialog bind:open={showEdit} entity={editEntity} onSaved={() => entity?.refresh()} />
+
+	<ConfirmDeleteDialog
+		open={pendingDelete !== null}
+		onClose={() => (pendingDelete = null)}
+		title={pendingDelete?.title ?? 'Delete this item?'}
+		description={pendingDelete?.description ?? ''}
+		onConfirm={pendingDelete?.run}
+	/>
 </div>

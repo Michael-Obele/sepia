@@ -13,6 +13,7 @@
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getNamespaces, addNamespace, removeNamespace, exportAll } from '$lib/remote/index.js';
+	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { auth, isAuthed, logout } from '$lib/auth.svelte';
 	import { goto } from '$app/navigation';
 
@@ -22,6 +23,13 @@
 	let newDesc = $state('');
 	let creating = $state(false);
 	let exporting = $state(false);
+
+	// Delete confirmation — the dialog gates the actual delete.
+	let pendingDelete = $state<{
+		title: string;
+		description: string;
+		run: () => void | Promise<void>;
+	} | null>(null);
 
 	async function createNs() {
 		if (!newName.trim()) {
@@ -47,12 +55,6 @@
 			toast.error('The default "personal" namespace cannot be deleted');
 			return;
 		}
-		if (
-			!confirm(
-				`Delete namespace "${name}"? This permanently removes all its entities, relations, and memories.`
-			)
-		)
-			return;
 		try {
 			await removeNamespace([auth.token, id]);
 			toast.success(`Namespace "${name}" deleted`);
@@ -182,7 +184,13 @@
 								<Button
 									variant="ghost"
 									size="icon"
-									onclick={() => delNs(String(n.id), n.name)}
+									onclick={() =>
+										(pendingDelete = {
+											title: `Delete namespace "${n.name}"?`,
+											description:
+												'This permanently removes all its entities, relations, and memories. This cannot be undone.',
+											run: () => delNs(String(n.id), n.name)
+										})}
 									disabled={n.name === 'personal'}
 									aria-label={`Delete namespace ${n.name}`}
 								>
@@ -240,4 +248,12 @@
 			</Button>
 		</CardContent>
 	</Card>
+
+	<ConfirmDeleteDialog
+		open={pendingDelete !== null}
+		onClose={() => (pendingDelete = null)}
+		title={pendingDelete?.title ?? 'Delete this item?'}
+		description={pendingDelete?.description ?? ''}
+		onConfirm={pendingDelete?.run}
+	/>
 </div>

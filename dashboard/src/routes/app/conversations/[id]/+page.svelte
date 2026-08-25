@@ -16,7 +16,13 @@
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { toast } from 'svelte-sonner';
-	import { getConversationData, getMemoryDetail, updateMemoryData, removeMemory } from '$lib/remote/index.js';
+	import {
+		getConversationData,
+		getMemoryDetail,
+		updateMemoryData,
+		removeMemory
+	} from '$lib/remote/index.js';
+	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { auth, isAuthed } from '$lib/auth.svelte';
 	import {
 		timeAgo,
@@ -38,6 +44,13 @@
 	let memories = $state<ConvMemory[]>([]);
 	let loading = $state(true);
 	let error = $state('');
+
+	// Delete confirmation — the dialog gates the actual delete.
+	let pendingDelete = $state<{
+		title: string;
+		description: string;
+		run: () => void | Promise<void>;
+	} | null>(null);
 
 	/** The digest is the memory with metadata.kind === "conversation". */
 	const digest = $derived(
@@ -116,12 +129,6 @@
 
 	async function del() {
 		if (!digest) return;
-		if (
-			!confirm(
-				'Delete this conversation digest permanently? Constituent memories stay (they are regular memories).'
-			)
-		)
-			return;
 		await removeMemory([auth.token, String(digest.id)]);
 		toast.success('Conversation deleted');
 		goto('/app/conversations');
@@ -157,7 +164,17 @@
 				<Button variant="outline" size="sm" onclick={copyDigest}>
 					<Copy class="size-3.5" /> Copy digest
 				</Button>
-				<Button variant="destructive" size="sm" onclick={del}>
+				<Button
+					variant="destructive"
+					size="sm"
+					onclick={() =>
+						(pendingDelete = {
+							title: 'Delete this conversation?',
+							description:
+								'The digest will be permanently lost. Constituent memories stay (they are regular memories).',
+							run: del
+						})}
+				>
 					<Trash2 class="size-3.5" /> Delete
 				</Button>
 			</div>
@@ -281,4 +298,12 @@
 			</Card>
 		{/each}
 	{/if}
+
+	<ConfirmDeleteDialog
+		open={pendingDelete !== null}
+		onClose={() => (pendingDelete = null)}
+		title={pendingDelete?.title ?? 'Delete this item?'}
+		description={pendingDelete?.description ?? ''}
+		onConfirm={pendingDelete?.run}
+	/>
 </div>

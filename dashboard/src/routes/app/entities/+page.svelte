@@ -10,6 +10,7 @@
 	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { importancePct, entityTypeBadge, truncate } from '$lib/format.js';
 	import EntityFormDialog from '$lib/components/entity-form-dialog.svelte';
+	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { page } from '$app/state';
 	import { Trash2 } from '@lucide/svelte';
 	import { ENTITY_TYPES } from '@sepia/shared';
@@ -33,6 +34,13 @@
 	let error = $state('');
 	let showCreate = $state(false);
 	const PAGE_SIZE = 50;
+
+	// Delete confirmation — the dialog gates the actual delete.
+	let pendingDelete = $state<{
+		title: string;
+		description: string;
+		run: () => void | Promise<void>;
+	} | null>(null);
 
 	// Guard against out-of-order responses when filters change mid-flight.
 	let loadSeq = 0;
@@ -87,12 +95,6 @@
 	}
 
 	async function del(id: string) {
-		if (
-			!confirm(
-				'Delete this entity? Its relations are removed and linked memories are unlinked (not deleted).'
-			)
-		)
-			return;
 		await removeEntity([auth.token, id]);
 		toast.success('Entity deleted');
 		load();
@@ -236,7 +238,12 @@
 								<Button
 									variant="ghost"
 									size="icon"
-									onclick={() => del(String(e.id))}
+									onclick={() =>
+										(pendingDelete = {
+											title: 'Delete this entity?',
+											description: `"${e.name}" and its relations will be removed. Linked memories are unlinked (not deleted).`,
+											run: () => del(String(e.id))
+										})}
 									aria-label="Delete entity"
 								>
 									<Trash2 class="size-4 text-destructive" />
@@ -258,4 +265,12 @@
 	{/if}
 
 	<EntityFormDialog bind:open={showCreate} namespaces={namespaceList} onSaved={load} />
+
+	<ConfirmDeleteDialog
+		open={pendingDelete !== null}
+		onClose={() => (pendingDelete = null)}
+		title={pendingDelete?.title ?? 'Delete this item?'}
+		description={pendingDelete?.description ?? ''}
+		onConfirm={pendingDelete?.run}
+	/>
 </div>

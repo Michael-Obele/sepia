@@ -20,6 +20,7 @@
 	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { timeAgo, importancePct, TYPE_BADGE, truncate } from '$lib/format.js';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
+	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { page } from '$app/state';
 	import { MEMORY_TYPES } from '@sepia/shared';
 	import { useSearchParams } from 'runed/kit';
@@ -48,6 +49,13 @@
 	let error = $state('');
 
 	let showCreate = $state(false);
+
+	// Delete confirmation — the dialog gates the actual delete.
+	let pendingDelete = $state<{
+		title: string;
+		description: string;
+		run: () => void | Promise<void>;
+	} | null>(null);
 
 	// Guard against out-of-order responses when filters change mid-flight.
 	let loadSeq = 0;
@@ -109,7 +117,6 @@
 	}
 
 	async function del(id: string) {
-		if (!confirm('Delete this memory permanently?')) return;
 		await removeMemory([auth.token, id]);
 		toast.success('Memory deleted');
 		load();
@@ -331,7 +338,12 @@
 								<Button
 									variant="ghost"
 									size="icon"
-									onclick={() => del(String(m.id))}
+									onclick={() =>
+										(pendingDelete = {
+											title: 'Delete this memory?',
+											description: `"${truncate(m.content, 80)}" will be permanently lost. This cannot be undone.`,
+											run: () => del(String(m.id))
+										})}
 									aria-label="Delete"
 								>
 									<Trash2 class="size-4 text-destructive" />
@@ -353,4 +365,12 @@
 	{/if}
 
 	<MemoryFormDialog bind:open={showCreate} namespaces={namespaceList} onSaved={load} />
+
+	<ConfirmDeleteDialog
+		open={pendingDelete !== null}
+		onClose={() => (pendingDelete = null)}
+		title={pendingDelete?.title ?? 'Delete this item?'}
+		description={pendingDelete?.description ?? ''}
+		onConfirm={pendingDelete?.run}
+	/>
 </div>

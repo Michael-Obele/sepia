@@ -16,6 +16,7 @@ import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
 
 const MemoryFilters = v.object({
+	q: v.optional(v.string()),
 	type: v.optional(v.picklist(['fact', 'observation', 'preference', 'instruction'])),
 	namespace: v.optional(v.string()),
 	importance_min: v.optional(v.number()),

@@ -27,13 +27,20 @@
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { toast } from 'svelte-sonner';
-	import { getStatsData, searchAll, runConsolidate, getNamespaces, removeMemory } from '$lib/remote/index.js';
+	import {
+		getStatsData,
+		searchAll,
+		runConsolidate,
+		getNamespaces,
+		removeMemory
+	} from '$lib/remote/index.js';
 	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { formatDate, timeAgo, importancePct, TYPE_BADGE, truncate } from '$lib/format.js';
 	import { goto } from '$app/navigation';
 	import { useSearchParams } from 'runed/kit';
 	import { appSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
 	import { PersistedState } from 'runed';
+	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { onMount } from 'svelte';
 
 	// Only create queries when signed in — avoids SSR calls with an empty token.
@@ -108,8 +115,14 @@
 	// Recent memories card: dismissible (persisted) + per-row delete.
 	const recentHidden = new PersistedState('sepia-recent-hidden', false);
 
+	// Delete confirmation — the dialog gates the actual delete.
+	let pendingDelete = $state<{
+		title: string;
+		description: string;
+		run: () => void | Promise<void>;
+	} | null>(null);
+
 	async function deleteRecent(id: string) {
-		if (!confirm('Delete this memory permanently?')) return;
 		await removeMemory([auth.token, id]);
 		toast.success('Memory deleted');
 		stats?.refresh();
@@ -337,20 +350,21 @@
 					</CardHeader>
 					<CardContent class="space-y-3">
 						{#each s.recent_memories as m (m.id)}
-							<div class="group flex min-w-0 items-start gap-2 rounded-md p-2 transition-colors hover:bg-accent">
-								<a
-									href={`/app/memories/${m.id}`}
-									class="block min-w-0 flex-1 overflow-hidden"
-								>
+							<div
+								class="group flex min-w-0 items-start gap-2 rounded-md p-2 transition-colors hover:bg-accent"
+							>
+								<a href={`/app/memories/${m.id}`} class="block min-w-0 flex-1 overflow-hidden">
 									<div class="flex min-w-0 items-start justify-between gap-3 overflow-hidden">
 										<p class="min-w-0 flex-1 text-sm break-words">
 											{truncate(m.content, 200)}
 										</p>
-										<span class="shrink-0 text-xs text-muted-foreground">{timeAgo(m.updated_at)}</span
+										<span class="shrink-0 text-xs text-muted-foreground"
+											>{timeAgo(m.updated_at)}</span
 										>
 									</div>
 									<div class="mt-1 flex items-center gap-2">
-										<Badge class={TYPE_BADGE[m.type as keyof typeof TYPE_BADGE] ?? ''}>{m.type}</Badge
+										<Badge class={TYPE_BADGE[m.type as keyof typeof TYPE_BADGE] ?? ''}
+											>{m.type}</Badge
 										>
 										<span class="text-xs text-muted-foreground">{m.namespace || '—'}</span>
 										<span class="text-xs text-muted-foreground"
@@ -362,7 +376,12 @@
 									variant="ghost"
 									size="icon"
 									class="size-7 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
-									onclick={() => deleteRecent(String(m.id))}
+									onclick={() =>
+										(pendingDelete = {
+											title: 'Delete this memory?',
+											description: `"${truncate(m.content, 80)}" will be permanently lost. This cannot be undone.`,
+											run: () => deleteRecent(String(m.id))
+										})}
 									aria-label="Delete memory"
 									title="Delete this memory"
 								>
@@ -375,4 +394,12 @@
 			{/if}
 		{/await}
 	{/if}
+
+	<ConfirmDeleteDialog
+		open={pendingDelete !== null}
+		onClose={() => (pendingDelete = null)}
+		title={pendingDelete?.title ?? 'Delete this item?'}
+		description={pendingDelete?.description ?? ''}
+		onConfirm={pendingDelete?.run}
+	/>
 </div>
