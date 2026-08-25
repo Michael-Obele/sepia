@@ -12,7 +12,7 @@
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
-	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
+	import { Card, CardContent, CardHeader } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
@@ -292,33 +292,41 @@
 			{#each groups as group (group.id)}
 				<Card>
 					<CardHeader class="pb-3">
-						<div class="flex flex-wrap items-center justify-between gap-2">
-							<CardTitle class="flex min-w-0 items-center gap-2 text-base">
-								<MessagesSquare class="size-4 shrink-0 text-muted-foreground" />
-								<button
-									type="button"
-									onclick={() => openConversation(group.id)}
-									class="truncate font-semibold hover:underline"
-									title="Open conversation"
-								>
-									{conversationTitle(group.items[0])}
-								</button>
-								<Badge class={statusBadge(conversationStatus(group.items[0]))}>
-									{conversationStatus(group.items[0])}
-								</Badge>
-								<Badge variant="secondary"
-									>{group.items.length} digest{group.items.length > 1 ? 's' : ''}</Badge
-								>
-							</CardTitle>
-							<div class="flex items-center gap-2">
-								<span class="font-mono text-xs text-muted-foreground">{group.id}</span>
-								<span class="text-xs text-muted-foreground">
-									{timeAgo(group.items[0].updatedAt)}
-								</span>
-								<Button variant="outline" size="sm" onclick={() => openConversation(group.id)}>
-									Open <ChevronRight class="size-3.5" />
-								</Button>
-							</div>
+						<!-- Badges row: top of the card, wraps on narrow screens -->
+						<div class="flex flex-wrap items-center gap-2">
+							<Badge class={statusBadge(conversationStatus(group.items[0]))}>
+								{conversationStatus(group.items[0])}
+							</Badge>
+							<Badge variant="secondary"
+								>{group.items.length} digest{group.items.length > 1 ? 's' : ''}</Badge
+							>
+							<Badge class={sourceBadge(sourceAi(group.items[0]))}>
+								{sourceAi(group.items[0])}
+							</Badge>
+							<span class="ml-auto font-mono text-xs text-muted-foreground">{group.id}</span>
+							<span class="text-xs text-muted-foreground">
+								{timeAgo(group.items[0].updatedAt)}
+							</span>
+						</div>
+						<!-- Title row: wraps below the badges -->
+						<div class="mt-2 flex items-start justify-between gap-2">
+							<button
+								type="button"
+								onclick={() => openConversation(group.id)}
+								class="min-w-0 flex-1 text-left text-base font-semibold wrap-break-word hover:underline"
+								title="Open conversation"
+							>
+								<MessagesSquare class="mr-1.5 inline size-4 shrink-0 text-muted-foreground" />
+								{conversationTitle(group.items[0])}
+							</button>
+							<Button
+								variant="outline"
+								size="sm"
+								class="shrink-0"
+								onclick={() => openConversation(group.id)}
+							>
+								Open <ChevronRight class="size-3.5" />
+							</Button>
 						</div>
 					</CardHeader>
 					<CardContent class="space-y-3">
@@ -327,64 +335,59 @@
 						<p class="line-clamp-2 text-sm text-muted-foreground">
 							{String(group.items[0].content)}
 						</p>
-						<div class="flex flex-wrap items-center gap-2">
-							<Badge class={sourceBadge(sourceAi(group.items[0]))}>
-								{sourceAi(group.items[0])}
-							</Badge>
-							<div class="ml-auto flex items-center gap-1.5">
-								{#if conversationStatus(group.items[0]) === 'active'}
-									<Button
-										variant="outline"
-										size="sm"
-										class="h-7 px-2 text-xs"
-										onclick={() => setStatus(group, 'paused')}
-									>
-										<PauseCircle class="size-3.5" /> Pause
-									</Button>
-									<Button
-										variant="secondary"
-										size="sm"
-										class="h-7 px-2 text-xs"
-										onclick={() => setStatus(group, 'done')}
-									>
-										<CheckCircle2 class="size-3.5" /> Done
-									</Button>
-								{:else if conversationStatus(group.items[0]) === 'paused'}
-									<Button
-										variant="outline"
-										size="sm"
-										class="h-7 px-2 text-xs"
-										onclick={() => setStatus(group, 'active')}
-									>
-										<PlayCircle class="size-3.5" /> Resume
-									</Button>
-									<Button
-										variant="secondary"
-										size="sm"
-										class="h-7 px-2 text-xs"
-										onclick={() => setStatus(group, 'done')}
-									>
-										<CheckCircle2 class="size-3.5" /> Done
-									</Button>
-								{:else}
-									<Button
-										variant="outline"
-										size="sm"
-										class="h-7 px-2 text-xs"
-										onclick={() => setStatus(group, 'active')}
-									>
-										<PlayCircle class="size-3.5" /> Undo done
-									</Button>
-								{/if}
+						<div class="flex flex-wrap items-center gap-1.5">
+							{#if conversationStatus(group.items[0]) === 'active'}
 								<Button
-									variant="ghost"
+									variant="outline"
 									size="sm"
-									class="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-									onclick={() => delConversation(group)}
+									class="h-7 px-2 text-xs"
+									onclick={() => setStatus(group, 'paused')}
 								>
-									<Trash2 class="size-3.5" /> Delete
+									<PauseCircle class="size-3.5" /> Pause
 								</Button>
-							</div>
+								<Button
+									variant="secondary"
+									size="sm"
+									class="h-7 px-2 text-xs"
+									onclick={() => setStatus(group, 'done')}
+								>
+									<CheckCircle2 class="size-3.5" /> Done
+								</Button>
+							{:else if conversationStatus(group.items[0]) === 'paused'}
+								<Button
+									variant="outline"
+									size="sm"
+									class="h-7 px-2 text-xs"
+									onclick={() => setStatus(group, 'active')}
+								>
+									<PlayCircle class="size-3.5" /> Resume
+								</Button>
+								<Button
+									variant="secondary"
+									size="sm"
+									class="h-7 px-2 text-xs"
+									onclick={() => setStatus(group, 'done')}
+								>
+									<CheckCircle2 class="size-3.5" /> Done
+								</Button>
+							{:else}
+								<Button
+									variant="outline"
+									size="sm"
+									class="h-7 px-2 text-xs"
+									onclick={() => setStatus(group, 'active')}
+								>
+									<PlayCircle class="size-3.5" /> Undo done
+								</Button>
+							{/if}
+							<Button
+								variant="ghost"
+								size="sm"
+								class="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+								onclick={() => delConversation(group)}
+							>
+								<Trash2 class="size-3.5" /> Delete
+							</Button>
 						</div>
 					</CardContent>
 				</Card>
