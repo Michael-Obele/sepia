@@ -139,7 +139,7 @@
 		aria-hidden="true"
 	></div>
 
-	<div class="relative z-10 mx-auto max-w-3xl text-center">
+	<div class="relative z-10 mx-auto max-w-5xl text-center">
 		<Badge class="gap-1.5 bg-brand/15 py-1.5 text-brand ring-1 ring-brand/25">
 			<Sparkles class="size-3.5" /> Hosted · Beta pricing
 		</Badge>
@@ -155,7 +155,7 @@
 			>
 		</h1>
 
-		<p class="mx-auto mt-5 max-w-xl text-lg text-muted-foreground">
+		<p class="mx-auto mt-5 text-lg text-muted-foreground">
 			Your first 1,000 memories are free — forever, not a trial. When you outgrow them, Pro is
 			{#if billing === 'annual'}
 				<span class="font-medium text-foreground">$4.17/month</span> billed annually.
@@ -188,7 +188,7 @@
 
 <!-- Plans -->
 <section class="relative px-4 pb-8">
-	<div class="mx-auto grid max-w-4xl gap-5 md:grid-cols-2">
+	<div class="mx-auto grid max-w-5xl gap-5 md:grid-cols-2">
 		{#each plans as plan (plan.name)}
 			<div
 				class={plan.highlight
@@ -274,7 +274,7 @@
 
 	<!-- Risk reversal strip -->
 	<div
-		class="mx-auto mt-8 flex max-w-4xl flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-muted-foreground"
+		class="mx-auto mt-8 flex max-w-5xl flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-muted-foreground"
 	>
 		<span class="flex items-center gap-2"
 			><Download class="size-4 text-brand" /> Export everything</span
@@ -290,8 +290,8 @@
 
 <!-- Comparison table -->
 <section class="relative px-4 py-24 sm:py-28">
-	<div class="mx-auto max-w-4xl">
-		<div class="mx-auto max-w-2xl text-center">
+	<div class="mx-auto max-w-5xl">
+		<div class="text-center">
 			<Badge variant="outline" class="mb-4 font-mono text-xs tracking-wider uppercase"
 				>Free vs Pro</Badge
 			>
@@ -361,7 +361,7 @@
 
 <!-- Anchor: honest math -->
 <section class="relative px-4 pb-24 sm:pb-32">
-	<div class="mx-auto max-w-4xl">
+	<div class="mx-auto max-w-5xl">
 		<div class="grid gap-10 md:grid-cols-2 md:items-center">
 			<div>
 				<Badge variant="outline" class="mb-4 font-mono text-xs tracking-wider uppercase"
@@ -410,7 +410,7 @@
 
 <!-- FAQ -->
 <section class="relative border-t border-border/40 px-4 py-24 sm:py-28">
-	<div class="mx-auto max-w-3xl">
+	<div class="mx-auto max-w-5xl">
 		<div class="text-center">
 			<h2 class="text-3xl font-semibold tracking-tight sm:text-4xl" style="letter-spacing: -0.03em">
 				Fair questions.
@@ -438,11 +438,11 @@
 
 <!-- Final CTA -->
 <section class="relative overflow-hidden px-4 pb-28">
-	<div class="relative z-10 mx-auto max-w-2xl text-center">
+	<div class="relative z-10 mx-auto max-w-5xl text-center">
 		<h2 class="text-3xl font-semibold tracking-tight sm:text-4xl" style="letter-spacing: -0.03em">
 			Your AI starts at zero every session.
 		</h2>
-		<p class="mx-auto mt-4 max-w-lg text-muted-foreground">
+		<p class="mx-auto mt-4 text-muted-foreground">
 			Give it a memory. The first 1,000 are on us — forever.
 		</p>
 		<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
