@@ -2,12 +2,13 @@
 	import { BarChart, defaultChartPadding } from 'layerchart';
 
 	// Honest operation counts per MCP tool, straight from src/tools/*.ts.
+	// manage_memory gained `ingest` (conversation handoff) — 7 actions now.
 	const data = [
-		{ tool: 'manage_entity', ops: 5 },
-		{ tool: 'manage_memory', ops: 5 },
+		{ tool: 'manage_memory', ops: 7 },
+		{ tool: 'manage_entity', ops: 6 },
 		{ tool: 'manage_namespace', ops: 4 },
 		{ tool: 'manage_relation', ops: 3 },
-		{ tool: 'consolidate', ops: 3 },
+		{ tool: 'consolidate', ops: 1 },
 		{ tool: 'search', ops: 1 },
 		{ tool: 'traverse_graph', ops: 1 }
 	];
@@ -32,7 +33,7 @@
 			tickLength: 0
 		},
 		xAxis: {
-			ticks: [0, 1, 2, 3, 4, 5],
+			ticks: [0, 2, 4, 6],
 			format: (d) => ''
 		}
 	}}

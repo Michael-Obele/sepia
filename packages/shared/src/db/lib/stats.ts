@@ -9,6 +9,8 @@ export interface Stats {
   entities: number;
   memories: number;
   relations: number;
+  /** Conversation digests (tag `conversation` + metadata.kind = "conversation"). */
+  conversations: number;
   archived: number;
   /** Memories by type (fact/observation/preference/instruction). */
   memories_by_type: Record<string, number>;
@@ -74,6 +76,15 @@ export async function getStats(db: Db): Promise<Stats> {
           AND importance < ${STALE_IMPORTANCE}
           AND updated_at < now() - (${STALE_AFTER_DAYS} * interval '1 day')
       `),
+    // Conversation digests only — constituents carry metadata.kind too, but
+    // only the digest carries the `conversation` tag (matches the dashboard
+    // conversations list filter). Uses the GIN tag index.
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(memories)
+      .where(
+        sql`${memories.metadata} @> '{"kind":"conversation"}'::jsonb AND ${memories.tags} @> ARRAY['conversation']`,
+      ),
     db
       .select({
         id: memories.id,
@@ -101,6 +112,7 @@ export async function getStats(db: Db): Promise<Stats> {
     top,
     decay,
     recent,
+    conv,
   ] = await db.batch(queries as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
 
   const memoriesByType: Record<string, number> = {};
@@ -113,11 +125,18 @@ export async function getStats(db: Db): Promise<Stats> {
     entities: Number(ent[0]?.n ?? 0),
     memories: Number(mem[0]?.n ?? 0),
     relations: Number(rel[0]?.n ?? 0),
+    conversations: Number(conv[0]?.n ?? 0),
     archived: Number(archived[0]?.n ?? 0),
     memories_by_type: memoriesByType,
     entities_by_type: entitiesByType,
     top_entities: top.map(
-      (e: { id: unknown; name: unknown; type: unknown; access_count: unknown; importance: unknown }) => ({
+      (e: {
+        id: unknown;
+        name: unknown;
+        type: unknown;
+        access_count: unknown;
+        importance: unknown;
+      }) => ({
         id: String(e.id),
         name: String(e.name),
         type: String(e.type),

@@ -19,7 +19,9 @@
 		Download,
 		ShieldCheck,
 		Code,
-		KeyRound
+		KeyRound,
+		MessagesSquare,
+		ArrowRightLeft
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -125,7 +127,7 @@
 	<title>Sepia — Memory Server for AI Agents</title>
 	<meta
 		name="description"
-		content="A self-hosted, remote knowledge-graph memory server for AI agents. Connect Grok, ChatGPT, and your editor in 60 seconds. 7 MCP tools, $0/month, your data stays yours."
+		content="A self-hosted, remote knowledge-graph memory server for AI agents. Connect Grok, ChatGPT, and your editor in 60 seconds. Conversation ingest — switch AIs mid-task, resume with a distilled digest. 7 MCP tools, $0/month, your data stays yours."
 	/>
 </svelte:head>
 
@@ -156,7 +158,7 @@
 				class="mb-4 flex items-center gap-2 text-xs font-medium tracking-wider text-muted-foreground uppercase"
 			>
 				<span class="size-1.5 rounded-full bg-emerald-400"></span>
-				OAuth 2.1 · ChatGPT + Grok support · 7 MCP tools
+				OAuth 2.1 · ChatGPT + Grok support · Conversation ingest
 			</p>
 
 			<h1
@@ -170,6 +172,8 @@
 				Every new session, your AI starts from zero. Sepia gives
 				<span class="font-medium text-foreground">Grok, ChatGPT, Claude, and your editor</span>
 				one shared knowledge graph — connect in 60 seconds, install in one line, and your AI never forgets.
+				Switching AIs mid-task? Sepia ingests the conversation and the next model resumes with a distilled
+				digest — decisions, preferences, open questions.
 			</p>
 
 			<div class="mt-8 flex flex-wrap items-center gap-3">
@@ -369,11 +373,32 @@
 			</h2>
 			<p class="mt-4 text-lg text-muted-foreground">
 				Not a chat log. Not a JSONL file. A real knowledge graph with search, traversal, and
-				maintenance — purpose-built for AI agents.
+				maintenance — plus conversation ingest, so your next AI picks up a distilled digest, not a
+				transcript dump.
 			</p>
 		</div>
 
 		<div class="mt-16 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+			<!-- Featured: conversation ingest — the headline new capability -->
+			<div
+				class="relative overflow-hidden rounded-xl border border-brand/30 bg-gradient-to-br from-brand/10 via-card/50 to-card/50 p-6 sm:col-span-2 lg:col-span-3"
+			>
+				<Badge class="mb-4 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15">New</Badge>
+				<div class="flex items-start gap-4">
+					<div class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand/15">
+						<MessagesSquare class="size-5 text-brand" />
+					</div>
+					<div>
+						<h3 class="text-base font-semibold text-foreground">Conversation ingest</h3>
+						<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+							Tell any AI “save this conversation” — Sepia distills it into a digest of decisions,
+							preferences, and open questions. Switch to another AI and resume exactly where you
+							left off. No re-explaining.
+						</p>
+					</div>
+				</div>
+			</div>
+
 			{#each features as f (f.title)}
 				<div
 					class="group relative rounded-xl border border-border/50 bg-card/50 p-6 transition-colors hover:border-border hover:bg-card"
@@ -396,7 +421,7 @@
 					Seven tools. One server.
 				</h3>
 				<p class="mt-3 text-muted-foreground">
-					20 operations across 7 MCP tools. Rich CRUD for entities, memories, and namespaces — plus
+					23 operations across 7 MCP tools. Rich CRUD for entities, memories, and namespaces — plus
 					focused search, traversal, and maintenance. All pure SQL, no LLM calls.
 				</p>
 				<div class="mt-6 flex flex-wrap gap-2">
@@ -407,6 +432,105 @@
 			</div>
 			<div class="rounded-xl border border-border/50 bg-card/40 p-4">
 				<ToolBreadth />
+			</div>
+		</div>
+	</div>
+</section>
+
+<!-- Conversation ingest -->
+<section class="relative px-4 py-24 sm:py-32">
+	<div class="mx-auto max-w-5xl">
+		<div class="grid items-center gap-12 lg:grid-cols-2">
+			<div>
+				<Badge class="mb-4 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15">New</Badge>
+				<h2
+					class="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl"
+					style="letter-spacing: -0.03em"
+				>
+					Switch AIs mid-task.<br />Lose nothing.
+				</h2>
+				<p class="mt-4 text-muted-foreground">
+					Tell any AI “save this conversation”. Sepia ingests it as a distilled digest — decisions,
+					preferences, open questions — and the next model resumes with the signal, not the noise.
+				</p>
+				<div class="mt-8 space-y-3">
+					<div class="flex items-start gap-3">
+						<MessagesSquare class="mt-0.5 size-4 shrink-0 text-brand" />
+						<div>
+							<p class="text-sm font-medium text-foreground">Distilled, not dumped</p>
+							<p class="text-sm text-muted-foreground">
+								A digest of decisions, preferences, and open questions — not a raw transcript. The
+								next model gets the signal, not the noise.
+							</p>
+						</div>
+					</div>
+					<div class="flex items-start gap-3">
+						<ArrowRightLeft class="mt-0.5 size-4 shrink-0 text-amber-400" />
+						<div>
+							<p class="text-sm font-medium text-foreground">Resume in any AI</p>
+							<p class="text-sm text-muted-foreground">
+								Claude → Copilot → Grok. One digest, pasted anywhere, and the new model picks up
+								exactly where you left off.
+							</p>
+						</div>
+					</div>
+					<div class="flex items-start gap-3">
+						<ShieldCheck class="mt-0.5 size-4 shrink-0 text-emerald-400" />
+						<div>
+							<p class="text-sm font-medium text-foreground">Evidence kept verbatim</p>
+							<p class="text-sm text-muted-foreground">
+								Every decision and preference is stored as a searchable memory — the transcript
+								stays optional.
+							</p>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<!-- Digest mock — mirrors the real conversation detail page -->
+			<div class="rounded-xl border border-border/50 bg-card/40 p-4">
+				<div class="rounded-lg border border-border/50 bg-background/60 p-5">
+					<div class="flex items-center justify-between gap-3">
+						<div class="flex items-center gap-2">
+							<MessagesSquare class="size-4 text-brand" />
+							<p class="text-sm font-semibold text-foreground">Conversation digest</p>
+						</div>
+						<Badge class="bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15">active</Badge>
+					</div>
+					<p class="mt-3 text-sm font-medium text-foreground">R2 file uploads — decisions</p>
+					<p class="mt-1 text-xs text-muted-foreground">Saved from Claude Code · 2026-08-24</p>
+					<div class="mt-4 space-y-3">
+						<div>
+							<p class="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+								Decisions
+							</p>
+							<ul class="mt-1.5 space-y-1.5">
+								<li class="flex items-start gap-2 text-sm text-foreground">
+									<Check class="mt-0.5 size-3.5 shrink-0 text-emerald-400" />
+									Presigned URLs for data transfer — files never stream through the server
+								</li>
+								<li class="flex items-start gap-2 text-sm text-foreground">
+									<Check class="mt-0.5 size-3.5 shrink-0 text-emerald-400" />
+									Server-side upload with a 25MB cap
+								</li>
+							</ul>
+						</div>
+						<div>
+							<p class="text-xs font-medium tracking-wider text-muted-foreground uppercase">
+								Open questions
+							</p>
+							<ul class="mt-1.5 space-y-1.5">
+								<li class="flex items-start gap-2 text-sm text-foreground">
+									<span class="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-400"></span>
+									Custom domain for file downloads?
+								</li>
+							</ul>
+						</div>
+					</div>
+				</div>
+				<p class="mt-2 text-center text-xs text-muted-foreground">
+					Illustrative — paste the digest into any AI to resume.
+				</p>
 			</div>
 		</div>
 	</div>
