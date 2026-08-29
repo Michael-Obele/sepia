@@ -25,6 +25,8 @@ import {
   traverseGraph,
   consolidate,
   getStats,
+  getUsage,
+  type UserRow,
   // Valibot schemas (single source of truth for input validation)
   NamespaceInput,
   EntityInput,
@@ -139,11 +141,13 @@ function validate<T extends v.GenericSchema>(
 
 /**
  * Route an /api/* request. Returns a Response, or null if the path isn't an
- * API route (caller falls through to 404).
+ * API route (caller falls through to 404). `user` is the authenticated
+ * account — every query is scoped to it (tenant boundary).
  */
 export async function handleApi(
   request: Request,
   url: URL,
+  user: UserRow | null,
 ): Promise<Response | null> {
   if (!url.pathname.startsWith("/api")) return null;
 
@@ -151,21 +155,54 @@ export async function handleApi(
   if (request.method === "OPTIONS") {
     return new Response(null, { status: 204, headers: cors });
   }
+  if (!user) {
+    return error("unauthorized", "authentication required", 401);
+  }
 
   const sql = db();
+  const ownerId = user.id;
+  const plan = user.plan;
   const path = url.pathname;
   const method = request.method;
 
   try {
+    // ── Account (me + usage) ──────────────────────────────────────────────
+    if (path === "/api/me" && method === "GET") {
+      return json(
+        {
+          user: {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            plan: user.plan,
+            created_at: user.createdAt,
+          },
+          usage: await getUsage(sql, ownerId, plan),
+        },
+        200,
+        cors,
+      );
+    }
+
     // ── Namespaces ────────────────────────────────────────────────────────
     if (path === "/api/namespaces" && method === "GET") {
-      return json({ namespaces: await listNamespaces(sql) }, 200, cors);
+      return json(
+        { namespaces: await listNamespaces(sql, ownerId) },
+        200,
+        cors,
+      );
     }
     if (path === "/api/namespaces" && method === "POST") {
       const input = validate(NamespaceInput, await readBody(request));
       return json(
         {
-          namespace: await createNamespace(sql, input.name, input.description),
+          namespace: await createNamespace(
+            sql,
+            ownerId,
+            input.name,
+            input.description,
+            plan,
+          ),
         },
         201,
         cors,
@@ -176,6 +213,7 @@ export async function handleApi(
     if (path === "/api/entities" && method === "GET") {
       const entities = await findEntities(
         sql,
+        ownerId,
         url.searchParams.get("namespace") ?? undefined,
         url.searchParams.get("q") ?? undefined,
         url.searchParams.get("type") ?? undefined,
@@ -189,7 +227,7 @@ export async function handleApi(
       const namespace =
         typeof body.namespace === "string" ? body.namespace : "personal";
       return json(
-        { entity: await createEntity(sql, namespace, input) },
+        { entity: await createEntity(sql, ownerId, namespace, input) },
         201,
         cors,
       );
@@ -198,23 +236,34 @@ export async function handleApi(
     if (entityMatch) {
       const id = uuidParam(entityMatch[1], "entity id");
       if (method === "GET")
-        return json({ entity: await getEntity(sql, id) }, 200, cors);
+        return json({ entity: await getEntity(sql, ownerId, id) }, 200, cors);
       if (method === "PATCH") {
         const input = validate(EntityUpdateInput, await readBody(request));
-        return json({ entity: await updateEntity(sql, id, input) }, 200, cors);
+        return json(
+          { entity: await updateEntity(sql, ownerId, id, input) },
+          200,
+          cors,
+        );
       }
       if (method === "DELETE")
-        return json({ deleted: await deleteEntity(sql, id) }, 200, cors);
+        return json(
+          { deleted: await deleteEntity(sql, ownerId, id) },
+          200,
+          cors,
+        );
     }
 
     // ── Memories ──────────────────────────────────────────────────────────
     if (path === "/api/memories" && method === "GET") {
       const typeParam = url.searchParams.get("type");
-      const memories = await queryMemories(sql, {
+      const memories = await queryMemories(sql, ownerId, {
         type:
           (typeParam as
-            "fact" | "observation" | "preference" | "instruction" | null) ??
-          undefined,
+            | "fact"
+            | "observation"
+            | "preference"
+            | "instruction"
+            | null) ?? undefined,
         namespace: url.searchParams.get("namespace") ?? undefined,
         importance_min: url.searchParams.has("importance_min")
           ? numParam(url.searchParams.get("importance_min"), 0)
@@ -229,7 +278,7 @@ export async function handleApi(
       const input = validate(MemoryInput, body);
       const source = "dashboard";
       return json(
-        { memory: await createMemory(sql, input, source) },
+        { memory: await createMemory(sql, ownerId, input, source, plan) },
         201,
         cors,
       );
@@ -238,20 +287,28 @@ export async function handleApi(
     if (memoryMatch) {
       const id = uuidParam(memoryMatch[1], "memory id");
       if (method === "GET")
-        return json({ memory: await getMemory(sql, id) }, 200, cors);
+        return json({ memory: await getMemory(sql, ownerId, id) }, 200, cors);
       if (method === "PATCH") {
         const input = validate(MemoryUpdateInput, await readBody(request));
-        return json({ memory: await updateMemory(sql, id, input) }, 200, cors);
+        return json(
+          { memory: await updateMemory(sql, ownerId, id, input) },
+          200,
+          cors,
+        );
       }
       if (method === "DELETE")
-        return json({ deleted: await deleteMemory(sql, id) }, 200, cors);
+        return json(
+          { deleted: await deleteMemory(sql, ownerId, id) },
+          200,
+          cors,
+        );
     }
 
     // ── Conversations (handoff digests) ───────────────────────────────────
     if (path === "/api/conversations" && method === "POST") {
       const input = validate(ConversationInput, await readBody(request));
       return json(
-        { result: await ingestConversation(sql, input, "dashboard") },
+        { result: await ingestConversation(sql, ownerId, input, "dashboard") },
         201,
         cors,
       );
@@ -266,6 +323,7 @@ export async function handleApi(
         );
       const memories = await getConversation(
         sql,
+        ownerId,
         conversationId,
         url.searchParams.get("namespace") ?? undefined,
       );
@@ -274,7 +332,7 @@ export async function handleApi(
 
     // ── Relations ─────────────────────────────────────────────────────────
     if (path === "/api/relations" && method === "GET") {
-      const relations = await listRelations(sql, {
+      const relations = await listRelations(sql, ownerId, {
         entity_id: url.searchParams.get("entity_id") ?? undefined,
         namespace: url.searchParams.get("namespace") ?? undefined,
       });
@@ -282,13 +340,21 @@ export async function handleApi(
     }
     if (path === "/api/relations" && method === "POST") {
       const input = validate(RelationInput, await readBody(request));
-      return json({ relation: await createRelation(sql, input) }, 201, cors);
+      return json(
+        { relation: await createRelation(sql, ownerId, input) },
+        201,
+        cors,
+      );
     }
     const relationMatch = path.match(/^\/api\/relations\/([^/]+)$/);
     if (relationMatch) {
       const id = uuidParam(relationMatch[1], "relation id");
       if (method === "DELETE")
-        return json({ deleted: await deleteRelation(sql, id) }, 200, cors);
+        return json(
+          { deleted: await deleteRelation(sql, ownerId, id) },
+          200,
+          cors,
+        );
     }
 
     // ── Search / graph / consolidate / stats ──────────────────────────────
@@ -299,14 +365,8 @@ export async function handleApi(
         type: url.searchParams.get("type") ?? undefined,
         limit: numParam(url.searchParams.get("limit"), 10),
       });
-      return json(
-        {
-          count: (await search(sql, input)).length,
-          results: await search(sql, input),
-        },
-        200,
-        cors,
-      );
+      const results = await search(sql, ownerId, input);
+      return json({ count: results.length, results }, 200, cors);
     }
     if (path === "/api/graph" && method === "GET") {
       const root = url.searchParams.get("root");
@@ -314,16 +374,16 @@ export async function handleApi(
         return error("invalid_input", "root entity id is required", 422);
       const depth = numParam(url.searchParams.get("depth"), 1);
       return json(
-        await traverseGraph(sql, uuidParam(root, "root"), depth),
+        await traverseGraph(sql, ownerId, uuidParam(root, "root"), depth),
         200,
         cors,
       );
     }
     if (path === "/api/consolidate" && method === "POST") {
-      return json({ result: await consolidate(sql) }, 200, cors);
+      return json({ result: await consolidate(sql, ownerId) }, 200, cors);
     }
     if (path === "/api/stats" && method === "GET") {
-      return json({ stats: await getStats(sql) }, 200, cors);
+      return json({ stats: await getStats(sql, ownerId) }, 200, cors);
     }
 
     return error("not_found", `no such API route: ${method} ${path}`, 404);

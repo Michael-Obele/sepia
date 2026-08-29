@@ -19,6 +19,7 @@ import {
 } from "../schema.ts";
 import { normalizeTags } from "../../types.ts";
 import { resolveNamespaceId } from "./util.ts";
+import { assertMemoryQuota } from "./plans.ts";
 
 export interface MemoryCreate {
   content: string;
@@ -52,11 +53,15 @@ export type Memory = typeof memories.$inferSelect;
  */
 export async function createMemory(
   db: Db,
+  ownerId: string,
   input: MemoryCreate,
   source?: string,
+  plan?: string | null,
 ): Promise<(Memory & { namespace: string }) | undefined> {
+  await assertMemoryQuota(db, ownerId, plan);
   const namespaceId = await resolveNamespaceId(
     db,
+    ownerId,
     input.namespace ?? "personal",
   );
   if (input.entity_ids?.length) {
@@ -118,7 +123,7 @@ export async function createMemory(
 }
 
 /** Full memory detail: memory + linked entity names. */
-export async function getMemory(db: Db, id: string) {
+export async function getMemory(db: Db, ownerId: string, id: string) {
   const rows = await db
     .select({
       ...getTableColumns(memories),
@@ -126,7 +131,7 @@ export async function getMemory(db: Db, id: string) {
     })
     .from(memories)
     .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
-    .where(eq(memories.id, id))
+    .where(and(eq(memories.id, id), eq(namespaces.ownerId, ownerId)))
     .limit(1);
   const memory = rows[0];
   if (!memory) throw new MemoryError("not_found", `memory '${id}' not found`);
@@ -143,7 +148,12 @@ export async function getMemory(db: Db, id: string) {
   return { ...memory, entities: links };
 }
 
-export async function updateMemory(db: Db, id: string, update: MemoryUpdate) {
+export async function updateMemory(
+  db: Db,
+  ownerId: string,
+  id: string,
+  update: MemoryUpdate,
+) {
   const sets: Partial<typeof memories.$inferInsert> = {};
   if (update.content !== undefined) sets.content = update.content;
   if (update.type !== undefined) sets.type = update.type;
@@ -152,13 +162,18 @@ export async function updateMemory(db: Db, id: string, update: MemoryUpdate) {
   if (update.archived !== undefined) sets.archived = update.archived;
   if (update.tags !== undefined) sets.tags = normalizeTags(update.tags);
 
+  const owned = db
+    .select({ id: namespaces.id })
+    .from(namespaces)
+    .where(eq(namespaces.ownerId, ownerId));
+
   const queries: BatchItem<"pg">[] = [];
   if (Object.keys(sets).length > 0) {
     queries.push(
       db
         .update(memories)
         .set({ ...sets, updatedAt: sql`now()` })
-        .where(eq(memories.id, id)),
+        .where(and(eq(memories.id, id), inArray(memories.namespaceId, owned))),
     );
   }
   if (update.entity_ids !== undefined) {
@@ -199,13 +214,17 @@ export async function updateMemory(db: Db, id: string, update: MemoryUpdate) {
     throw new MemoryError("invalid_input", "no fields to update");
   }
   await db.batch(queries as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
-  return getMemory(db, id);
+  return getMemory(db, ownerId, id);
 }
 
-export async function deleteMemory(db: Db, id: string) {
+export async function deleteMemory(db: Db, ownerId: string, id: string) {
+  const owned = db
+    .select({ id: namespaces.id })
+    .from(namespaces)
+    .where(eq(namespaces.ownerId, ownerId));
   const res = await db
     .delete(memories)
-    .where(eq(memories.id, id))
+    .where(and(eq(memories.id, id), inArray(memories.namespaceId, owned)))
     .returning({ id: memories.id });
   const row = res[0];
   if (!row) throw new MemoryError("not_found", `memory '${id}' not found`);
@@ -219,25 +238,40 @@ export interface MemoryQueryFilters {
   archived?: boolean;
   /** match memories carrying ALL of these tags */
   tags?: string[];
+  /** free-text search over memory content (case-insensitive substring) */
+  q?: string;
   limit?: number;
   offset?: number;
 }
 
 /** Query memories: ordered by importance DESC, then updated_at DESC. */
-export async function queryMemories(db: Db, filters: MemoryQueryFilters = {}) {
-  const conditions = [eq(memories.archived, filters.archived ?? false)];
+export async function queryMemories(
+  db: Db,
+  ownerId: string,
+  filters: MemoryQueryFilters = {},
+) {
+  const conditions = [
+    eq(memories.archived, filters.archived ?? false),
+    eq(namespaces.ownerId, ownerId),
+  ];
   if (filters.type !== undefined) {
     conditions.push(eq(memories.type, filters.type));
   }
   if (filters.namespace !== undefined) {
-    const nsId = await resolveNamespaceId(db, filters.namespace);
+    const nsId = await resolveNamespaceId(db, ownerId, filters.namespace);
     conditions.push(eq(memories.namespaceId, nsId));
   }
   if (filters.importance_min !== undefined) {
     conditions.push(gte(memories.importance, filters.importance_min));
   }
+  if (filters.q !== undefined && filters.q.trim() !== "") {
+    conditions.push(ilike(memories.content, `%${filters.q.trim()}%`));
+  }
   if (filters.tags !== undefined && filters.tags.length) {
-    const tagArray = sql`ARRAY[${sql.join(filters.tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+    const tagArray = sql`ARRAY[${sql.join(
+      filters.tags.map((t) => sql`${t}`),
+      sql`, `,
+    )}]::text[]`;
     conditions.push(sql`${memories.tags} @> ${tagArray}`);
   }
   const limit = Math.min(filters.limit ?? 20, 10000);
@@ -269,20 +303,24 @@ export interface MemoryWhere {
  */
 export async function batchUpdateMemories(
   db: Db,
+  ownerId: string,
   where: MemoryWhere,
   update: MemoryUpdate,
   limit = 100,
 ): Promise<{ count: number }> {
-  const conditions = [];
+  const conditions = [eq(namespaces.ownerId, ownerId)];
   if (where.type !== undefined) {
     conditions.push(eq(memories.type, where.type));
   }
   if (where.namespace !== undefined) {
-    const nsId = await resolveNamespaceId(db, where.namespace);
+    const nsId = await resolveNamespaceId(db, ownerId, where.namespace);
     conditions.push(eq(memories.namespaceId, nsId));
   }
   if (where.tags !== undefined && where.tags.length) {
-    const tagArray = sql`ARRAY[${sql.join(where.tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+    const tagArray = sql`ARRAY[${sql.join(
+      where.tags.map((t) => sql`${t}`),
+      sql`, `,
+    )}]::text[]`;
     conditions.push(sql`${memories.tags} @> ${tagArray}`);
   }
   if (where.importance_min !== undefined) {
@@ -291,7 +329,7 @@ export async function batchUpdateMemories(
   if (where.q !== undefined) {
     conditions.push(ilike(memories.content, `%${where.q}%`));
   }
-  if (conditions.length === 0) {
+  if (conditions.length === 1) {
     throw new MemoryError(
       "invalid_input",
       "batch_update requires at least one where filter",
@@ -315,6 +353,7 @@ export async function batchUpdateMemories(
   const ids = await db
     .select({ id: memories.id })
     .from(memories)
+    .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
     .where(and(...conditions))
     .limit(Math.min(limit, 500));
   if (ids.length === 0) return { count: 0 };
@@ -322,7 +361,12 @@ export async function batchUpdateMemories(
   const res = await db
     .update(memories)
     .set({ ...sets, updatedAt: sql`now()` })
-    .where(inArray(memories.id, ids.map((r) => r.id)))
+    .where(
+      inArray(
+        memories.id,
+        ids.map((r) => r.id),
+      ),
+    )
     .returning({ id: memories.id });
   return { count: res.length };
 }

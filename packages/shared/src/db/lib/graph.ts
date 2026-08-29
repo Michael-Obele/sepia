@@ -1,7 +1,7 @@
 import type { Db } from "../client.ts";
 import { MemoryError } from "../errors.ts";
-import { eq, sql } from "drizzle-orm";
-import { entities, relations } from "../schema.ts";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
+import { entities, namespaces, relations } from "../schema.ts";
 
 export interface GraphNode {
   id: string;
@@ -31,13 +31,22 @@ export interface GraphResult {
  */
 export async function traverseGraph(
   db: Db,
+  ownerId: string,
   startId: string,
   depth = 1,
 ): Promise<GraphResult> {
   const start = await db
-    .select()
+    .select({
+      id: entities.id,
+      name: entities.name,
+      type: entities.type,
+      importance: entities.importance,
+    })
     .from(entities)
-    .where(eq(entities.id, startId))
+    .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
+    .where(
+      and(eq(entities.id, startId), eq(namespaces.ownerId, ownerId)),
+    )
     .limit(1);
   if (!start[0]) {
     throw new MemoryError("not_found", `entity '${startId}' not found`);
@@ -75,9 +84,11 @@ export async function traverseGraph(
              s.name AS source_name, s.type AS source_type, s.importance AS source_importance,
              t.name AS target_name, t.type AS target_type, t.importance AS target_importance
       FROM ${relations} r
+      JOIN ${namespaces} n ON n.id = r.namespace_id
       JOIN ${entities} s ON s.id = r.source_id
       JOIN ${entities} t ON t.id = r.target_id
-      WHERE r.source_id = ANY(${idArray}) OR r.target_id = ANY(${idArray})
+      WHERE (r.source_id = ANY(${idArray}) OR r.target_id = ANY(${idArray}))
+        AND n.owner_id = ${ownerId}
     `);
     const rows = res.rows as Array<Record<string, unknown>>;
     const next = new Set<string>();
@@ -133,16 +144,22 @@ export async function traverseGraph(
  * an edge. Same shape as `traverseGraph` (`depth_reached` is 0 — this is not
  * a traversal). Powers the dashboard's Obsidian-style "full graph" view.
  */
-export async function fullGraph(db: Db): Promise<GraphResult> {
+export async function fullGraph(db: Db, ownerId: string): Promise<GraphResult> {
   const [entityRows, relationRows] = await Promise.all([
-    db.select().from(entities),
+    db
+      .select({ ...getTableColumns(entities) })
+      .from(entities)
+      .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
+      .where(eq(namespaces.ownerId, ownerId)),
     db.execute(sql`
       SELECT r.id, r.source_id, r.target_id, r.relation_type, r.weight,
              s.name AS source_name, s.type AS source_type, s.importance AS source_importance,
              t.name AS target_name, t.type AS target_type, t.importance AS target_importance
       FROM ${relations} r
+      JOIN ${namespaces} n ON n.id = r.namespace_id
       JOIN ${entities} s ON s.id = r.source_id
       JOIN ${entities} t ON t.id = r.target_id
+      WHERE n.owner_id = ${ownerId}
     `),
   ]);
 

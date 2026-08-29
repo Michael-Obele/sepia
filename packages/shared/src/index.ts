@@ -13,3 +13,5 @@ export * from "./db/lib/search.ts";
 export * from "./db/lib/graph.ts";
 export * from "./db/lib/consolidate.ts";
 export * from "./db/lib/stats.ts";
+export * from "./db/lib/plans.ts";
+export * from "./db/lib/users.ts";

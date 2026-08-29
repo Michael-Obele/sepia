@@ -72,11 +72,12 @@ export const CONVERSATION_TAG = "conversation";
  */
 export async function ingestConversation(
   db: Db,
+  ownerId: string,
   input: ConversationIngest,
   source?: string,
 ): Promise<IngestResult> {
   const namespaceName = input.namespace ?? "personal";
-  const namespaceId = await resolveNamespaceId(db, namespaceName);
+  const namespaceId = await resolveNamespaceId(db, ownerId, namespaceName);
   const topicTags = normalizeTags(input.tags);
   const conversationId = input.conversation_id;
 
@@ -232,18 +233,20 @@ export async function ingestConversation(
  */
 export async function getConversation(
   db: Db,
+  ownerId: string,
   conversationId: string,
   namespace?: string,
 ) {
   const conditions = [
     eq(memories.archived, false),
+    eq(namespaces.ownerId, ownerId),
     // jsonb_build_object('key', $1) fails in prepared statements (variadic
     // "any" — Postgres can't infer the param type). Use a JSON literal with
     // an explicit ::jsonb cast instead.
     sql`${memories.metadata} @> ${JSON.stringify({ conversation_id: conversationId })}::jsonb`,
   ];
   if (namespace !== undefined) {
-    const nsId = await resolveNamespaceId(db, namespace);
+    const nsId = await resolveNamespaceId(db, ownerId, namespace);
     conditions.push(eq(memories.namespaceId, nsId));
   }
   return db

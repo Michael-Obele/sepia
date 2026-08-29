@@ -43,6 +43,20 @@
       "when": 1787559539699,
       "tag": "0005_free_shockwave",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787682539499,
+      "tag": "0006_panoramic_vision",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787685766499,
+      "tag": "0007_military_tusk",
+      "breakpoints": true
     }
   ]
 }

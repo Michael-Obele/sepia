@@ -3,19 +3,21 @@ import * as v from "valibot";
 import { RelationToolInput } from "@sepia/shared";
 import { db } from "../db.ts";
 import { createRelation, deleteRelation, listRelations } from "@sepia/shared";
-import { safe } from "./util.ts";
+import { safe, SEPIA_ICON } from "./util.ts";
 
 export function registerRelationTools(server: McpServer<any, any>) {
   server.tool(
     {
       name: "manage_relation",
+      title: "Manage Relations",
       description:
-        "Create, delete, or list relations — directed, weighted edges between entities. " +
-        "Actions: create (relation: {source_id, target_id, relation_type, weight?} — updates weight if the same relation exists) | " +
-        "delete (id) | list (by entity_id — in + out — or namespace).",
+        "Create, delete, or list relations — directed, weighted edges between entities.",
+      icons: [SEPIA_ICON],
       schema: RelationToolInput,
     },
     safe(async (args: v.InferInput<typeof RelationToolInput>) => {
+      const user = server.ctx.custom?.user;
+      if (!user) throw new Error("unauthenticated");
       const sql = db();
       switch (args.action) {
         case "create": {
@@ -23,20 +25,20 @@ export function registerRelationTools(server: McpServer<any, any>) {
             throw new Error("action=create requires relation");
           return {
             action: "create",
-            relation: await createRelation(sql, args.relation),
+            relation: await createRelation(sql, user.id, args.relation),
           };
         }
         case "delete": {
           if (!args.id) throw new Error("action=delete requires id");
           return {
             action: "delete",
-            deleted: await deleteRelation(sql, args.id),
+            deleted: await deleteRelation(sql, user.id, args.id),
           };
         }
         case "list":
           return {
             action: "list",
-            relations: await listRelations(sql, {
+            relations: await listRelations(sql, user.id, {
               entity_id: args.entity_id,
               namespace: args.namespace,
             }),

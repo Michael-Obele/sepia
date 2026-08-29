@@ -1,6 +1,6 @@
 import type { Db } from "../client.ts";
 import { MemoryError } from "../errors.ts";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { entities, namespaces, relations } from "../schema.ts";
 
 export interface RelationCreate {
@@ -19,12 +19,22 @@ export type Relation = typeof relations.$inferSelect;
  */
 export async function createRelation(
   db: Db,
+  ownerId: string,
   input: RelationCreate,
 ): Promise<Relation | undefined> {
+  const owned = db
+    .select({ id: namespaces.id })
+    .from(namespaces)
+    .where(eq(namespaces.ownerId, ownerId));
   const source = await db
     .select({ namespaceId: entities.namespaceId })
     .from(entities)
-    .where(eq(entities.id, input.source_id))
+    .where(
+      and(
+        eq(entities.id, input.source_id),
+        inArray(entities.namespaceId, owned),
+      ),
+    )
     .limit(1);
   if (!source[0]) {
     throw new MemoryError("not_found", `entity '${input.source_id}' not found`);
@@ -32,7 +42,12 @@ export async function createRelation(
   const target = await db
     .select({ namespaceId: entities.namespaceId })
     .from(entities)
-    .where(eq(entities.id, input.target_id))
+    .where(
+      and(
+        eq(entities.id, input.target_id),
+        inArray(entities.namespaceId, owned),
+      ),
+    )
     .limit(1);
   if (!target[0]) {
     throw new MemoryError("not_found", `entity '${input.target_id}' not found`);
@@ -68,10 +83,14 @@ export async function createRelation(
   return rows[0];
 }
 
-export async function deleteRelation(db: Db, id: string) {
+export async function deleteRelation(db: Db, ownerId: string, id: string) {
+  const owned = db
+    .select({ id: namespaces.id })
+    .from(namespaces)
+    .where(eq(namespaces.ownerId, ownerId));
   const res = await db
     .delete(relations)
-    .where(eq(relations.id, id))
+    .where(and(eq(relations.id, id), inArray(relations.namespaceId, owned)))
     .returning({ id: relations.id });
   const row = res[0];
   if (!row) throw new MemoryError("not_found", `relation '${id}' not found`);
@@ -81,6 +100,7 @@ export async function deleteRelation(db: Db, id: string) {
 /** List relations: in + out for one entity, or all relations in a namespace. */
 export async function listRelations(
   db: Db,
+  ownerId: string,
   opts: { entity_id?: string; namespace?: string } = {},
 ) {
   // Joins entities twice (source + target) — query builder can't express a
@@ -93,9 +113,11 @@ export async function listRelations(
     const res = await db.execute(sql`
       SELECT ${cols}
       FROM ${relations} r
+      JOIN ${namespaces} n ON n.id = r.namespace_id
       JOIN ${entities} s ON s.id = r.source_id
       JOIN ${entities} t ON t.id = r.target_id
-      WHERE r.source_id = ${opts.entity_id} OR r.target_id = ${opts.entity_id}
+      WHERE (r.source_id = ${opts.entity_id} OR r.target_id = ${opts.entity_id})
+        AND n.owner_id = ${ownerId}
       ORDER BY r.weight DESC, r.created_at DESC
     `);
     return res.rows;
@@ -107,7 +129,7 @@ export async function listRelations(
       JOIN ${namespaces} n ON n.id = r.namespace_id
       JOIN ${entities} s ON s.id = r.source_id
       JOIN ${entities} t ON t.id = r.target_id
-      WHERE n.name = ${opts.namespace}
+      WHERE n.name = ${opts.namespace} AND n.owner_id = ${ownerId}
       ORDER BY r.weight DESC, r.created_at DESC
     `);
     return res.rows;
@@ -115,8 +137,10 @@ export async function listRelations(
   const res = await db.execute(sql`
     SELECT ${cols}
     FROM ${relations} r
+    JOIN ${namespaces} n ON n.id = r.namespace_id
     JOIN ${entities} s ON s.id = r.source_id
     JOIN ${entities} t ON t.id = r.target_id
+    WHERE n.owner_id = ${ownerId}
     ORDER BY r.weight DESC, r.created_at DESC
     LIMIT 200
   `);

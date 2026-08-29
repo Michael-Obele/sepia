@@ -3,20 +3,23 @@ import * as v from "valibot";
 import { ConsolidateToolInput } from "@sepia/shared";
 import { db } from "../db.ts";
 import { consolidate } from "@sepia/shared";
-import { safe } from "./util.ts";
+import { safe, SEPIA_ICON } from "./util.ts";
 
 export function registerConsolidateTools(server: McpServer<any, any>) {
   server.tool(
     {
       name: "consolidate",
+      title: "Consolidate Memory",
       description:
-        "Idempotent maintenance sweep — pure SQL, no LLM calls. " +
-        "1) Archives stale memories (importance < 0.3, untouched > 90 days). " +
-        "2) De-duplicates exact content within each namespace (keeps highest importance, oldest on tie). " +
-        "3) Hard-deletes rows archived > 30 days. Returns counts of what it did.",
+        "Idempotent maintenance sweep — pure SQL, no LLM calls. Scoped to your namespaces only.",
+      icons: [SEPIA_ICON],
       schema: ConsolidateToolInput,
       annotations: { destructiveHint: true },
     },
-    safe(async () => consolidate(db())),
+    safe(async () => {
+      const user = server.ctx.custom?.user;
+      if (!user) throw new Error("unauthenticated");
+      return consolidate(db(), user.id);
+    }),
   );
 }

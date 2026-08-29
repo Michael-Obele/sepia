@@ -1,9 +1,9 @@
 import { McpServer } from "tmcp";
 import { HttpTransport } from "@tmcp/transport-http";
 import { ValibotJsonSchemaAdapter } from "@tmcp/adapter-valibot";
-import { DOCS_VERSION } from "@sepia/shared";
+import { DOCS_VERSION, type UserRow } from "@sepia/shared";
 import { MEMORY_CONTRACT } from "./instructions.ts";
-import { authEnabled, requireAuth } from "./auth.ts";
+import { auth, authEnabled, ensureAdmin, requireAuth } from "./auth.ts";
 import { handleOAuthRequest, oauthEnabled } from "./oauth.ts";
 import { handleApi } from "./api.ts";
 import { registerNamespaceTools } from "./tools/namespace.ts";
@@ -13,6 +13,33 @@ import { registerMemoryTools } from "./tools/memory.ts";
 import { registerSearchTools } from "./tools/search.ts";
 import { registerTraverseTools } from "./tools/traverse.ts";
 import { registerConsolidateTools } from "./tools/consolidate.ts";
+import { API_RATE_LIMIT, MCP_RATE_LIMIT, rateLimit } from "./rate-limit.ts";
+
+// Per-request custom context: the authenticated user. Set by the fetch
+// handler (transport.respond(request, { user })) and read by every tool
+// via server.ctx.custom — this is the tenant boundary for MCP calls.
+
+/** Origins allowed to call /api/auth/* from the browser (dashboard). */
+const AUTH_CORS_ORIGINS = new Set([
+  "https://sepia.svelte-apps.me",
+  "http://localhost:5173",
+  "http://localhost:4173",
+]);
+
+function corsHeadersFor(
+  origin: string,
+  allowed: boolean,
+): Record<string, string> {
+  if (!allowed) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    // Better Auth's client sends cookies (credentials mode: include).
+    "Access-Control-Allow-Credentials": "true",
+    Vary: "Origin",
+  };
+}
 
 const server = new McpServer(
   {
@@ -28,7 +55,7 @@ const server = new McpServer(
     // the "remember without being asked" contract.
     instructions: MEMORY_CONTRACT,
   },
-);
+).withContext<{ user: UserRow }>();
 
 // The 7 tools.
 registerNamespaceTools(server);
@@ -194,10 +221,56 @@ Bun.serve({
     }
 
     if (url.pathname.startsWith("/mcp")) {
-      const auth = await requireAuth(request);
-      if (auth) return auth;
-      const response = await transport.respond(request);
+      const authResult = await requireAuth(request);
+      if (authResult instanceof Response) return authResult;
+      if (
+        !rateLimit(
+          `mcp:${authResult.user.id}`,
+          MCP_RATE_LIMIT.max,
+          MCP_RATE_LIMIT.windowMs,
+        )
+      ) {
+        return Response.json(
+          {
+            error: "rate_limited",
+            message: "too many requests — try again in a minute",
+          },
+          { status: 429 },
+        );
+      }
+      const response = await transport.respond(request, {
+        user: authResult.user,
+      });
       return response ?? new Response("Not Found", { status: 404 });
+    }
+
+    // Better Auth endpoints (/api/auth/*) — signup, sign-in, sessions,
+    // API keys. Public (no bearer auth) — the endpoints authenticate
+    // themselves. Mounted before /api/* so handleApi never sees them.
+    // CORS: the dashboard (Netlify) calls these from the browser, so add
+    // the allowlist headers (Better Auth's trustedOrigins handles CSRF,
+    // not CORS).
+    if (url.pathname.startsWith("/api/auth")) {
+      const origin = request.headers.get("origin") ?? "";
+      const allowed = AUTH_CORS_ORIGINS.has(origin);
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: corsHeadersFor(origin, allowed),
+        });
+      }
+      const response = await auth.handler(request);
+      if (allowed) {
+        const headers = new Headers(response.headers);
+        headers.set("Access-Control-Allow-Origin", origin);
+        headers.set("Access-Control-Allow-Credentials", "true");
+        headers.set("Vary", "Origin");
+        return new Response(response.body, {
+          status: response.status,
+          headers,
+        });
+      }
+      return response;
     }
 
     // /api/* (dashboard REST) — same process, same auth, CORS allowlist.
@@ -205,12 +278,27 @@ Bun.serve({
     // Authorization header on preflight).
     if (url.pathname.startsWith("/api")) {
       if (request.method === "OPTIONS") {
-        const response = await handleApi(request, url);
+        const response = await handleApi(request, url, null);
         return response ?? new Response("Not Found", { status: 404 });
       }
-      const auth = await requireAuth(request);
-      if (auth) return auth;
-      const response = await handleApi(request, url);
+      const authResult = await requireAuth(request);
+      if (authResult instanceof Response) return authResult;
+      if (
+        !rateLimit(
+          `api:${authResult.user.id}`,
+          API_RATE_LIMIT.max,
+          API_RATE_LIMIT.windowMs,
+        )
+      ) {
+        return Response.json(
+          {
+            error: "rate_limited",
+            message: "too many requests — try again in a minute",
+          },
+          { status: 429 },
+        );
+      }
+      const response = await handleApi(request, url, authResult.user);
       return response ?? new Response("Not Found", { status: 404 });
     }
 
@@ -218,8 +306,13 @@ Bun.serve({
   },
 });
 
+// Bootstrap the admin account + adopt pre-tenant data (idempotent).
+await ensureAdmin();
+
 console.log(
   `memory MCP server listening on :${PORT} (/mcp) — auth: ${
-    authEnabled() ? "bearer token" : "DEV MODE (set MCP_BEARER_TOKEN)"
+    authEnabled()
+      ? "accounts (Better Auth)"
+      : "DEV MODE (set BETTER_AUTH_SECRET)"
   }`,
 );

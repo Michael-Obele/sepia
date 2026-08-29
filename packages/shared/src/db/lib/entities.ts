@@ -68,10 +68,11 @@ function normalizeTypeAndTags(
 
 export async function createEntity(
   db: Db,
+  ownerId: string,
   namespaceName: string,
   input: EntityCreate,
 ): Promise<Entity | undefined> {
-  const namespaceId = await resolveNamespaceId(db, namespaceName);
+  const namespaceId = await resolveNamespaceId(db, ownerId, namespaceName);
   const normalized = normalizeTypeAndTags({
     type: input.type,
     tags: input.tags ?? [],
@@ -92,7 +93,7 @@ export async function createEntity(
 }
 
 /** Full entity detail: entity + linked memories + in/out relations. */
-export async function getEntity(db: Db, id: string) {
+export async function getEntity(db: Db, ownerId: string, id: string) {
   const entityRows = await db
     .select({
       ...getTableColumns(entities),
@@ -100,7 +101,9 @@ export async function getEntity(db: Db, id: string) {
     })
     .from(entities)
     .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
-    .where(eq(entities.id, id))
+    .where(
+      and(eq(entities.id, id), eq(namespaces.ownerId, ownerId)),
+    )
     .limit(1);
   const entity = entityRows[0];
   if (!entity) throw new MemoryError("not_found", `entity '${id}' not found`);
@@ -156,7 +159,12 @@ export async function getEntity(db: Db, id: string) {
   };
 }
 
-export async function updateEntity(db: Db, id: string, update: EntityUpdate) {
+export async function updateEntity(
+  db: Db,
+  ownerId: string,
+  id: string,
+  update: EntityUpdate,
+) {
   const sets: Partial<typeof entities.$inferInsert> = {};
   if (update.name !== undefined) sets.name = update.name;
   if (update.type !== undefined) sets.type = update.type;
@@ -174,26 +182,39 @@ export async function updateEntity(db: Db, id: string, update: EntityUpdate) {
     const cur = await db
       .select({ tags: entities.tags })
       .from(entities)
-      .where(eq(entities.id, id))
+      .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
+      .where(
+        and(eq(entities.id, id), eq(namespaces.ownerId, ownerId)),
+      )
       .limit(1);
     currentTags = cur[0]?.tags ?? [];
   }
   const normalized = normalizeTypeAndTags(sets, currentTags);
 
+  const owned = db
+    .select({ id: namespaces.id })
+    .from(namespaces)
+    .where(eq(namespaces.ownerId, ownerId));
   const rows = await db
     .update(entities)
     .set({ ...sets, ...normalized, updatedAt: sql`now()` })
-    .where(eq(entities.id, id))
+    .where(
+      and(eq(entities.id, id), inArray(entities.namespaceId, owned)),
+    )
     .returning();
   const row = rows[0];
   if (!row) throw new MemoryError("not_found", `entity '${id}' not found`);
   return row;
 }
 
-export async function deleteEntity(db: Db, id: string) {
+export async function deleteEntity(db: Db, ownerId: string, id: string) {
+  const owned = db
+    .select({ id: namespaces.id })
+    .from(namespaces)
+    .where(eq(namespaces.ownerId, ownerId));
   const res = await db
     .delete(entities)
-    .where(eq(entities.id, id))
+    .where(and(eq(entities.id, id), inArray(entities.namespaceId, owned)))
     .returning({ id: entities.id, name: entities.name });
   const row = res[0];
   if (!row) throw new MemoryError("not_found", `entity '${id}' not found`);
@@ -203,13 +224,14 @@ export async function deleteEntity(db: Db, id: string) {
 /** Find entities by name (exact or substring) with optional type + namespace filters. */
 export async function findEntities(
   db: Db,
+  ownerId: string,
   namespaceName: string | undefined,
   query: string | undefined,
   type: string | undefined,
   limit = 10,
   offset = 0,
 ) {
-  const conditions = [];
+  const conditions = [eq(namespaces.ownerId, ownerId)];
   if (query !== undefined) {
     conditions.push(ilike(entities.name, `%${query}%`));
   }
@@ -217,7 +239,7 @@ export async function findEntities(
     conditions.push(eq(entities.type, type));
   }
   if (namespaceName !== undefined) {
-    const nsId = await resolveNamespaceId(db, namespaceName);
+    const nsId = await resolveNamespaceId(db, ownerId, namespaceName);
     conditions.push(eq(entities.namespaceId, nsId));
   }
   return db
@@ -227,7 +249,7 @@ export async function findEntities(
     })
     .from(entities)
     .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
-    .where(conditions.length ? and(...conditions) : undefined)
+    .where(and(...conditions))
     .orderBy(desc(entities.importance), desc(entities.updatedAt))
     .limit(Math.min(limit, 10000))
     .offset(Math.max(offset, 0));
@@ -245,11 +267,12 @@ export interface EntityWhere {
  */
 export async function batchUpdateEntities(
   db: Db,
+  ownerId: string,
   where: EntityWhere,
   update: EntityUpdate,
   limit = 100,
 ): Promise<{ count: number }> {
-  const conditions = [];
+  const conditions = [eq(namespaces.ownerId, ownerId)];
   if (where.type !== undefined) {
     conditions.push(eq(entities.type, where.type));
   }
@@ -257,10 +280,10 @@ export async function batchUpdateEntities(
     conditions.push(ilike(entities.name, `%${where.query}%`));
   }
   if (where.namespace !== undefined) {
-    const nsId = await resolveNamespaceId(db, where.namespace);
+    const nsId = await resolveNamespaceId(db, ownerId, where.namespace);
     conditions.push(eq(entities.namespaceId, nsId));
   }
-  if (conditions.length === 0) {
+  if (conditions.length === 1) {
     throw new MemoryError(
       "invalid_input",
       "batch_update requires at least one where filter",
@@ -285,6 +308,7 @@ export async function batchUpdateEntities(
   const ids = await db
     .select({ id: entities.id })
     .from(entities)
+    .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
     .where(and(...conditions))
     .limit(Math.min(limit, 500));
   if (ids.length === 0) return { count: 0 };

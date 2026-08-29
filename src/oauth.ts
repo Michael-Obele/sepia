@@ -1,6 +1,6 @@
 /**
- * Phase 2 authentication: OAuth 2.1 + PKCE authorization server via
- * @tmcp/auth, mounted in the same Bun.serve process as /mcp and /api/*.
+ * OAuth 2.1 + PKCE authorization server via @tmcp/auth, mounted in the same
+ * Bun.serve process as /mcp and /api/*.
  *
  * Endpoints served (auto-routed by `oauth.respond()`):
  *   GET/POST /authorize                          → login + consent page
@@ -16,18 +16,26 @@
  *   re-authorize after the VM cold-starts.
  * - Access tokens are opaque random strings (no JWT, no OAUTH_JWK_SECRET
  *   needed). Refresh tokens rotate on every use.
- * - The login page authenticates with DASHBOARD_PASSWORD (single user).
- *   The `authenticate()` function is the swap point for the future
- *   multi-account phase (passkeys / TOTP).
- * - OAuth is enabled when DASHBOARD_PASSWORD is set; otherwise the
- *   endpoints 404 and the server stays Phase 1 (bearer token only).
+ * - Multi-tenant: the login page authenticates against Better Auth
+ *   (src/auth.ts). Codes and tokens carry the user id; clients are bound to
+ *   their authorizing user (an "AI connection", plan-checked). Legacy
+ *   DASHBOARD_PASSWORD still authenticates as the admin (self-host compat).
+ * - OAuth is enabled when BETTER_AUTH_SECRET is set; otherwise the
+ *   endpoints 404 and the server stays bearer-token only.
  */
 
 import { OAuth, InvalidTokenError, InvalidGrantError } from "@tmcp/auth";
 import { createHash } from "node:crypto";
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "./db.ts";
-import { oauthClients, oauthCodes, oauthTokens } from "@sepia/shared";
+import {
+  assertAiConnectionQuota,
+  getUserById,
+  oauthClients,
+  oauthCodes,
+  oauthTokens,
+} from "@sepia/shared";
+import { ensureAdmin, verifyCredentials } from "./auth.ts";
 
 /**
  * Normalize /authorize params so real-world clients (Grok, ChatGPT, …) don't
@@ -175,9 +183,9 @@ interface AuthInfo {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/** OAuth is live when the dashboard password is set (single-user login). */
+/** OAuth is live when Better Auth is configured (multi-tenant accounts). */
 export function oauthEnabled(): boolean {
-  return Boolean(process.env.DASHBOARD_PASSWORD);
+  return Boolean(process.env.BETTER_AUTH_SECRET);
 }
 
 function issuerUrl(): string {
@@ -338,7 +346,6 @@ interface LoginPageOptions {
   resource?: URL;
   error?: string;
 }
-
 function clientHostname(client: OAuthClientInformationFull): string {
   try {
     return new URL(client.client_id).hostname;
@@ -418,7 +425,7 @@ function renderLoginPage(opts: LoginPageOptions): Response {
   .scopes ul { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
   .scopes code { background: #1a1a24; border: 1px solid #26262f; padding: 3px 8px; border-radius: 6px; font-size: 12px; }
   label { display: block; font-size: 13px; color: #a8a29e; margin: 18px 0 6px; }
-  input[type="password"] {
+  input[type="email"], input[type="password"] {
     width: 100%;
     background: #0b0b10;
     border: 1px solid #2e2e3a;
@@ -428,7 +435,7 @@ function renderLoginPage(opts: LoginPageOptions): Response {
     font-size: 15px;
     outline: none;
   }
-  input[type="password"]:focus { border-color: #8b5cf6; }
+  input[type="email"]:focus, input[type="password"]:focus { border-color: #8b5cf6; }
   button {
     width: 100%;
     margin-top: 18px;
@@ -458,8 +465,10 @@ function renderLoginPage(opts: LoginPageOptions): Response {
       <p>Requested access</p>
       <ul>${scopeList}</ul>
     </div>
+    <label for="email">Email</label>
+    <input type="email" id="email" name="email" autocomplete="email" autofocus required />
     <label for="password">Password</label>
-    <input type="password" id="password" name="password" autocomplete="current-password" autofocus required />
+    <input type="password" id="password" name="password" autocomplete="current-password" required />
     ${errorHtml}
     ${hiddenHtml}
     <button type="submit">Authorize</button>
@@ -479,19 +488,108 @@ function renderLoginPage(opts: LoginPageOptions): Response {
 // ── Handlers ────────────────────────────────────────────────────────────────
 
 /**
- * Internal header set by handleOAuthRequest() after the password is
+ * Internal header set by handleOAuthRequest() after the credentials are
  * validated (the library consumes the form body before our handler runs, so
  * validation happens in the request pipeline). The rebuilt request strips
  * all client-supplied headers, so this can't be spoofed.
  */
 const AUTHENTICATED_HEADER = "x-sepia-oauth-authenticated";
+/** Carries the authenticated user id (set alongside AUTHENTICATED_HEADER). */
+const AUTHENTICATED_USER_HEADER = "x-sepia-oauth-user";
+
+/**
+ * Bind an OAuth client to its authorizing user (an "AI connection").
+ * URL-based clients (ChatGPT/Grok/Gemini) are upserted into oauth_clients
+ * so the plan limit can count them uniformly. Returns true if the client
+ * was already owned by this user.
+ */
+async function bindClientOwner(
+  client: OAuthClientInformationFull,
+  userId: string,
+): Promise<boolean> {
+  const sql = db();
+  const existing = await sql
+    .select()
+    .from(oauthClients)
+    .where(eq(oauthClients.clientId, client.client_id))
+    .limit(1);
+  if (existing[0]) {
+    if (!existing[0].ownerId) {
+      await sql
+        .update(oauthClients)
+        .set({ ownerId: userId })
+        .where(eq(oauthClients.clientId, client.client_id));
+    }
+    return String(existing[0].ownerId) === userId;
+  }
+  await sql
+    .insert(oauthClients)
+    .values({
+      clientId: client.client_id,
+      clientSecret: client.client_secret ?? null,
+      name: client.client_name ?? "MCP client",
+      redirectUris: client.redirect_uris ?? [],
+      tokenEndpointAuthMethod: client.token_endpoint_auth_method ?? "none",
+      ownerId: userId,
+    })
+    .onConflictDoNothing();
+  return false;
+}
+
+/** Render a plan-limit page (AI connection quota exceeded). */
+function renderPlanLimitPage(client: OAuthClientInformationFull): Response {
+  const name = escapeHtml(client.client_name ?? client.client_id);
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sepia — Plan limit reached</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #0b0b10; color: #e7e5e4; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+  }
+  .card {
+    background: #14141c; border: 1px solid #26262f; border-radius: 16px;
+    padding: 32px; width: 100%; max-width: 420px;
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
+  p { color: #a8a29e; font-size: 14px; margin-top: 12px; line-height: 1.5; }
+  a {
+    display: inline-block; margin-top: 20px; background: #8b5cf6; color: white;
+    text-decoration: none; border-radius: 10px; padding: 11px 16px;
+    font-size: 15px; font-weight: 600;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>Plan limit reached</h1>
+    <p>Your free plan allows 1 AI connection, and <b>${name}</b> would be a new one. Upgrade to Pro for unlimited connections — or disconnect an existing AI in your dashboard first.</p>
+    <a href="https://sepia.svelte-apps.me/pricing">See pricing</a>
+  </div>
+</body>
+</html>`;
+  return new Response(html, {
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
 
 const handlers = {
   /**
    * GET  → render the login + consent page (form posts back to /authorize).
-   * POST → the password was already validated by handleOAuthRequest() (it
-   *        rebuilds the request and sets AUTHENTICATED_HEADER). Issue a
-   *        PKCE-bound code, redirect.
+   * POST → the credentials were already validated by handleOAuthRequest()
+   *        (it rebuilds the request and sets AUTHENTICATED_HEADER). Bind the
+   *        client to the user (AI connection, plan-checked), issue a
+   *        PKCE-bound code carrying the user id, redirect.
    */
   async authorize(
     authReq: AuthorizeRequest,
@@ -509,8 +607,32 @@ const handlers = {
           state,
           scopes,
           resource,
-          error: "Incorrect password. Try again.",
+          error: "Incorrect email or password. Try again.",
         });
+      }
+
+      const userId = httpReq.headers.get(AUTHENTICATED_USER_HEADER) ?? "";
+      if (!userId) {
+        return renderLoginPage({
+          client,
+          redirectUri,
+          codeChallenge,
+          state,
+          scopes,
+          resource,
+          error: "Sign-in failed. Try again.",
+        });
+      }
+
+      // AI connection: bind the client to the user, plan-checked.
+      const alreadyOwned = await bindClientOwner(client, userId);
+      if (!alreadyOwned) {
+        const user = await getUserById(db(), userId);
+        try {
+          await assertAiConnectionQuota(db(), userId, user?.plan);
+        } catch {
+          return renderPlanLimitPage(client);
+        }
       }
 
       const code = randomToken(48);
@@ -522,6 +644,7 @@ const handlers = {
           redirectUri,
           codeChallenge: codeChallenge ?? null,
           scopes: scopes ?? [],
+          userId,
           expiresAt: new Date(Date.now() + CODE_TTL_MS),
         });
 
@@ -570,7 +693,11 @@ const handlers = {
         .set({ consumedAt: new Date() })
         .where(eq(oauthCodes.code, req.code));
 
-      return issueTokens(row.clientId, row.scopes);
+      return issueTokens(
+        row.clientId,
+        row.scopes,
+        row.userId ? String(row.userId) : undefined,
+      );
     }
 
     // refresh_token grant — rotate both tokens.
@@ -589,7 +716,11 @@ const handlers = {
       .update(oauthTokens)
       .set({ revokedAt: new Date() })
       .where(eq(oauthTokens.refreshToken, req.refreshToken));
-    return issueTokens(row.clientId, row.scopes);
+    return issueTokens(
+      row.clientId,
+      row.scopes,
+      row.userId ? String(row.userId) : undefined,
+    );
   },
 
   /** Verify an access token (used by requireAuth for /mcp and /api/*). */
@@ -609,6 +740,8 @@ const handlers = {
       clientId: row.clientId,
       scopes: row.scopes,
       expiresAt: Math.floor(row.expiresAt.getTime() / 1000),
+      // The account that authorized the token (multi-tenant).
+      extra: row.userId ? { userId: String(row.userId) } : undefined,
     };
   },
 
@@ -635,6 +768,7 @@ const handlers = {
 async function issueTokens(
   clientId: string,
   scopes: string[],
+  userId?: string,
 ): Promise<OAuthTokens> {
   const accessToken = randomToken(48);
   const refreshToken = randomToken(48);
@@ -645,6 +779,7 @@ async function issueTokens(
       refreshToken,
       clientId,
       scopes,
+      userId: userId ?? null,
       expiresAt: new Date(Date.now() + ACCESS_TOKEN_TTL_MS),
       refreshExpiresAt: new Date(Date.now() + REFRESH_TOKEN_TTL_MS),
     });
@@ -727,12 +862,15 @@ export async function handleOAuthRequest(
   try {
     if (url.pathname === "/authorize" && request.method === "POST") {
       const form = await request.formData();
+      const email = form.get("email")?.toString() ?? "";
       const password = form.get("password")?.toString() ?? "";
       // Merge the original query params with the form body (minus the
-      // password), then normalize so client variations don't 500.
+      // credentials), then normalize so client variations don't 500.
       const merged = new URL(publicUrl.url);
       for (const [key, value] of form) {
-        if (key !== "password") merged.searchParams.set(key, value.toString());
+        if (key !== "email" && key !== "password") {
+          merged.searchParams.set(key, value.toString());
+        }
       }
       const normalized = normalizeAuthorizeUrl(merged);
       const rebuilt = new Request(normalized.href, {
@@ -740,8 +878,20 @@ export async function handleOAuthRequest(
         headers: { "content-type": "application/x-www-form-urlencoded" },
         body: normalized.searchParams.toString(),
       });
-      if (password === process.env.DASHBOARD_PASSWORD) {
+      // Multi-tenant: verify against Better Auth. Legacy fallback: the
+      // single DASHBOARD_PASSWORD still authenticates as the admin user
+      // (self-hosters who haven't migrated to accounts yet).
+      const user = await verifyCredentials(email, password);
+      if (user) {
         rebuilt.headers.set(AUTHENTICATED_HEADER, "1");
+        rebuilt.headers.set(AUTHENTICATED_USER_HEADER, user.id);
+      } else if (
+        process.env.DASHBOARD_PASSWORD &&
+        password === process.env.DASHBOARD_PASSWORD
+      ) {
+        const admin = await ensureAdmin();
+        rebuilt.headers.set(AUTHENTICATED_HEADER, "1");
+        rebuilt.headers.set(AUTHENTICATED_USER_HEADER, admin.id);
       }
       return (await oauth.respond(rebuilt)) ?? null;
     }

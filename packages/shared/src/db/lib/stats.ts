@@ -1,5 +1,5 @@
 import type { Db } from "../client.ts";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { BatchItem } from "drizzle-orm/batch";
 import { entities, memories, namespaces, relations } from "../schema.ts";
 import { STALE_AFTER_DAYS, STALE_IMPORTANCE } from "../../types.ts";
@@ -38,26 +38,47 @@ export interface Stats {
 }
 
 /** Dashboard stats: counts, top entities, decay candidates, recent feed. */
-export async function getStats(db: Db): Promise<Stats> {
+export async function getStats(db: Db, ownerId: string): Promise<Stats> {
   // All 10 queries in ONE Neon HTTP round trip via db.batch. Firing them as
   // separate requests (even via Promise.all) costs ~500-700ms each through the
   // Neon HTTP driver, so getStats used to take ~10s. A single batch is ~1s.
+  // Every query is scoped to the owner's namespaces.
+  const owned = sql`(SELECT id FROM ${namespaces} WHERE owner_id = ${ownerId})`;
   const queries: BatchItem<"pg">[] = [
-    db.select({ n: sql<number>`count(*)::int` }).from(namespaces),
-    db.select({ n: sql<number>`count(*)::int` }).from(entities),
-    db.select({ n: sql<number>`count(*)::int` }).from(memories),
-    db.select({ n: sql<number>`count(*)::int` }).from(relations),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(namespaces)
+      .where(eq(namespaces.ownerId, ownerId)),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(entities)
+      .where(sql`${entities.namespaceId} IN ${owned}`),
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(memories)
-      .where(eq(memories.archived, true)),
+      .where(sql`${memories.namespaceId} IN ${owned}`),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(relations)
+      .where(sql`${relations.namespaceId} IN ${owned}`),
+    db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(memories)
+      .where(
+        and(
+          eq(memories.archived, true),
+          sql`${memories.namespaceId} IN ${owned}`,
+        ),
+      ),
     db
       .select({ type: memories.type, n: sql<number>`count(*)::int` })
       .from(memories)
+      .where(sql`${memories.namespaceId} IN ${owned}`)
       .groupBy(memories.type),
     db
       .select({ type: entities.type, n: sql<number>`count(*)::int` })
       .from(entities)
+      .where(sql`${entities.namespaceId} IN ${owned}`)
       .groupBy(entities.type),
     db
       .select({
@@ -68,6 +89,7 @@ export async function getStats(db: Db): Promise<Stats> {
         importance: entities.importance,
       })
       .from(entities)
+      .where(sql`${entities.namespaceId} IN ${owned}`)
       .orderBy(sql`${entities.accessCount} DESC`)
       .limit(8),
     db.execute(sql`
@@ -75,6 +97,7 @@ export async function getStats(db: Db): Promise<Stats> {
         WHERE NOT archived
           AND importance < ${STALE_IMPORTANCE}
           AND updated_at < now() - (${STALE_AFTER_DAYS} * interval '1 day')
+          AND namespace_id IN (SELECT id FROM ${namespaces} WHERE owner_id = ${ownerId})
       `),
     // Conversation digests only — constituents carry metadata.kind too, but
     // only the digest carries the `conversation` tag (matches the dashboard
@@ -83,7 +106,7 @@ export async function getStats(db: Db): Promise<Stats> {
       .select({ n: sql<number>`count(*)::int` })
       .from(memories)
       .where(
-        sql`${memories.metadata} @> '{"kind":"conversation"}'::jsonb AND ${memories.tags} @> ARRAY['conversation']`,
+        sql`${memories.metadata} @> '{"kind":"conversation"}'::jsonb AND ${memories.tags} @> ARRAY['conversation'] AND ${memories.namespaceId} IN ${owned}`,
       ),
     db
       .select({
@@ -96,7 +119,7 @@ export async function getStats(db: Db): Promise<Stats> {
       })
       .from(memories)
       .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
-      .where(eq(memories.archived, false))
+      .where(and(eq(memories.archived, false), eq(namespaces.ownerId, ownerId)))
       .orderBy(sql`${memories.updatedAt} DESC`)
       .limit(10),
   ];

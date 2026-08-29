@@ -63,6 +63,7 @@ function snippet(text: string, max = 200): string {
  */
 export async function search(
   db: Db,
+  ownerId: string,
   opts: SearchOptions,
 ): Promise<SearchHit[]> {
   const limit = Math.min(opts.limit ?? 10, SEARCH_LIMIT_MAX);
@@ -70,10 +71,13 @@ export async function search(
   if (!opts.q.trim()) {
     // Recent-items path: still honor namespace + tags filters so tag-only
     // searches work (e.g. q="" + tags=["user-experience"]).
-    const memConditions = [eq(memories.archived, false)];
-    const entConditions: SQL[] = [];
+    const memConditions = [
+      eq(memories.archived, false),
+      eq(namespaces.ownerId, ownerId),
+    ];
+    const entConditions: SQL[] = [eq(namespaces.ownerId, ownerId)];
     if (opts.namespace !== undefined) {
-      const nsId = await resolveNamespaceId(db, opts.namespace);
+      const nsId = await resolveNamespaceId(db, ownerId, opts.namespace);
       memConditions.push(eq(memories.namespaceId, nsId));
       entConditions.push(eq(entities.namespaceId, nsId));
     }
@@ -154,8 +158,8 @@ export async function search(
 
   // Each UNION branch has a different alias (m vs e) — build predicates
   // per-branch (a shared one referencing both aliases is invalid SQL).
-  const memWhere: SQL[] = [];
-  const entWhere: SQL[] = [];
+  const memWhere: SQL[] = [sql`n.owner_id = ${ownerId}`];
+  const entWhere: SQL[] = [sql`n.owner_id = ${ownerId}`];
   if (opts.namespace !== undefined) {
     memWhere.push(sql`n.name = ${opts.namespace}`);
     entWhere.push(sql`n.name = ${opts.namespace}`);
