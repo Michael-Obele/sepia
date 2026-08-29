@@ -24,6 +24,7 @@
 		Terminal,
 		Copy,
 		Check,
+		CreditCard,
 		Sparkles
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -103,7 +104,7 @@
 	<title>Sepia — Memory Server for AI Agents</title>
 	<meta
 		name="description"
-		content="A self-hosted, remote knowledge-graph memory server for AI agents. Connect Grok, ChatGPT, and your editor in 60 seconds. Conversation ingest — switch AIs mid-task, resume with a distilled digest. 7 MCP tools, $0/month, your data stays yours."
+		content="A self-hosted, remote knowledge-graph memory server for AI agents. Connect Grok, ChatGPT, and your editor in 60 seconds. Conversation ingest — switch AIs mid-task, resume with a distilled digest. 7 MCP tools, free to self-host, your data stays yours."
 	/>
 </svelte:head>
 
@@ -126,7 +127,7 @@
 					<img src={favicon} alt="" class="size-8" />
 				</div>
 				<Badge class="gap-1.5 bg-emerald-500/15 py-1.5 text-emerald-400 hover:bg-emerald-500/15">
-					<Infinity class="size-3.5" /> Free forever · $0/month
+					<Infinity class="size-3.5" /> Free to self-host · Free tier forever
 				</Badge>
 			</div>
 
@@ -225,7 +226,10 @@
 			<Server class="size-4 text-brand" /> Self-hosted — your data stays yours
 		</span>
 		<span class="flex items-center gap-2">
-			<KeyRound class="size-4 text-amber-400" /> No account required
+			<KeyRound class="size-4 text-amber-400" /> Self-host without an account
+		</span>
+		<span class="flex items-center gap-2">
+			<CreditCard class="size-4 text-brand" /> Hosted: free tier, no card
 		</span>
 	</div>
 </section>
@@ -353,8 +357,8 @@
 			<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
 				<p class="text-xs leading-relaxed text-muted-foreground">
 					Add <code class="rounded bg-muted px-1 font-mono">SEPIA_TOKEN=YOUR_TOKEN</code> to also patch
-					your MCP configs. Per-editor snippets, the access token, and web-AI guides live on the connect
-					page.
+					your MCP configs. Hosted tokens rotate on sign-in — re-copy from the dashboard if a connection
+					stops working. Per-editor snippets and web-AI guides live on the connect page.
 				</p>
 				<a href="/app/connect#editors" class="shrink-0">
 					<Button variant="outline" size="sm" class="gap-1.5">
@@ -650,8 +654,8 @@
 				</h2>
 				<p class="mt-4 text-muted-foreground">
 					One Bun process on Fly.io serves both the MCP endpoint and the REST API. The dashboard is
-					a static SPA on Netlify — it never wakes your VM. Neon Postgres on the free tier handles
-					persistence.
+					server-rendered with remote functions — page loads never wake your VM. Neon Postgres on
+					the free tier handles persistence.
 				</p>
 				<div class="mt-8 space-y-3">
 					<div class="flex items-start gap-3">
@@ -659,8 +663,8 @@
 						<div>
 							<p class="text-sm font-medium text-foreground">Scale-to-zero</p>
 							<p class="text-sm text-muted-foreground">
-								The Fly machine only spins up for real API calls. The CDN-served dashboard is always
-								fast.
+								The Fly machine only spins up for real API calls — browsing the dashboard never
+								wakes it.
 							</p>
 						</div>
 					</div>

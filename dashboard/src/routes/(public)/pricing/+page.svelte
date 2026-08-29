@@ -254,7 +254,7 @@
 
 				<div class="mt-8 flex flex-1 flex-col justify-end">
 					<a
-						href="/"
+						href="/signup"
 						class={buttonVariants({ variant: plan.variant, size: 'lg' }) + ' w-full gap-2'}
 					>
 						{plan.cta}
@@ -453,10 +453,15 @@
 			Give it a memory. The first 1,000 are on us — forever.
 		</p>
 		<div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-			<a href="/" class={buttonVariants({ size: 'lg' }) + ' gap-2 px-8'}>
+			<a href="/signup" class={buttonVariants({ size: 'lg' }) + ' gap-2 px-8'}>
 				<Download class="size-4" /> Start free — no card
 			</a>
-			<a href="/" class={buttonVariants({ variant: 'outline', size: 'lg' }) + ' gap-2 px-8'}>
+			<a
+				href="https://github.com/Michael-Obele/sepia"
+				target="_blank"
+				rel="noopener"
+				class={buttonVariants({ variant: 'outline', size: 'lg' }) + ' gap-2 px-8'}
+			>
 				<Code class="size-4" /> Self-host instead
 			</a>
 		</div>
