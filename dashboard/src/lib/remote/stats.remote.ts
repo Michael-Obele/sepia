@@ -6,6 +6,6 @@ import { requireAuth } from '$lib/server/auth';
 
 /** Dashboard stats: counts, top entities, decay candidates, recent feed. */
 export const getStatsData = query(v.string(), async (token) => {
-	requireAuth(token);
-	return getStats(db());
+	const user = await requireAuth(token);
+	return getStats(db(), user.id);
 });

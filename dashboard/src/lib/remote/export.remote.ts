@@ -9,10 +9,13 @@ import { requireAuth } from '$lib/server/auth';
  * Used by the Settings page for JSON/Markdown download.
  */
 export const exportAll = query(v.string(), async (token) => {
-	requireAuth(token);
+	const user = await requireAuth(token);
 	const sql = db();
-	const [namespaces, relations] = await Promise.all([listNamespaces(sql), listRelations(sql)]);
-	const entities = await findEntities(sql, undefined, undefined, undefined, 10000);
-	const memories = await queryMemories(sql, { archived: false, limit: 10000 });
+	const [namespaces, relations] = await Promise.all([
+		listNamespaces(sql, user.id),
+		listRelations(sql, user.id)
+	]);
+	const entities = await findEntities(sql, user.id, undefined, undefined, undefined, 10000);
+	const memories = await queryMemories(sql, user.id, { archived: false, limit: 10000 });
 	return { namespaces, entities, memories, relations };
 });

@@ -22,22 +22,30 @@ const EntityFilters = v.object({
 
 /** List/filter entities. */
 export const getEntities = query(v.tuple([v.string(), EntityFilters]), async ([token, filters]) => {
-	requireAuth(token);
-	return findEntities(db(), filters.namespace, filters.q, filters.type, filters.limit, filters.offset);
+	const user = await requireAuth(token);
+	return findEntities(
+		db(),
+		user.id,
+		filters.namespace,
+		filters.q,
+		filters.type,
+		filters.limit,
+		filters.offset
+	);
 });
 
 /** Full entity detail: entity + linked memories + in/out relations. */
 export const getEntityDetail = query(v.tuple([v.string(), v.string()]), async ([token, id]) => {
-	requireAuth(token);
-	return getEntity(db(), id);
+	const user = await requireAuth(token);
+	return getEntity(db(), user.id, id);
 });
 
 /** Create an entity. */
 export const addEntity = command(
 	v.tuple([v.string(), v.string(), EntityInput]),
 	async ([token, namespace, input]) => {
-		requireAuth(token);
-		return createEntity(db(), namespace, input);
+		const user = await requireAuth(token);
+		return createEntity(db(), user.id, namespace, input);
 	}
 );
 
@@ -45,13 +53,13 @@ export const addEntity = command(
 export const updateEntityData = command(
 	v.tuple([v.string(), v.string(), EntityUpdateInput]),
 	async ([token, id, update]) => {
-		requireAuth(token);
-		return updateEntity(db(), id, update);
+		const user = await requireAuth(token);
+		return updateEntity(db(), user.id, id, update);
 	}
 );
 
 /** Delete an entity (cascades relations, unlinks memories). */
 export const removeEntity = command(v.tuple([v.string(), v.string()]), async ([token, id]) => {
-	requireAuth(token);
-	return deleteEntity(db(), id);
+	const user = await requireAuth(token);
+	return deleteEntity(db(), user.id, id);
 });

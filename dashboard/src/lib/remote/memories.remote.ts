@@ -28,43 +28,43 @@ const MemoryFilters = v.object({
 
 /** Query memories with filters. */
 export const getMemories = query(v.tuple([v.string(), MemoryFilters]), async ([token, filters]) => {
-	requireAuth(token);
-	return queryMemories(db(), filters);
+	const user = await requireAuth(token);
+	return queryMemories(db(), user.id, filters);
 });
 
 /** Full memory detail: memory + linked entities. */
 export const getMemoryDetail = query(v.tuple([v.string(), v.string()]), async ([token, id]) => {
-	requireAuth(token);
-	return getMemory(db(), id);
+	const user = await requireAuth(token);
+	return getMemory(db(), user.id, id);
 });
 
 /** Create a memory (optionally linked to entities). */
 export const addMemory = command(v.tuple([v.string(), MemoryInput]), async ([token, input]) => {
-	requireAuth(token);
-	return createMemory(db(), input, 'dashboard');
+	const user = await requireAuth(token);
+	return createMemory(db(), user.id, input, 'dashboard', user.plan);
 });
 
 /** Update a memory. */
 export const updateMemoryData = command(
 	v.tuple([v.string(), v.string(), MemoryUpdateInput]),
 	async ([token, id, update]) => {
-		requireAuth(token);
-		return updateMemory(db(), id, update);
+		const user = await requireAuth(token);
+		return updateMemory(db(), user.id, id, update);
 	}
 );
 
 /** Delete a memory. */
 export const removeMemory = command(v.tuple([v.string(), v.string()]), async ([token, id]) => {
-	requireAuth(token);
-	return deleteMemory(db(), id);
+	const user = await requireAuth(token);
+	return deleteMemory(db(), user.id, id);
 });
 
 /** Ingest a distilled conversation (handoff digest bundle). */
 export const ingestConversationData = command(
 	v.tuple([v.string(), ConversationInput]),
 	async ([token, input]) => {
-		requireAuth(token);
-		return ingestConversation(db(), input, 'dashboard');
+		const user = await requireAuth(token);
+		return ingestConversation(db(), user.id, input, 'dashboard');
 	}
 );
 
@@ -72,7 +72,7 @@ export const ingestConversationData = command(
 export const getConversationData = query(
 	v.tuple([v.string(), v.string()]),
 	async ([token, conversationId]) => {
-		requireAuth(token);
-		return getConversation(db(), conversationId);
+		const user = await requireAuth(token);
+		return getConversation(db(), user.id, conversationId);
 	}
 );

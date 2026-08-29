@@ -10,6 +10,7 @@
 		Plug,
 		Settings,
 		LogOut,
+		UserRound,
 		BrainCircuit
 	} from '@lucide/svelte';
 	import { logout } from '$lib/auth.svelte';
@@ -22,7 +23,8 @@
 		{ href: '/app/entities', label: 'Entities', icon: Boxes },
 		{ href: '/app/graph', label: 'Graph', icon: Network },
 		{ href: '/app/connect', label: 'Connect an AI', icon: Plug },
-		{ href: '/app/settings', label: 'Settings', icon: Settings }
+		{ href: '/app/settings', label: 'Settings', icon: Settings },
+		{ href: '/app/account', label: 'Account', icon: UserRound }
 	];
 
 	function isActive(href: string) {

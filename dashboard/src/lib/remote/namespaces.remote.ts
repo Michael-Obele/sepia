@@ -6,16 +6,16 @@ import { requireAuth } from '$lib/server/auth';
 
 /** List namespaces with entity/memory/relation counts. */
 export const getNamespaces = query(v.string(), async (token) => {
-	requireAuth(token);
-	return listNamespaces(db());
+	const user = await requireAuth(token);
+	return listNamespaces(db(), user.id);
 });
 
 /** Create a namespace. */
 export const addNamespace = command(
 	v.tuple([v.string(), NamespaceInput]),
 	async ([token, input]) => {
-		requireAuth(token);
-		return createNamespace(db(), input.name, input.description);
+		const user = await requireAuth(token);
+		return createNamespace(db(), user.id, input.name, input.description, user.plan);
 	}
 );
 
@@ -23,7 +23,7 @@ export const addNamespace = command(
 export const removeNamespace = command(
 	v.tuple([v.string(), v.string()]),
 	async ([token, idOrName]) => {
-		requireAuth(token);
-		return deleteNamespace(db(), idOrName);
+		const user = await requireAuth(token);
+		return deleteNamespace(db(), user.id, idOrName);
 	}
 );

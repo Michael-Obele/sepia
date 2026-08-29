@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Copy, Check, Server, KeyRound, ExternalLink, Globe } from '@lucide/svelte';
+	import { Copy, Check, Server, KeyRound, ExternalLink, Globe, Sparkles } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
 		Card,
@@ -9,7 +9,9 @@
 		CardTitle
 	} from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { auth } from '$lib/auth.svelte';
+	import { MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared';
 
 	const MCP_URL = 'https://sepia.fly.dev/mcp';
 
@@ -28,6 +30,8 @@
 		name: string;
 		auth: 'OAuth' | 'Bearer';
 		steps: string[];
+		/** Where to paste the memory instructions in this AI's settings. */
+		instructionsLocation?: string;
 		popular?: boolean;
 	};
 
@@ -42,7 +46,8 @@
 				'Choose "Custom app"',
 				'Paste the MCP URL',
 				'Complete OAuth sign-in'
-			]
+			],
+			instructionsLocation: 'Settings → Custom instructions'
 		},
 		{
 			id: 'claude-web',
@@ -53,7 +58,8 @@
 				'Choose "Custom"',
 				'Paste the MCP URL',
 				'Sign in with OAuth'
-			]
+			],
+			instructionsLocation: 'Settings → Custom instructions'
 		},
 		{
 			id: 'grok',
@@ -63,7 +69,8 @@
 				'grok.com/connectors → New Connector → Custom',
 				'Paste the MCP URL',
 				'Complete OAuth sign-in'
-			]
+			],
+			instructionsLocation: 'Settings → Memory'
 		},
 		{
 			id: 'perplexity',
@@ -73,13 +80,15 @@
 				'Settings → Connectors → Custom connector → Remote',
 				'Paste the MCP URL',
 				'Complete OAuth sign-in'
-			]
+			],
+			instructionsLocation: 'Settings → Custom instructions'
 		},
 		{
 			id: 'lechat',
 			name: 'Le Chat',
 			auth: 'OAuth',
-			steps: ['Connectors → + Add', 'Paste the MCP URL', 'Auto-detect OAuth 2.1']
+			steps: ['Connectors → + Add', 'Paste the MCP URL', 'Auto-detect OAuth 2.1'],
+			instructionsLocation: 'Settings → Custom instructions'
 		},
 		{
 			id: 'other',
@@ -89,7 +98,8 @@
 				'Look for "Connectors", "Apps", or "Custom MCP" in settings',
 				'Choose "Custom" / "Remote" and paste the MCP URL',
 				'Complete the OAuth sign-in'
-			]
+			],
+			instructionsLocation: 'Look for "Custom instructions" or "Memory" in settings'
 		},
 		{
 			id: 'claude-code',
@@ -142,7 +152,7 @@
 	<Card>
 		<CardContent class="p-4">
 			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
-				{#each ['Pick your AI', 'Copy the URL', 'Authorize'] as step, i (step)}
+				{#each ['Pick your AI', 'Copy the URL', 'Authorize', 'Add instructions'] as step, i (step)}
 					<div class="flex items-center gap-2 sm:gap-3">
 						<div class="flex items-center gap-2">
 							<div
@@ -158,12 +168,12 @@
 								>{step}</span
 							>
 						</div>
-						{#if i < 2}<div class="h-px w-4 bg-border sm:w-8"></div>{/if}
+						{#if i < 3}<div class="h-px w-4 bg-border sm:w-8"></div>{/if}
 					</div>
 				{/each}
 			</div>
 			<p class="mt-3 text-xs text-muted-foreground">
-				Step 1 of 3 — <span class="font-medium text-foreground">{current.name}</span> is pre-selected.
+				Step 1 of 4 — <span class="font-medium text-foreground">{current.name}</span> is pre-selected.
 				Pick a different AI below if you use one.
 			</p>
 		</CardContent>
@@ -269,6 +279,82 @@
 			{/if}
 		</CardContent>
 	</Card>
+
+	<!-- Step 3: memory instructions (web AIs may not read the MCP instructions field) -->
+	{#if current.auth === 'OAuth'}
+		<Card>
+			<CardHeader>
+				<CardTitle class="flex items-center gap-2 text-base">
+					<Sparkles class="size-4" /> 3. Add the memory instructions
+				</CardTitle>
+				<CardDescription>
+					Web AIs don't always read the MCP server's built-in instructions. Paste this into
+					{current.name}'s custom instructions so it remembers to search and save to your memory.
+				</CardDescription>
+			</CardHeader>
+			<CardContent class="space-y-4">
+				<Tabs.Root value="quick">
+					<Tabs.List>
+						<Tabs.Trigger value="quick">Quick start</Tabs.Trigger>
+						<Tabs.Trigger value="full">Full contract</Tabs.Trigger>
+					</Tabs.List>
+					<Tabs.Content value="quick" class="space-y-3">
+						<pre
+							class="max-h-64 overflow-y-auto rounded-md bg-muted p-4 text-xs leading-relaxed whitespace-pre-wrap"><code
+								>{MEMORY_CONTRACT_QUICK}</code
+							></pre>
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() => copy(MEMORY_CONTRACT_QUICK, 'quick')}
+							class="gap-1"
+						>
+							{#if copied === 'quick'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
+							Copy quick instructions
+						</Button>
+					</Tabs.Content>
+					<Tabs.Content value="full" class="space-y-3">
+						<pre
+							class="max-h-64 overflow-y-auto rounded-md bg-muted p-4 text-xs leading-relaxed whitespace-pre-wrap"><code
+								>{MEMORY_CONTRACT}</code
+							></pre>
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() => copy(MEMORY_CONTRACT, 'full')}
+							class="gap-1"
+						>
+							{#if copied === 'full'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
+							Copy full contract
+						</Button>
+					</Tabs.Content>
+				</Tabs.Root>
+				{#if current.instructionsLocation}
+					<div
+						class="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground"
+					>
+						<ExternalLink class="mt-0.5 size-3.5 shrink-0" />
+						<span>
+							Paste it in <span class="font-medium text-foreground"
+								>{current.instructionsLocation}</span
+							>. The quick version fits most fields; use the full contract if there's room.
+						</span>
+					</div>
+				{/if}
+			</CardContent>
+		</Card>
+	{:else}
+		<Card>
+			<CardHeader>
+				<CardTitle class="flex items-center gap-2 text-base">
+					<Sparkles class="size-4" /> 3. Memory instructions
+				</CardTitle>
+				<CardDescription>
+					{current.name} reads the server's built-in instructions automatically — nothing to paste.
+				</CardDescription>
+			</CardHeader>
+		</Card>
+	{/if}
 
 	<Card>
 		<CardHeader>

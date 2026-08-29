@@ -25,3 +25,5 @@ export { searchAll } from './search.remote';
 export { getGraph, getFullGraph } from './graph.remote';
 export { runConsolidate } from './consolidate.remote';
 export { exportAll } from './export.remote';
+export { getMe } from './account.remote';
+export { signIn, signUp } from './auth.remote';

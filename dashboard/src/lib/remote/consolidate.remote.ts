@@ -6,6 +6,6 @@ import { requireAuth } from '$lib/server/auth';
 
 /** Run the decay/dedup/purge maintenance sweep. */
 export const runConsolidate = command(v.string(), async (token) => {
-	requireAuth(token);
-	return consolidate(db());
+	const user = await requireAuth(token);
+	return consolidate(db(), user.id);
 });

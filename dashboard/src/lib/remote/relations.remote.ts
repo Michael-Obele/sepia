@@ -13,19 +13,19 @@ const RelationFilters = v.object({
 export const getRelations = query(
 	v.tuple([v.string(), RelationFilters]),
 	async ([token, filters]) => {
-		requireAuth(token);
-		return listRelations(db(), filters);
+		const user = await requireAuth(token);
+		return listRelations(db(), user.id, filters);
 	}
 );
 
 /** Create a relation (upserts weight on conflict). */
 export const addRelation = command(v.tuple([v.string(), RelationInput]), async ([token, input]) => {
-	requireAuth(token);
-	return createRelation(db(), input);
+	const user = await requireAuth(token);
+	return createRelation(db(), user.id, input);
 });
 
 /** Delete a relation. */
 export const removeRelation = command(v.tuple([v.string(), v.string()]), async ([token, id]) => {
-	requireAuth(token);
-	return deleteRelation(db(), id);
+	const user = await requireAuth(token);
+	return deleteRelation(db(), user.id, id);
 });

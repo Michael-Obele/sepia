@@ -6,6 +6,6 @@ import { requireAuth } from '$lib/server/auth';
 
 /** Unified search over memories + entities (same engine as the MCP tool). */
 export const searchAll = query(v.tuple([v.string(), SearchInput]), async ([token, input]) => {
-	requireAuth(token);
-	return search(db(), input);
+	const user = await requireAuth(token);
+	return search(db(), user.id, input);
 });
