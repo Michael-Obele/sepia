@@ -108,7 +108,7 @@
 								id="password"
 								type={showPassword ? 'text' : 'password'}
 								placeholder="At least 8 characters"
-								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 pl-9 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 								bind:value={password}
 								autocomplete="new-password"
 								required
@@ -140,7 +140,7 @@
 								id="confirm"
 								type={showConfirm ? 'text' : 'password'}
 								placeholder="Repeat your new password"
-								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pr-10 pl-9 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 								bind:value={confirm}
 								autocomplete="new-password"
 								required
@@ -149,7 +149,7 @@
 								type="button"
 								variant="ghost"
 								size="icon-sm"
-								class="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+								class="absolute top-0 right-1 bottom-0 my-auto text-muted-foreground hover:text-foreground"
 								aria-label={showConfirm ? 'Hide password' : 'Show password'}
 								aria-controls="confirm"
 								onclick={() => (showConfirm = !showConfirm)}
