@@ -1,5 +1,5 @@
 ## Sepia memory (always-on) — Zed
-<!-- sepia-docs-version: 1.0.0 -->
+<!-- sepia-docs-version: 1.1.0 -->
 
 You are connected to the user's personal Sepia memory server over MCP (`context_servers.sepia` in `~/.config/zed/settings.json`: `url: "https://sepia.fly.dev/mcp"` + `headers.Authorization: "Bearer TOKEN"`; or stdio bridge via `mcp-remote`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 

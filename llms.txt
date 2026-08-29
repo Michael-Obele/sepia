@@ -46,8 +46,9 @@ Rules the distilling agent must follow:
 
 ## How to connect
 
-- **MCP endpoint**: `https://sepia.fly.dev/mcp` (Streamable HTTP). Auth: OAuth 2.1 when enabled, else `Authorization: Bearer <MCP_BEARER_TOKEN>`.
-- **REST API**: `/api/*` — thin JSON wrapper over the same business logic (namespaces, entities, memories, relations, search, graph, consolidate, stats, conversations).
+- **MCP endpoint**: `https://sepia.fly.dev/mcp` (Streamable HTTP). Auth: OAuth 2.1 (accounts) or a per-user API key (`Authorization: Bearer <api-key>`). Self-hosted instances may use the legacy `MCP_BEARER_TOKEN`.
+- **Accounts**: hosted Sepia is multi-tenant — sign up at the dashboard, create API keys there, and use them as bearer tokens for local editors. OAuth 2.1 covers web AIs (ChatGPT, Grok, Gemini, Claude web).
+- **REST API**: `/api/*` — thin JSON wrapper over the same business logic (namespaces, entities, memories, relations, search, graph, consolidate, stats, conversations). Auth: same bearer token.
 - **Agent Skill**: installable via `npx skills add https://sepia.fly.dev/skill` — the full usage contract with examples.
 - **Always-on instructions**: `/instructions/vscode`, `/instructions/cursor`, `/instructions/claude`, `/instructions/agents`, `/instructions/opencode`, `/instructions/zed` — injected into every session by the editor's instruction system.
 - **Remote installer**: `curl -fsSL https://sepia.fly.dev/install | bash`.
@@ -60,4 +61,4 @@ Rules the distilling agent must follow:
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
 
-Docs version: 1.0.0
+Docs version: 1.1.0

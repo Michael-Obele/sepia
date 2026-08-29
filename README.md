@@ -22,17 +22,18 @@ The [official MCP memory server](https://github.com/modelcontextprotocol/servers
 
 ## Features
 
-| Feature                       | What it does                                                                                                                                                                                                                                       |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🧠 **Knowledge graph**        | Entities (nodes), weighted relations (edges), memories (facts/observations) with importance scoring, in isolated namespaces                                                                                                                        |
-| 🔎 **Search + traversal**     | Unified keyword search across everything; BFS graph traversal from any entity                                                                                                                                                                      |
-| 🧹 **`consolidate`**          | Idempotent maintenance sweep: decay-scoring, dedup, purge — pure SQL, no LLM calls                                                                                                                                                                 |
-| 📋 **Server instructions**    | A usage contract sent in the MCP `initialize` handshake; supporting clients (Claude Code, Codex, Copilot, Goose) inject it into the system prompt — zero-reminder usage                                                                            |
-| ⚡ **Always-on instructions** | `skills/sepia/always-on/` — VS Code `*.instructions.md` (`applyTo: '**/*'`), Cursor `.mdc` (`alwaysApply: true`), `~/.claude/CLAUDE.md`, `AGENTS.md`; injected into **every** session, covering clients that ignore `instructions` (Cursor)        |
-| 🛠️ **Bundled Agent Skill**    | `skills/sepia/SKILL.md` (agentskills.io standard) — works in Zed, Cursor, Claude Code, Codex, OpenCode; the on-demand extended guide (tool-by-tool detail)                                                                                         |
-| 🖥️ **Web dashboard**          | Static SPA on Netlify: search, browse, edit, graph view, stats, and a "Connect an AI" page — never wakes the API's scaled-to-zero machine                                                                                                          |
-| 🌐 **Online AI support**      | Grok, ChatGPT, Claude web, Gemini (Spark), Perplexity, Le Chat all accept remote MCP connectors — your memory follows you to the web                                                                                                               |
-| 🔐 **Two-phase auth**         | Phase 1: static Bearer token (local editors). Phase 2: **OAuth 2.1 + PKCE live** — built-in authorization server via `@tmcp/auth` (login page, dynamic client registration, Client ID Metadata Documents) for Grok/ChatGPT/Gemini-style connectors |
+| Feature                       | What it does                                                                                                                                                                                                                                                                                   |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧠 **Knowledge graph**        | Entities (nodes), weighted relations (edges), memories (facts/observations) with importance scoring, in isolated namespaces                                                                                                                                                                    |
+| 🔎 **Search + traversal**     | Unified keyword search across everything; BFS graph traversal from any entity                                                                                                                                                                                                                  |
+| 🧹 **`consolidate`**          | Idempotent maintenance sweep: decay-scoring, dedup, purge — pure SQL, no LLM calls                                                                                                                                                                                                             |
+| 📋 **Server instructions**    | A usage contract sent in the MCP `initialize` handshake; supporting clients (Claude Code, Codex, Copilot, Goose) inject it into the system prompt — zero-reminder usage                                                                                                                        |
+| ⚡ **Always-on instructions** | `skills/sepia/always-on/` — VS Code `*.instructions.md` (`applyTo: '**/*'`), Cursor `.mdc` (`alwaysApply: true`), `~/.claude/CLAUDE.md`, `AGENTS.md`; injected into **every** session, covering clients that ignore `instructions` (Cursor)                                                    |
+| 🛠️ **Bundled Agent Skill**    | `skills/sepia/SKILL.md` (agentskills.io standard) — works in Zed, Cursor, Claude Code, Codex, OpenCode; the on-demand extended guide (tool-by-tool detail)                                                                                                                                     |
+| � **Conversation migration**  | `manage_memory` action=ingest — save a distilled handoff digest (summary + decisions + preferences + entities) that any other AI can resume; digests are protected from consolidation and grouped by `conversation_id`                                                                         |
+| 🖥️ **Web dashboard**          | SvelteKit app on Netlify (SSR + remote functions): landing + pricing pages, search with URL-backed filters, graph view, conversations, stats, and a "Connect an AI" page — never wakes the API's scaled-to-zero machine                                                                        |
+| 🌐 **Online AI support**      | Grok, ChatGPT, Claude web, Gemini (Spark), Perplexity, Le Chat all accept remote MCP connectors — your memory follows you to the web                                                                                                                                                           |
+| 🔐 **Two-phase auth**         | Phase 1: static Bearer token (local editors). Phase 2: **OAuth 2.1 + PKCE live** — built-in authorization server via `@tmcp/auth` (login page, dynamic client registration, Client ID Metadata Documents) for Grok/ChatGPT/Gemini-style connectors. Hosted accounts with plans are in progress |
 
 ## Architecture
 
@@ -40,8 +41,8 @@ The [official MCP memory server](https://github.com/modelcontextprotocol/servers
                         ┌─────────────────────────────────┐
                         │         Browser (you)            │
                         │  sepia.svelte-apps.me            │
-                        │  Dashboard SPA (static,          │
-                        │  served from Netlify CDN)        │
+                        │  Dashboard (SvelteKit SSR,       │
+                        │  served from Netlify)            │
                         └───────────────┬─────────────────┘
                                         │ HTTPS + Bearer token / PKCE
                                         ▼
@@ -61,9 +62,9 @@ The [official MCP memory server](https://github.com/modelcontextprotocol/servers
                               └────────────────────────────────────┘
 ```
 
-**Stack:** Bun · TMCP (Valibot adapters, `HttpTransport`) · Neon Postgres · **Drizzle ORM** (type-safe query builder + `sql` template + migrations) · Svelte 5/SvelteKit (`adapter-static`) · Tailwind CSS v4 · cytoscape.js
+**Stack:** Bun · TMCP (Valibot adapters, `HttpTransport`) · Neon Postgres · **Drizzle ORM** (type-safe query builder + `sql` template + migrations) · Svelte 5/SvelteKit (`adapter-netlify`, SSR + remote functions) · Tailwind CSS v4 · cytoscape.js
 
-**Key decision:** the MCP endpoint and the REST API share **one Bun process** on **one Fly.io machine** — TMCP's `HttpTransport` mounts at `/mcp` inside an existing `Bun.serve`. The dashboard is a **static SPA on Netlify**: free CDN, instant loads, and it never wakes the Fly VM (which scales to zero) — the machine only spins up for real API calls from agents.
+**Key decision:** the MCP endpoint and the REST API share **one Bun process** on **one Fly.io machine** — TMCP's `HttpTransport` mounts at `/mcp` inside an existing `Bun.serve`. The dashboard is a **SvelteKit app on Netlify** (SSR + remote functions): free tier, and it never wakes the Fly VM (which scales to zero) — the machine only spins up for real API calls from agents.
 
 ```mermaid
 flowchart LR
@@ -77,7 +78,7 @@ flowchart LR
         A["/api/* — REST<br/>CORS allowlist"]
     end
     N[(Neon Postgres<br/>free tier)]
-    D[Netlify CDN<br/>Dashboard SPA]
+    D[Netlify<br/>Dashboard app]
     L --> M
     W --> M
     B --> N
@@ -86,17 +87,17 @@ flowchart LR
 
 ## The 7 Tools
 
-| #   | Tool               | Actions                            | What it does                                              |
-| --- | ------------------ | ---------------------------------- | --------------------------------------------------------- |
-| 1   | `manage_namespace` | create, list, get, delete          | Organize memory into isolated spaces                      |
-| 2   | `manage_entity`    | create, get, update, delete, find  | Knowledge graph nodes (people, concepts, projects, tools) |
-| 3   | `manage_relation`  | create, delete, list               | Directed, weighted edges between entities                 |
-| 4   | `manage_memory`    | create, get, update, delete, query | Facts/observations/preferences with importance scoring    |
-| 5   | `search`           | —                                  | Unified keyword + metadata search across all data         |
-| 6   | `traverse_graph`   | —                                  | BFS walk of the knowledge graph from an entity            |
-| 7   | `consolidate`      | —                                  | Decay sweep + dedup + purge (idempotent maintenance)      |
+| #   | Tool               | Actions                                                  | What it does                                                                 |
+| --- | ------------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| 1   | `manage_namespace` | create, list, get, delete                                | Organize memory into isolated spaces                                         |
+| 2   | `manage_entity`    | create, get, update, delete, find, batch_update          | Knowledge graph nodes (people, concepts, projects, tools)                    |
+| 3   | `manage_relation`  | create, delete, list                                     | Directed, weighted edges between entities                                    |
+| 4   | `manage_memory`    | create, get, update, delete, query, batch_update, ingest | Facts/observations/preferences with importance scoring; conversation digests |
+| 5   | `search`           | —                                                        | Unified keyword + metadata search across all data                            |
+| 6   | `traverse_graph`   | —                                                        | BFS walk of the knowledge graph from an entity                               |
+| 7   | `consolidate`      | —                                                        | Decay sweep + dedup + purge (idempotent maintenance)                         |
 
-**Why 7 instead of 17:** FlarelyLegal's 17 tools split entity search, memory queries, conversations, and admin into separate tools. By using `action` enums inside `manage_*` tools, the LLM surface stays clean while covering all capabilities. No RBAC, no conversations, no audit trails — those are team features a personal server doesn't need. Semantic/vector search is a deliberate future upgrade; `search` ships keyword + metadata for v1.
+**Why 7 instead of 17:** FlarelyLegal's 17 tools split entity search, memory queries, conversations, and admin into separate tools. By using `action` enums inside `manage_*` tools, the LLM surface stays clean while covering all capabilities — including conversation migration (`manage_memory` action=ingest) and bulk updates (`batch_update`). No RBAC, no audit trails — those are team features a personal server doesn't need. Semantic/vector search is a deliberate future upgrade; `search` ships keyword + metadata for v1.
 
 ## Remember Without Being Asked
 
@@ -106,15 +107,17 @@ Three complementary channels, one contract (`src/instructions.ts`):
 2. **Always-on instruction files** (`skills/sepia/always-on/`) — the same condensed contract, installed into each editor's own instruction system: VS Code `*.instructions.md` with `applyTo: '**/*'` (auto-attached to every chat request), Cursor `.mdc` with `alwaysApply: true` (every session, unconditionally), a section in `~/.claude/CLAUDE.md` (loaded at session start), and an `AGENTS.md` section for Codex/other agents. Skills are on-demand by design in every platform, so this channel is what actually **forces** memory usage in editors that ignore `instructions` (Cursor).
 3. **Bundled Agent Skill** (`skills/sepia/SKILL.md`) — the extended guide (tool-by-tool detail, examples, edge cases), delivered through the open Agent Skills standard. Loads when memory is relevant.
 
-The contract teaches: **search before meaningful work**, **persist durable facts** (preferences, decisions, conventions), **prefer update over duplicate**, **link memories to entities**, **score importance 0–1**, and **never store credentials or ephemeral chat content**.
+The contract teaches: **search before meaningful work**, **persist durable facts** (preferences, decisions, conventions), **prefer update over duplicate**, **link memories to entities**, **score importance 0–1**, **never store credentials or ephemeral chat content** — and **migrate conversations between AIs** via `manage_memory` action=ingest (handoff digests with status: active/paused/done).
 
 ## The Dashboard
 
-A static SPA at `sepia.svelte-apps.me` (hosted on Netlify, swappable to Cloudflare Pages via one env var), talking to the same database through `/api/*`:
+A SvelteKit app at `sepia.svelte-apps.me` (SSR + remote functions on Netlify), talking to the same database through `/api/*`:
 
-- 🔍 Search all memories/entities; browse by namespace, type, importance
+- 🏠 **Landing + pricing pages** — what Sepia is, how to install it, and the hosted plan
+- 🔍 Search all memories/entities; browse by namespace, type, importance — filters persist in the URL (back/forward works)
 - 🕸️ Interactive knowledge-graph view (cytoscape.js + dagre)
 - ✏️ CRUD on memories, entities, and relations from the browser
+- 💬 **Conversations** — browse handoff digests by status (active/paused/done), resume or delete them
 - 📊 Stats: counts, top entities, recent memories, decay/consolidation status
 - 🔗 **Connect an AI** page: copy-paste configs for Grok, ChatGPT, Claude, Gemini, Perplexity, and the local editors
 
@@ -131,25 +134,29 @@ sepia/                                # Bun workspace monorepo
 ├── netlify.toml                      # builds dashboard/, publishes dashboard/build
 ├── .env.example
 ├── src/                              # SERVER (deployed by Fly.io)
-│   ├── index.ts                      # Bun.serve: mounts /mcp + /api/* (CORS)
+│   ├── index.ts                      # Bun.serve: mounts /mcp + /api/* + /api/auth/* (CORS)
 │   ├── instructions.ts               # The memory contract (system-prompt injection)
 │   ├── auth.ts                       # Bearer token (Phase 1) / OAuth guard (Phase 2)
+│   ├── oauth.ts                      # OAuth 2.1 authorization server (@tmcp/auth)
+│   ├── rate-limit.ts                 # per-user sliding-window rate limits
 │   ├── db.ts                         # Drizzle client (lazy init) + MemoryError
-│   ├── db/schema.ts                  # Drizzle schema — source of truth for the DB shape
 │   ├── tools/                        # 7 tools, one file each
 │   ├── lib/                          # CRUD + search + BFS + decay (shared by tools & API)
-│   └── api/routes.ts                 # /api/* router (same auth as /mcp)
+│   └── api.ts                        # /api/* router (same auth as /mcp)
 ├── drizzle/                          # Drizzle migrations (generated by drizzle-kit)
 │   ├── 0000_*.sql                    # baseline (introspected from the live schema)
 │   └── 0001_*.sql                    # constraints + trigram indexes (see below)
 ├── packages/
 │   └── shared/                       # @sepia/shared — Valibot schemas + types, no build step
-│       └── src/{schemas,types}.ts    # single source of truth for tools, API, and dashboard
+│       ├── src/{schemas,types}.ts    # single source of truth for tools, API, and dashboard
+│       └── src/db/                   # Drizzle schema + owner-scoped CRUD libs (plans, users)
 ├── dashboard/                        # DASHBOARD (deployed by Netlify)
-│   └── src/routes/                   # search, entities/[id], memories, graph, connect
+│   └── src/routes/                   # (public)/ landing + pricing, app/ search, memories,
+│                                     # entities, conversations, graph, connect, settings
 ├── skills/
-│   └── memory/                       # SKILL (static, installed by script)
+│   └── sepia/                        # SKILL (static, installed by script)
 │       ├── SKILL.md
+│       ├── always-on/                # per-editor instruction files (vscode, cursor, claude…)
 │       └── references/tools.md       # generated from @sepia/shared schemas
 ├── sql/schema.sql                    # namespaces · entities · relations · memories · oauth_clients
 └── scripts/
@@ -173,14 +180,14 @@ bun run dev:dashboard
 
 ### Environment variables
 
-| Variable             | Purpose                                                                                                                                                                                                                        |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `DATABASE_URL`       | Neon Postgres pooled connection string (`-pooler`, port 5432)                                                                                                                                                                  |
-| `MCP_BEARER_TOKEN`   | Phase 1 auth token for `/mcp` and `/api/*` (`openssl rand -hex 32`)                                                                                                                                                            |
-| `DASHBOARD_PASSWORD` | OAuth 2.1 consent-page password — setting it **enables** the OAuth endpoints (single user; multi-account with passkeys/TOTP is the planned next phase). The dashboard itself signs in with the bearer token, not this password |
-| `OAUTH_ISSUER_URL`   | OAuth issuer URL (defaults to `https://sepia.fly.dev`; set to `http://localhost:8080` for local dev)                                                                                                                           |
-| `PUBLIC_API_URL`     | Dashboard build-time REST base (e.g. `https://sepia.fly.dev`)                                                                                                                                                                  |
-| `PUBLIC_MCP_URL`     | Dashboard build-time MCP URL shown on `/connect`                                                                                                                                                                               |
+| Variable             | Purpose                                                                                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`       | Neon Postgres pooled connection string (`-pooler`, port 5432)                                                                                                                                                  |
+| `MCP_BEARER_TOKEN`   | Phase 1 auth token for `/mcp` and `/api/*` (`openssl rand -hex 32`)                                                                                                                                            |
+| `DASHBOARD_PASSWORD` | OAuth 2.1 consent-page password — setting it **enables** the OAuth endpoints (single user; hosted accounts with plans are in progress). The dashboard itself signs in with the bearer token, not this password |
+| `OAUTH_ISSUER_URL`   | OAuth issuer URL (defaults to `https://sepia.fly.dev`; set to `http://localhost:8080` for local dev)                                                                                                           |
+| `PUBLIC_API_URL`     | Dashboard build-time REST base (e.g. `https://sepia.fly.dev`)                                                                                                                                                  |
+| `PUBLIC_MCP_URL`     | Dashboard build-time MCP URL shown on `/connect`                                                                                                                                                               |
 
 ### Database
 
@@ -221,7 +228,7 @@ Verify with `curl -i https://sepia.fly.dev/mcp` (expect 401 without a token — 
 
 ### Dashboard → Netlify
 
-Static SPA, built from the repo root (the workspace install must happen at root), published from `dashboard/build`. Attach the `sepia.svelte-apps.me` subdomain, and add the origin to the API's CORS allowlist in `src/index.ts`. Credit math: a lean SPA (~150–250KB, no images) uses roughly **20–60 of 300 free credits/month**. Swapping to Cloudflare Pages later is a config change, not a rewrite.
+SvelteKit app (SSR + remote functions), built from the repo root (the workspace install must happen at root), published from `dashboard/build`. Attach the `sepia.svelte-apps.me` subdomain, and add the origin to the API's CORS allowlist in `src/index.ts`. Remote functions run in Netlify Functions (Node runtime) and talk to Neon directly via `@sepia/shared` — no CORS, no exposed API keys.
 
 ## Connect Clients
 
@@ -309,6 +316,7 @@ Restart your editor to pick it up. Claude Code users can also invoke the skill o
 | M3 — REST API + dashboard on Netlify ✅        | Browse/search/graph/CRUD at `sepia.svelte-apps.me`; stats load                                                                                  |
 | M4 — OAuth 2.1 (`@tmcp/auth`) ✅               | `codex mcp login` + inspector OAuth flow succeed; Claude connector works                                                                        |
 | M5 — Online AI rollout ✅                      | Grok + ChatGPT + Gemini connectors authorized; memory usable from web chats                                                                     |
+| M6 — Hosted accounts 🚧                        | Signup/sign-in, per-user namespaces, plan limits, API keys, per-user rate limits — built and smoke-tested, shipping soon                        |
 
 **Release gate:** everything in M1–M3 works in a fresh chat with zero reminder prompts (verified via instructions + always-on files + skill), and the dashboard shows the same data the agents write.
 
@@ -359,4 +367,4 @@ The full design lives in `plan/` — implementation specs, decision records, and
 
 ## Status
 
-**In progress.** The plan (revived 2026-08-15) is complete and the workspace is scaffolded; milestones M1–M5 are being implemented against it. PRs, issues, and ideas welcome.
+**M1–M5 shipped.** The server, instructions, skill, dashboard, and OAuth rollout are all live and verified. Hosted accounts (signup, plans, API keys) are built and in final testing — coming soon. PRs, issues, and ideas welcome.

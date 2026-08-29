@@ -1,5 +1,5 @@
 ## Sepia memory (always-on) — Claude Code
-<!-- sepia-docs-version: 1.0.0 -->
+<!-- sepia-docs-version: 1.1.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (`sepia` at `https://sepia.fly.dev/mcp`, `Authorization: Bearer TOKEN` via `claude mcp add --transport http`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
