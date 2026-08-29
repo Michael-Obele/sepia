@@ -38,3 +38,4 @@ articles/
 
 # internal planning docs (not for public repo)
 plan/
+.vscode/mcp.json
