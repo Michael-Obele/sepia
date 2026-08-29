@@ -1,5 +1,22 @@
 <script lang="ts">
-	import { Copy, Check, Server, KeyRound, ExternalLink, Globe, Sparkles } from '@lucide/svelte';
+	import {
+		Copy,
+		Check,
+		Server,
+		KeyRound,
+		ExternalLink,
+		Globe,
+		Sparkles,
+		Cable,
+		MonitorSmartphone,
+		Terminal,
+		FileText,
+		Layers,
+		Zap,
+		Shield,
+		CircleCheck,
+		TriangleAlert
+	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
 		Card,
@@ -14,6 +31,7 @@
 	import { MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared';
 
 	const MCP_URL = 'https://sepia.fly.dev/mcp';
+	const BASE = 'https://sepia.fly.dev';
 
 	let copied = $state('');
 	// Smart default: ChatGPT is pre-selected — the most common web AI.
@@ -123,17 +141,146 @@
 
 	const current = $derived(targets.find((t) => t.id === selected) ?? targets[0]);
 
-	const bearerConfig = `{
+	// Goal gradient: the stepper adapts to the auth path — OAuth AIs authorize,
+	// Bearer editors paste a config and verify.
+	const oauthSteps = ['Pick your AI', 'Copy the URL', 'Authorize', 'Add instructions'];
+	const bearerSteps = ['Pick your AI', 'Copy the config', 'Add your token', 'Verify'];
+	const steps = $derived(current.auth === 'OAuth' ? oauthSteps : bearerSteps);
+
+	// Smart default: configs are pre-filled with the real token — scan and adjust, not type.
+	const token = $derived(auth.token || 'YOUR_TOKEN');
+
+	const bearerConfig = $derived(`{
   "mcpServers": {
     "sepia": {
       "type": "http",
       "url": "${MCP_URL}",
       "headers": {
-        "Authorization": "Bearer ${auth.token}"
+        "Authorization": "Bearer ${token}"
       }
     }
   }
-}`;
+}`);
+
+	const editorConfigs = $derived({
+		vscode: `{
+  "servers": {
+    "sepia": {
+      "type": "http",
+      "url": "${MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${token}"
+      }
+    }
+  }
+}`,
+		cursor: `{
+  "mcpServers": {
+    "sepia": {
+      "type": "http",
+      "url": "${MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${token}"
+      }
+    }
+  }
+}`,
+		opencode: `{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sepia": {
+      "type": "remote",
+      "url": "${MCP_URL}",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer ${token}"
+      }
+    }
+  }
+}`,
+		zedRemote: `{
+  "context_servers": {
+    "sepia": {
+      "url": "${MCP_URL}",
+      "headers": {
+        "Authorization": "Bearer ${token}"
+      }
+    }
+  }
+}`,
+		zedBridge: `{
+  "context_servers": {
+    "sepia": {
+      "source": "custom",
+      "command": "npx",
+      "args": [
+        "-y", "mcp-remote",
+        "${MCP_URL}",
+        "--header", "Authorization: Bearer ${token}"
+      ],
+      "env": {}
+    }
+  }
+}`,
+		claude: `claude mcp add --transport http sepia ${MCP_URL} --header "Authorization: Bearer ${token}"`
+	});
+
+	const oneLiner = $derived(`SEPIA_TOKEN=${token} curl -fsSL ${BASE}/install | bash`);
+	const oneLinerGlobal = $derived(
+		`SEPIA_TOKEN=${token} SEPIA_SCOPE=global curl -fsSL ${BASE}/install | bash`
+	);
+
+	type Editor = {
+		id: string;
+		label: string;
+		file: string;
+		key: string;
+		config: keyof typeof editorConfigs;
+		note: string;
+	};
+
+	const editors: Editor[] = [
+		{
+			id: 'vscode',
+			label: 'VS Code',
+			file: '.vscode/mcp.json',
+			key: '"servers"',
+			config: 'vscode',
+			note: 'Global fallback: ~/.config/Code/User/mcp.json with "servers". The installer also adds .github/instructions/sepia.instructions.md with applyTo: "**".'
+		},
+		{
+			id: 'cursor',
+			label: 'Cursor',
+			file: '.cursor/mcp.json',
+			key: '"mcpServers"',
+			config: 'cursor',
+			note: 'Cursor uses "mcpServers" (not "servers"). Rule file: .cursor/rules/sepia.mdc with alwaysApply: true — the installer handles it.'
+		},
+		{
+			id: 'opencode',
+			label: 'OpenCode',
+			file: 'opencode.json',
+			key: '"mcp"',
+			config: 'opencode',
+			note: 'Supports both mcp.sepia (v1) and mcp.servers.sepia (v2). Place in project opencode.json or ~/.config/opencode/opencode.json. CLI alternative: opencode mcp add.'
+		},
+		{
+			id: 'zed',
+			label: 'Zed',
+			file: '~/.config/zed/settings.json',
+			key: '"context_servers"',
+			config: 'zedRemote',
+			note: 'Zed key is "context_servers" (not mcpServers). Restart Agent Panel → check green dot. Also respects ./AGENTS.md.'
+		},
+		{
+			id: 'claude',
+			label: 'Claude Code',
+			file: 'Terminal',
+			key: 'claude mcp add',
+			config: 'claude',
+			note: 'Also install the skill: npx skills add Michael-Obele/sepia — then restart Claude Code.'
+		}
+	];
 </script>
 
 <svelte:head><title>Sepia — Connect an AI</title></svelte:head>
@@ -148,11 +295,11 @@
 		</p>
 	</div>
 
-	<!-- Goal gradient: step 1 pre-completed, ChatGPT pre-selected -->
+	<!-- Goal gradient: step 1 pre-completed, ChatGPT pre-selected, steps adapt to auth path -->
 	<Card>
 		<CardContent class="p-4">
 			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
-				{#each ['Pick your AI', 'Copy the URL', 'Authorize', 'Add instructions'] as step, i (step)}
+				{#each steps as step, i (step)}
 					<div class="flex items-center gap-2 sm:gap-3">
 						<div class="flex items-center gap-2">
 							<div
@@ -168,13 +315,13 @@
 								>{step}</span
 							>
 						</div>
-						{#if i < 3}<div class="h-px w-4 bg-border sm:w-8"></div>{/if}
+						{#if i < steps.length - 1}<div class="h-px w-4 bg-border sm:w-8"></div>{/if}
 					</div>
 				{/each}
 			</div>
 			<p class="mt-3 text-xs text-muted-foreground">
-				Step 1 of 4 — <span class="font-medium text-foreground">{current.name}</span> is pre-selected.
-				Pick a different AI below if you use one.
+				Step 1 of {steps.length} — <span class="font-medium text-foreground">{current.name}</span> is
+				pre-selected. Pick a different AI below if you use one.
 			</p>
 		</CardContent>
 	</Card>
@@ -270,10 +417,10 @@
 					</Button>
 					<p class="text-xs text-muted-foreground">
 						Cursor and Zed use slightly different config keys — see the
-						<a href="/#install" class="underline underline-offset-4 hover:text-foreground">
-							install guide
+						<a href="#editors" class="underline underline-offset-4 hover:text-foreground">
+							per-editor configs
 						</a>
-						for per-editor snippets.
+						below for ready-to-paste snippets with your token.
 					</p>
 				</div>
 			{/if}
@@ -356,16 +503,62 @@
 		</Card>
 	{/if}
 
+	<!-- How to use the MCP server -->
 	<Card>
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2 text-base">
-				<KeyRound class="size-4" /> Your access token
+				<Cable class="size-4" /> How to use the MCP server
 			</CardTitle>
-			<CardDescription
-				>Used for Bearer-token clients (Claude Code, Cursor, Zed). OAuth clients sign in separately.</CardDescription
-			>
+			<CardDescription>
+				Sepia speaks the Model Context Protocol over Streamable HTTP. One URL, two ways to connect —
+				OAuth for web AIs, a Bearer token for local editors.
+			</CardDescription>
 		</CardHeader>
-		<CardContent class="space-y-3">
+		<CardContent class="space-y-4">
+			<div class="flex items-center gap-2">
+				<code class="flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">{MCP_URL}</code>
+				<Button variant="outline" size="sm" onclick={() => copy(MCP_URL, 'mcp-url')} class="gap-1">
+					{#if copied === 'mcp-url'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
+					Copy URL
+				</Button>
+			</div>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<div class="rounded-lg border border-violet-500/20 bg-violet-500/5 p-4">
+					<div class="flex items-center gap-2">
+						<Globe class="size-4 text-violet-400" />
+						<p class="text-sm font-semibold text-foreground">Web AIs — OAuth 2.1</p>
+					</div>
+					<p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+						ChatGPT, Grok, Claude, Perplexity, Le Chat. Paste the URL into their connector settings,
+						then sign in with your dashboard password once — it stays connected.
+					</p>
+				</div>
+				<div class="rounded-lg border border-teal-500/20 bg-teal-500/5 p-4">
+					<div class="flex items-center gap-2">
+						<MonitorSmartphone class="size-4 text-teal-400" />
+						<p class="text-sm font-semibold text-foreground">Local editors — Bearer token</p>
+					</div>
+					<p class="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+						Claude Code, Cursor, OpenCode, Zed. Add the URL to your MCP config with an Authorization
+						header — your access token is below, pre-filled into every snippet.
+					</p>
+				</div>
+			</div>
+		</CardContent>
+	</Card>
+
+	<!-- How to use the access token -->
+	<Card>
+		<CardHeader>
+			<CardTitle class="flex items-center gap-2 text-base">
+				<KeyRound class="size-4" /> How to use the access token
+			</CardTitle>
+			<CardDescription>
+				Your personal token for Bearer-token clients. It's tied to your dashboard account — anyone
+				with it can read and write your memory, so keep it private.
+			</CardDescription>
+		</CardHeader>
+		<CardContent class="space-y-4">
 			<div class="flex items-center gap-2">
 				<code class="flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">
 					{auth.token ? `${auth.token.slice(0, 8)}…${auth.token.slice(-4)}` : 'Not signed in'}
@@ -381,9 +574,198 @@
 					Copy
 				</Button>
 			</div>
-			<p class="text-xs text-muted-foreground">
-				Keep this token private — it grants full read/write access to your memory.
-			</p>
+			<div
+				class="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-muted-foreground"
+			>
+				<TriangleAlert class="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+				<span>
+					Keep this token private — it grants full read/write access to your memory. OAuth clients
+					(ChatGPT, Grok, …) sign in separately and never need it.
+				</span>
+			</div>
+
+			<!-- One-line installer — patches MCP configs with the token -->
+			<div class="rounded-lg border border-border/50 bg-muted p-3">
+				<p
+					class="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+				>
+					<Terminal class="size-3.5" /> One-line installer — also patches MCP configs
+				</p>
+				<div class="space-y-1.5 font-mono text-xs">
+					<div class="flex items-center gap-2">
+						<code class="flex-1 truncate">{oneLiner}</code>
+						<Button
+							variant="ghost"
+							size="xs"
+							onclick={() => copy(oneLiner, 'oneliner')}
+							class="h-6 gap-1"
+						>
+							{#if copied === 'oneliner'}<Check class="size-3" />{:else}<Copy class="size-3" />{/if}
+							Copy
+						</Button>
+					</div>
+					<div class="flex items-center gap-2">
+						<code class="flex-1 truncate">{oneLinerGlobal}</code>
+						<Button
+							variant="ghost"
+							size="xs"
+							onclick={() => copy(oneLinerGlobal, 'oneliner-global')}
+							class="h-6 gap-1"
+						>
+							{#if copied === 'oneliner-global'}<Check class="size-3" />{:else}<Copy
+									class="size-3"
+								/>{/if}
+							Copy
+						</Button>
+					</div>
+				</div>
+				<p class="mt-2 text-xs text-muted-foreground">
+					Global = one-and-done for this machine. Add
+					<code class="rounded bg-muted px-1 font-mono">SEPIA_SCOPE=global</code> to skip repo
+					files. Fallback:
+					<code class="rounded bg-muted px-1 font-mono">npx skills add Michael-Obele/sepia</code>.
+				</p>
+			</div>
+
+			<!-- Per-editor configs — real token pre-filled -->
+			<div id="editors">
+				<p
+					class="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+				>
+					<FileText class="size-3.5" /> Per-editor configs — token pre-filled
+				</p>
+				<Tabs.Root value="vscode">
+					<Tabs.List class="h-auto flex-wrap gap-1 p-1">
+						{#each editors as ed (ed.id)}
+							<Tabs.Trigger value={ed.id} class="gap-1.5 px-3 py-1.5 text-xs sm:text-sm">
+								{ed.label}
+							</Tabs.Trigger>
+						{/each}
+					</Tabs.List>
+
+					{#each editors as ed (ed.id)}
+						<Tabs.Content value={ed.id} class="mt-4 space-y-3">
+							<div class="overflow-hidden rounded-lg border border-border/50 bg-muted">
+								<div
+									class="flex items-center justify-between border-b border-border/50 bg-card/50 px-3 py-1.5"
+								>
+									<span class="font-mono text-xs text-muted-foreground">{ed.file}</span>
+									<Button
+										variant="ghost"
+										size="xs"
+										onclick={() => copy(editorConfigs[ed.config], ed.id)}
+										class="h-6 gap-1"
+									>
+										{#if copied === ed.id}<Check class="size-3 text-green-500" /> Copy ✓{:else}<Copy
+												class="size-3"
+											/> Copy{/if}
+									</Button>
+								</div>
+								{#if ed.id === 'zed'}
+									<pre class="overflow-x-auto p-3 text-xs leading-relaxed"><code
+											>{editorConfigs.zedRemote}</code
+										></pre>
+									<details class="border-t border-border/50 bg-card/30">
+										<summary class="cursor-pointer px-3 py-2 text-xs font-medium text-foreground"
+											>Fallback: stdio bridge via mcp-remote (older Zed) — click to show</summary
+										>
+										<div class="border-t border-border/50 bg-muted p-3">
+											<pre class="overflow-x-auto text-xs leading-relaxed"><code
+													>{editorConfigs.zedBridge}</code
+												></pre>
+											<Button
+												variant="ghost"
+												size="xs"
+												onclick={() => copy(editorConfigs.zedBridge, 'zedBridge')}
+												class="mt-2 h-6 gap-1"
+											>
+												{#if copied === 'zedBridge'}<Check class="size-3" /> Copied{:else}<Copy
+														class="size-3"
+													/> Copy bridge{/if}
+											</Button>
+										</div>
+									</details>
+								{:else}
+									<pre class="overflow-x-auto p-3 text-xs leading-relaxed"><code
+											>{editorConfigs[ed.config]}</code
+										></pre>
+								{/if}
+							</div>
+							<p class="text-xs leading-relaxed text-muted-foreground">
+								Key: <code class="rounded bg-muted px-1 font-mono text-xs">{ed.key}</code> — {ed.note}
+							</p>
+						</Tabs.Content>
+					{/each}
+				</Tabs.Root>
+			</div>
+		</CardContent>
+	</Card>
+
+	<!-- Always-on memory -->
+	<Card>
+		<CardHeader>
+			<CardTitle class="flex items-center gap-2 text-base">
+				<Zap class="size-4" /> Always-on memory
+			</CardTitle>
+			<CardDescription>
+				Three channels make your AI remember without being asked. The installer sets up all three —
+				or copy the files yourself.
+			</CardDescription>
+		</CardHeader>
+		<CardContent class="space-y-4">
+			<div class="grid gap-3 sm:grid-cols-3">
+				<div class="rounded-xl border border-border/50 bg-card/40 p-4">
+					<div
+						class="mb-2 flex size-7 items-center justify-center rounded-md bg-amber-500/10 ring-1 ring-amber-500/20"
+					>
+						<Layers class="size-3.5 text-amber-500" />
+					</div>
+					<p class="text-sm font-semibold text-foreground">1. Skill (on-demand)</p>
+					<p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+						Extended guide: tool schemas, examples. Loaded when memory is relevant.
+					</p>
+				</div>
+				<div class="rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+					<div
+						class="mb-2 flex size-7 items-center justify-center rounded-md bg-primary/10 ring-1 ring-primary/20"
+					>
+						<FileText class="size-3.5 text-primary" />
+					</div>
+					<p class="text-sm font-semibold text-foreground">2. Always-on (every session)</p>
+					<p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+						Injected into the system prompt. Forces <code
+							class="rounded bg-muted px-1 font-mono text-xs">search</code
+						> before work, persist after.
+					</p>
+				</div>
+				<div class="rounded-xl border border-border/50 bg-card/40 p-4">
+					<div
+						class="mb-2 flex size-7 items-center justify-center rounded-md bg-teal-500/10 ring-1 ring-teal-500/20"
+					>
+						<Shield class="size-3.5 text-teal-500" />
+					</div>
+					<p class="text-sm font-semibold text-foreground">3. MCP server</p>
+					<p class="mt-1 text-xs leading-relaxed text-muted-foreground">
+						7 tools over Streamable HTTP at <code class="font-mono text-xs">{MCP_URL}</code>
+					</p>
+				</div>
+			</div>
+
+			<div
+				class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed bg-card/30 p-4 text-sm"
+			>
+				<div class="flex items-center gap-2">
+					<CircleCheck class="size-4 shrink-0 text-teal-500" />
+					<span class="font-medium text-foreground">Verify</span>
+					<span class="text-muted-foreground"
+						>— restart editor, ask “what do you know about my project?”</span
+					>
+				</div>
+				<span class="text-xs text-muted-foreground"
+					>Expect: <code class="rounded bg-muted px-1 font-mono text-xs">From your memory: ...</code
+					> without you prompting “use sepia”.</span
+				>
+			</div>
 		</CardContent>
 	</Card>
 

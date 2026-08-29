@@ -11,7 +11,6 @@
 		Database,
 		Shield,
 		Server,
-		Check,
 		Globe,
 		Rocket,
 		Infinity,
@@ -21,7 +20,11 @@
 		Code,
 		KeyRound,
 		MessagesSquare,
-		ArrowRightLeft
+		ArrowRightLeft,
+		Terminal,
+		Copy,
+		Check,
+		Sparkles
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -30,43 +33,16 @@
 	import ToolBreadth from '$lib/components/landing/tool-breadth.svelte';
 	import MemoryGrowth from '$lib/components/landing/memory-growth.svelte';
 	import ArchitectureFlow from '$lib/components/landing/architecture-flow.svelte';
-	import InstallMatrix from '$lib/components/landing/install-matrix.svelte';
 	import RecallDemo from '$lib/components/landing/recall-demo.svelte';
 
-	const MCP_URL = 'https://sepia.fly.dev/mcp';
+	const INSTALL_URL = 'https://sepia.fly.dev/install';
 
-	const connectSteps = [
-		{
-			name: 'Grok',
-			status: 'works' as const,
-			steps: [
-				'Go to grok.com/connectors → New Connector → Custom',
-				'Name it "Sepia" and paste the MCP URL',
-				'Click Add Connector — the Sepia login page opens',
-				'Enter your dashboard password and click Authorize'
-			]
-		},
-		{
-			name: 'ChatGPT',
-			status: 'works' as const,
-			steps: [
-				'Settings → Apps → Developer mode → Create',
-				'Choose "Custom app" and paste the MCP URL',
-				'Scan/connect — the Sepia login page opens',
-				'Enter your dashboard password and click Authorize'
-			]
-		},
-		{
-			name: 'Any other AI',
-			status: 'universal' as const,
-			steps: [
-				'Open your AI\'s settings — look for "Connectors", "Apps", or "Custom MCP"',
-				'Choose "Custom" or "Remote" and paste the MCP URL',
-				'Complete the OAuth sign-in with your dashboard password',
-				'No MCP option? That AI may not support custom connectors yet'
-			]
-		}
-	];
+	let copied = $state('');
+	async function copy(text: string, key: string) {
+		await navigator.clipboard.writeText(text);
+		copied = key;
+		setTimeout(() => (copied = ''), 1500);
+	}
 
 	const features = [
 		{
@@ -296,70 +272,99 @@
 			</span>
 		</div>
 
-		<!-- Connect steps -->
-		<div class="mt-16">
-			<div class="mx-auto max-w-2xl text-center">
-				<h3
-					class="text-2xl font-semibold tracking-tight text-foreground"
-					style="letter-spacing: -0.03em"
-				>
-					Connect your AI in minutes.
-				</h3>
-				<p class="mt-3 text-muted-foreground">
-					Paste one URL, sign in with your dashboard password, done. The server URL is
-					<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">{MCP_URL}</code>
-				</p>
-			</div>
-
-			<div class="mt-10 grid gap-6 lg:grid-cols-3">
-				{#each connectSteps as c (c.name)}
-					<div
-						class="flex flex-col rounded-xl border border-border/50 bg-card/50 p-6 transition-colors hover:border-border hover:bg-card"
-					>
-						<div class="mb-4 flex items-center justify-between">
-							<h4 class="text-base font-semibold text-foreground">{c.name}</h4>
-							{#if c.status === 'works'}
-								<Badge class="gap-1 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15">
-									<Check class="size-3" /> Works
-								</Badge>
-							{:else if c.status === 'universal'}
-								<Badge class="gap-1 bg-violet-500/15 text-violet-400 hover:bg-violet-500/15">
-									<Plug class="size-3" /> Any MCP AI
-								</Badge>
-							{/if}
+		<!-- Connect CTA band — the how-to lives on the connect page -->
+		<div
+			class="relative mt-16 overflow-hidden rounded-2xl border border-brand/25 bg-linear-to-br from-brand/10 via-card/50 to-card/50 p-8 sm:p-10"
+		>
+			<div
+				class="pointer-events-none absolute -top-24 -right-24 size-64 rounded-full bg-brand/10 blur-3xl"
+				aria-hidden="true"
+			></div>
+			<div
+				class="relative flex flex-col items-start gap-6 sm:flex-row sm:items-center sm:justify-between"
+			>
+				<div class="max-w-xl">
+					<div class="mb-3 flex items-center gap-2">
+						<div
+							class="flex size-9 items-center justify-center rounded-lg bg-brand/15 ring-1 ring-brand/25"
+						>
+							<Sparkles class="size-4 text-brand" />
 						</div>
-						<ol class="space-y-3">
-							{#each c.steps as step, i (i)}
-								<li class="flex items-start gap-3 text-sm text-muted-foreground">
-									<span
-										class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted/60 font-mono text-[11px] text-foreground"
-									>
-										{i + 1}
-									</span>
-									<span class="leading-relaxed">{step}</span>
-								</li>
-							{/each}
-						</ol>
-						{#if c.status === 'works'}
-							<p class="mt-4 border-t border-border/50 pt-3 text-xs text-muted-foreground">
-								Uses OAuth 2.1 — you'll be asked for your dashboard password once, then it stays
-								connected.
-							</p>
-						{:else if c.status === 'universal'}
-							<p class="mt-4 border-t border-border/50 pt-3 text-xs text-muted-foreground">
-								The same OAuth 2.1 flow works for any MCP-capable AI — Le Chat, Perplexity, and
-								more.
-							</p>
-						{/if}
+						<Badge class="bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/15">
+							<Check class="size-3" /> 60-second setup
+						</Badge>
 					</div>
-				{/each}
+					<h3
+						class="text-2xl font-semibold tracking-tight text-foreground"
+						style="letter-spacing: -0.03em"
+					>
+						Connect your AI in 60 seconds.
+					</h3>
+					<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+						Paste one URL, sign in with your dashboard password, done. Step-by-step guides for
+						ChatGPT, Grok, Claude, and every editor — plus your access token, ready to copy.
+					</p>
+				</div>
+				<a href="/app/connect" class="shrink-0">
+					<Button size="lg" class="gap-2 px-6">
+						<Plug class="size-4" /> Connect an AI <ArrowRight class="size-4" />
+					</Button>
+				</a>
 			</div>
 		</div>
 	</div>
 </section>
 
-<!-- Install matrix — always-on + skill + MCP for every editor -->
-<InstallMatrix />
+<!-- Install in one line — full per-editor guide lives on the connect page -->
+<section id="install" class="relative px-4 py-24 sm:py-32">
+	<div class="mx-auto max-w-5xl">
+		<div class="mx-auto max-w-2xl text-center">
+			<Badge variant="outline" class="mb-4 font-mono text-xs tracking-wider uppercase"
+				>Always-on memory</Badge
+			>
+			<h2
+				class="text-3xl font-semibold tracking-tight text-foreground sm:text-4xl"
+				style="letter-spacing: -0.03em"
+			>
+				Install once.<br />Every editor remembers forever.
+			</h2>
+			<p class="mt-4 text-lg text-muted-foreground">
+				One command installs the <span class="font-medium text-foreground">skill (on-demand)</span>
+				+ <span class="font-medium text-foreground">always-on instructions (every session)</span> for
+				VS Code, Cursor, OpenCode, and Zed. No reminder prompts.
+			</p>
+		</div>
+
+		<div class="mx-auto mt-10 max-w-2xl rounded-xl border border-border/50 bg-card/50 p-6">
+			<div class="flex items-center gap-2 rounded-lg bg-muted p-3 font-mono text-sm">
+				<Terminal class="size-4 shrink-0 text-muted-foreground" />
+				<code class="flex-1 truncate text-foreground">curl -fsSL {INSTALL_URL} | bash</code>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					onclick={() => copy(`curl -fsSL ${INSTALL_URL} | bash`, 'oneliner')}
+					aria-label="Copy one-liner"
+				>
+					{#if copied === 'oneliner'}<Check class="size-4 text-green-500" />{:else}<Copy
+							class="size-4"
+						/>{/if}
+				</Button>
+			</div>
+			<div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+				<p class="text-xs leading-relaxed text-muted-foreground">
+					Add <code class="rounded bg-muted px-1 font-mono">SEPIA_TOKEN=YOUR_TOKEN</code> to also patch
+					your MCP configs. Per-editor snippets, the access token, and web-AI guides live on the connect
+					page.
+				</p>
+				<a href="/app/connect#editors" class="shrink-0">
+					<Button variant="outline" size="sm" class="gap-1.5">
+						Full per-editor guide <ArrowRight class="size-3.5" />
+					</Button>
+				</a>
+			</div>
+		</div>
+	</div>
+</section>
 
 <!-- Features -->
 <section class="relative px-4 py-24 sm:py-32">
@@ -731,23 +736,16 @@
 				<p class="text-muted-foreground">
 					<span class="text-brand">$</span> fly launch
 				</p>
-				<p class="text-emerald-400/80">→ App created · fly.toml written · machine deployed</p>
+				<p class="text-emerald-400/80">→ App created · machine deployed</p>
 				<p class="text-muted-foreground">
-					<span class="text-brand">$</span> fly secrets set DATABASE_URL=...
+					<span class="text-brand">$</span> fly secrets set DATABASE_URL=... AUTH_TOKEN=...
 				</p>
 				<p class="text-emerald-400/80">→ Secrets are set</p>
-				<p class="text-muted-foreground">
-					<span class="text-brand">$</span> fly secrets set AUTH_TOKEN=...
-				</p>
-				<p class="text-emerald-400/80">→ Secrets are set</p>
-				<p class="mt-3 text-muted-foreground">
-					<span class="text-brand">#</span> Connect your AI
-				</p>
 				<p class="text-muted-foreground">
 					<span class="text-brand">$</span> open
 					<span class="text-amber-400">https://your-app.fly.dev/mcp</span>
 				</p>
-				<p class="text-emerald-400/80">→ Streamable HTTP endpoint — paste this URL into your AI</p>
+				<p class="text-emerald-400/80">→ Paste this URL into your AI — done</p>
 			</div>
 		</div>
 

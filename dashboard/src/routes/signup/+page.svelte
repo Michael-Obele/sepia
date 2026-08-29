@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { BrainCircuit, KeyRound, Mail, User } from '@lucide/svelte';
+	import { BrainCircuit, Eye, EyeOff, KeyRound, Mail, User } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import {
@@ -13,6 +13,8 @@
 	import { signUp } from '$lib/remote/index.js';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
+
+	let showPassword = $state(false);
 </script>
 
 <svelte:head>
@@ -89,9 +91,25 @@
 						<input
 							id="password"
 							placeholder="At least 8 characters"
-							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 							{...signUp.fields._password.as('password')}
+							type={showPassword ? 'text' : 'password'}
 						/>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							class="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+							aria-label={showPassword ? 'Hide password' : 'Show password'}
+							aria-controls="password"
+							onclick={() => (showPassword = !showPassword)}
+						>
+							{#if showPassword}
+								<EyeOff class="size-4" />
+							{:else}
+								<Eye class="size-4" />
+							{/if}
+						</Button>
 					</div>
 					{#each signUp.fields._password.issues() ?? [] as issue (issue.message)}
 						<p class="text-sm text-destructive">{issue.message}</p>

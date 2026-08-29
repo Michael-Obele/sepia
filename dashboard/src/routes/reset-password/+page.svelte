@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { BrainCircuit, KeyRound, CheckCircle2 } from '@lucide/svelte';
+	import { BrainCircuit, CheckCircle2, Eye, EyeOff, KeyRound } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import {
@@ -20,6 +20,8 @@
 	let error = $state('');
 	let done = $state(false);
 	let loading = $state(false);
+	let showPassword = $state(false);
+	let showConfirm = $state(false);
 
 	async function submit() {
 		if (!token) {
@@ -45,6 +47,8 @@
 				error = resetError.message ?? 'Reset failed. The link may have expired.';
 				return;
 			}
+			showPassword = false;
+			showConfirm = false;
 			done = true;
 		} catch (e) {
 			error = (e as Error)?.message ?? 'Reset failed.';
@@ -102,13 +106,28 @@
 							/>
 							<input
 								id="password"
-								type="password"
+								type={showPassword ? 'text' : 'password'}
 								placeholder="At least 8 characters"
-								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 								bind:value={password}
 								autocomplete="new-password"
 								required
 							/>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								class="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+								aria-label={showPassword ? 'Hide password' : 'Show password'}
+								aria-controls="password"
+								onclick={() => (showPassword = !showPassword)}
+							>
+								{#if showPassword}
+									<EyeOff class="size-4" />
+								{:else}
+									<Eye class="size-4" />
+								{/if}
+							</Button>
 						</div>
 					</div>
 					<div class="space-y-2">
@@ -119,13 +138,28 @@
 							/>
 							<input
 								id="confirm"
-								type="password"
+								type={showConfirm ? 'text' : 'password'}
 								placeholder="Repeat your new password"
-								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+								class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 pr-10 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 								bind:value={confirm}
 								autocomplete="new-password"
 								required
 							/>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-sm"
+								class="absolute top-1/2 right-1 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+								aria-label={showConfirm ? 'Hide password' : 'Show password'}
+								aria-controls="confirm"
+								onclick={() => (showConfirm = !showConfirm)}
+							>
+								{#if showConfirm}
+									<EyeOff class="size-4" />
+								{:else}
+									<Eye class="size-4" />
+								{/if}
+							</Button>
 						</div>
 					</div>
 					{#if error}
