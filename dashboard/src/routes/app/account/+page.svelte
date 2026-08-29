@@ -12,9 +12,8 @@
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
-	import { getMe } from '$lib/remote/index.js';
+	import { getMe, listApiKeys, createApiKey, deleteApiKey } from '$lib/remote/index.js';
 	import { auth, isAuthed, logout } from '$lib/auth.svelte';
-	import { authClient } from '$lib/auth-client';
 	import { goto } from '$app/navigation';
 
 	const me = $derived(isAuthed() ? getMe(auth.token) : null);
@@ -56,14 +55,7 @@
 		if (!isAuthed()) return;
 		keysLoaded = false;
 		try {
-			const { data, error: listError } = await authClient.apiKey.list();
-			if (listError) throw new Error(listError.message);
-			keys = (data?.apiKeys ?? []).map((k) => ({
-				id: k.id,
-				name: k.name ?? 'Untitled key',
-				createdAt: String(k.createdAt),
-				lastRequest: k.lastRequest ? String(k.lastRequest) : null
-			}));
+			keys = await listApiKeys(auth.token);
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Failed to load API keys');
 		} finally {
@@ -75,11 +67,8 @@
 		creatingKey = true;
 		newKey = null;
 		try {
-			const { data, error: createError } = await authClient.apiKey.create({
-				name: `key-${new Date().toISOString().slice(0, 10)}`
-			});
-			if (createError) throw new Error(createError.message);
-			newKey = data?.key ?? null;
+			const { key } = await createApiKey(auth.token);
+			newKey = key;
 			toast.success('API key created — copy it now, it is shown only once');
 			await loadKeys();
 		} catch (e) {
@@ -92,8 +81,7 @@
 	async function deleteKey(id: string) {
 		if (!confirm('Delete this API key? Anything using it will stop working.')) return;
 		try {
-			const { error: deleteError } = await authClient.apiKey.delete({ keyId: id });
-			if (deleteError) throw new Error(deleteError.message);
+			await deleteApiKey([auth.token, id]);
 			toast.success('API key deleted');
 			await loadKeys();
 		} catch (e) {

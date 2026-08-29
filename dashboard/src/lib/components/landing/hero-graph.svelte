@@ -51,11 +51,11 @@
 		{ id: 'apikey', label: 'API key', type: 'secret', importance: 0.8 },
 		{ id: 'dark', label: 'prefers dark mode', type: 'preference', importance: 0.7 },
 		{ id: 'recall', label: 'zero-reminder recall', type: 'concept', importance: 0.7 },
-		{ id: 'fly', label: 'Fly.io', type: 'tool', importance: 0.6 },
-		{ id: 'neon', label: 'Neon Postgres', type: 'tool', importance: 0.6 },
+		{ id: 'fly', label: 'Bun server', type: 'tool', importance: 0.6 },
+		{ id: 'neon', label: 'Postgres', type: 'tool', importance: 0.6 },
 		{ id: 'consolidate', label: 'consolidate', type: 'concept', importance: 0.6 },
-		{ id: 'netlify', label: 'Netlify', type: 'tool', importance: 0.5 },
-		{ id: 'deploy', label: 'deploy: fly.io', type: 'concept', importance: 0.5 }
+		{ id: 'netlify', label: 'SvelteKit dashboard', type: 'tool', importance: 0.5 },
+		{ id: 'deploy', label: 'deploy: self-hosted', type: 'concept', importance: 0.5 }
 	];
 
 	const links: SimLink[] = [

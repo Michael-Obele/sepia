@@ -21,7 +21,7 @@
 		},
 		{
 			from: 'agent',
-			text: 'Svelte, Fly.io, Neon Postgres, Netlify — from the sepia project graph.',
+			text: 'Svelte, Bun, Postgres, SvelteKit — from the sepia project graph.',
 			memory: 'project graph · 4 relations'
 		},
 		{

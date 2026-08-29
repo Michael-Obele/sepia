@@ -17,7 +17,9 @@
 		CircleCheck,
 		TriangleAlert,
 		Eye,
-		EyeOff
+		EyeOff,
+		RefreshCw,
+		Trash2
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
@@ -28,9 +30,16 @@
 		CardTitle
 	} from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { auth } from '$lib/auth.svelte';
+	import { auth, isAuthed } from '$lib/auth.svelte';
+	import {
+		listApiKeys as fetchApiKeys,
+		createApiKey as createApiKeyRemote,
+		deleteApiKey as deleteApiKeyRemote
+	} from '$lib/remote/index.js';
 	import { MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared';
+	import { toast } from 'svelte-sonner';
 
 	const MCP_URL = 'https://sepia.fly.dev/mcp';
 	const BASE = 'https://sepia.fly.dev';
@@ -156,10 +165,33 @@
 	// window) and rotates on every sign-in. Configs are derived so they always
 	// carry the current token; the display masks it until revealed.
 	function maskToken(t: string): string {
-		if (t === 'YOUR_TOKEN' || t.length <= 8) return t;
+		if (t === 'YOUR_TOKEN' || t === 'YOUR_API_KEY' || t.length <= 8) return t;
 		return `${t.slice(0, 4)}••••••••${t.slice(-4)}`;
 	}
 	const maskedToken = $derived(maskToken(token));
+
+	// ── API key (preferred for Bearer clients) ──────────────────────────────
+	// The session token rotates (7-day sliding expiry, new token per sign-in).
+	// API keys are permanent — the right credential for long-lived MCP configs.
+	// Industry pattern (MCP spec): OAuth 2.1 for web AIs, environment-based
+	// credentials (API keys) for local editors.
+	type ApiKeyRow = {
+		id: string;
+		name: string;
+		createdAt: string;
+		lastRequest: string | null;
+	};
+	let apiKeys = $state<ApiKeyRow[]>([]);
+	let newKey = $state<string | null>(null);
+
+	// The credential for Bearer configs is ALWAYS the API key — never the
+	// rotating session token. The plaintext is only known right after
+	// create/regenerate (better-auth hashes it server-side); after a reload
+	// we show a placeholder and prompt to regenerate if the key was lost.
+	const hasApiKey = $derived(apiKeys.length > 0);
+	const bearerCredential = $derived(newKey ?? 'YOUR_API_KEY');
+	const bearerCredentialLabel = $derived('API key');
+	const maskedCredential = $derived(maskToken(bearerCredential));
 
 	function buildBearer(t: string) {
 		return `{
@@ -174,8 +206,8 @@
   }
 }`;
 	}
-	const bearerConfig = $derived(buildBearer(token));
-	const displayBearerConfig = $derived(buildBearer(maskedToken));
+	const bearerConfig = $derived(buildBearer(bearerCredential));
+	const displayBearerConfig = $derived(buildBearer(maskedCredential));
 
 	function buildConfigs(t: string) {
 		return {
@@ -241,16 +273,18 @@
 			claude: `claude mcp add --transport http sepia ${MCP_URL} --header "Authorization: Bearer ${t}"`
 		};
 	}
-	const editorConfigs = $derived(buildConfigs(token));
-	const displayConfigs = $derived(buildConfigs(maskedToken));
+	const editorConfigs = $derived(buildConfigs(bearerCredential));
+	const displayConfigs = $derived(buildConfigs(maskedCredential));
 
-	const oneLiner = $derived(`SEPIA_TOKEN=${token} curl -fsSL ${BASE}/install | bash`);
-	const displayOneLiner = $derived(`SEPIA_TOKEN=${maskedToken} curl -fsSL ${BASE}/install | bash`);
+	const oneLiner = $derived(`SEPIA_TOKEN=${bearerCredential} curl -fsSL ${BASE}/install | bash`);
+	const displayOneLiner = $derived(
+		`SEPIA_TOKEN=${maskedCredential} curl -fsSL ${BASE}/install | bash`
+	);
 	const oneLinerGlobal = $derived(
-		`SEPIA_TOKEN=${token} SEPIA_SCOPE=global curl -fsSL ${BASE}/install | bash`
+		`SEPIA_TOKEN=${bearerCredential} SEPIA_SCOPE=global curl -fsSL ${BASE}/install | bash`
 	);
 	const displayOneLinerGlobal = $derived(
-		`SEPIA_TOKEN=${maskedToken} SEPIA_SCOPE=global curl -fsSL ${BASE}/install | bash`
+		`SEPIA_TOKEN=${maskedCredential} SEPIA_SCOPE=global curl -fsSL ${BASE}/install | bash`
 	);
 
 	// Token visibility — hidden by default, revealed per-config via the eye toggle.
@@ -258,6 +292,74 @@
 	function toggleReveal(key: string) {
 		revealed[key] = !revealed[key];
 	}
+
+	// ── API key management ──────────────────────────────────────────────────
+	let apiKeysLoaded = $state(false);
+	let creatingKey = $state(false);
+	let newKeyId = $state<string | null>(null);
+	let regenerating = $state<string | null>(null);
+
+	async function loadApiKeys() {
+		if (!isAuthed()) return;
+		apiKeysLoaded = false;
+		try {
+			apiKeys = await fetchApiKeys(auth.token);
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Failed to load API keys');
+		} finally {
+			apiKeysLoaded = true;
+		}
+	}
+
+	async function createApiKey() {
+		creatingKey = true;
+		newKey = null;
+		newKeyId = null;
+		try {
+			const { id, key } = await createApiKeyRemote(auth.token);
+			newKey = key;
+			newKeyId = id;
+			toast.success('API key created — copy it now, it is shown only once');
+			await loadApiKeys();
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Failed to create API key');
+		} finally {
+			creatingKey = false;
+		}
+	}
+
+	/** Regenerate = delete + create (industry standard — no built-in rotate). */
+	async function regenerateApiKey(id: string) {
+		regenerating = id;
+		try {
+			await deleteApiKeyRemote([auth.token, id]);
+			const { key } = await createApiKeyRemote(auth.token);
+			newKey = key;
+			newKeyId = null;
+			toast.success('Key regenerated — copy the new key now');
+			await loadApiKeys();
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Failed to regenerate API key');
+		} finally {
+			regenerating = null;
+		}
+	}
+
+	async function deleteApiKey(id: string) {
+		try {
+			await deleteApiKeyRemote([auth.token, id]);
+			toast.success('API key deleted');
+			await loadApiKeys();
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Failed to delete API key');
+		}
+	}
+
+	$effect(() => {
+		if (isAuthed() && !apiKeysLoaded) {
+			void loadApiKeys();
+		}
+	});
 
 	type Editor = {
 		id: string;
@@ -431,39 +533,45 @@
 					{/each}
 				</ol>
 			{:else}
-				<div class="relative">
-					<pre class="overflow-x-auto rounded-md bg-muted p-4 text-xs leading-relaxed"><code
-							>{revealed['config'] ? bearerConfig : displayBearerConfig}</code
-						></pre>
-					<Button
-						type="button"
-						variant="ghost"
-						size="icon-sm"
-						class="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
-						aria-label={revealed['config'] ? 'Hide token' : 'Show token'}
-						onclick={() => toggleReveal('config')}
-					>
-						{#if revealed['config']}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
-					</Button>
-				</div>
-				<div class="flex flex-wrap items-center gap-2">
-					<Button
-						variant="outline"
-						size="sm"
-						onclick={() => copy(bearerConfig, 'config')}
-						class="gap-1"
-					>
-						{#if copied === 'config'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
-						Copy config
-					</Button>
-					<p class="text-xs text-muted-foreground">
-						Cursor and Zed use slightly different config keys — see the
-						<a href="#editors" class="underline underline-offset-4 hover:text-foreground">
-							per-editor configs
-						</a>
-						below for ready-to-paste snippets with your token.
+				{#if hasApiKey}
+					<div class="relative">
+						<pre class="overflow-x-auto rounded-md bg-muted p-4 text-xs leading-relaxed"><code
+								>{revealed['config'] ? bearerConfig : displayBearerConfig}</code
+							></pre>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-sm"
+							class="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+							aria-label={revealed['config'] ? 'Hide token' : 'Show token'}
+							onclick={() => toggleReveal('config')}
+						>
+							{#if revealed['config']}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
+						</Button>
+					</div>
+					<div class="flex flex-wrap items-center gap-2">
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() => copy(bearerConfig, 'config')}
+							class="gap-1"
+						>
+							{#if copied === 'config'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
+							Copy config
+						</Button>
+						<p class="text-xs text-muted-foreground">
+							Cursor and Zed use slightly different config keys — see the
+							<a href="#editors" class="underline underline-offset-4 hover:text-foreground">
+								per-editor configs
+							</a>
+							below for ready-to-paste snippets with your API key.
+						</p>
+					</div>
+				{:else}
+					<p class="text-sm text-muted-foreground">
+						Create an API key above to unlock the config for {current.name}.
 					</p>
-				</div>
+				{/if}
 			{/if}
 		</CardContent>
 	</Card>
@@ -588,210 +696,269 @@
 		</CardContent>
 	</Card>
 
-	<!-- How to use the access token -->
+	<!-- Your API key — the preferred credential for Bearer clients -->
 	<Card>
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2 text-base">
-				<KeyRound class="size-4" /> How to use the access token
+				<KeyRound class="size-4" /> Your API key
 			</CardTitle>
 			<CardDescription>
-				Your personal token for Bearer-token clients. It's tied to your dashboard account — anyone
-				with it can read and write your memory, so keep it private.
+				The recommended credential for local editors. API keys don't expire and don't rotate — set
+				them once and forget them. (The session token works too, but it rotates on every sign-in.)
 			</CardDescription>
 		</CardHeader>
 		<CardContent class="space-y-4">
-			<div class="flex items-center gap-2">
-				<code class="flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">
-					{auth.token ? (revealed['token'] ? auth.token : maskedToken) : 'Not signed in'}
-				</code>
-				<Button
-					type="button"
-					variant="ghost"
-					size="icon-sm"
-					onclick={() => toggleReveal('token')}
-					disabled={!auth.token}
-					class="shrink-0 text-muted-foreground hover:text-foreground"
-					aria-label={revealed['token'] ? 'Hide token' : 'Show token'}
-				>
-					{#if revealed['token']}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
+			{#if newKey}
+				<div class="flex items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3">
+					<code class="flex-1 font-mono text-sm break-all">{newKey}</code>
+					<Button size="sm" variant="outline" onclick={() => copy(newKey!, 'new-key')}>
+						{#if copied === 'new-key'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
+					</Button>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Copy it now — it is shown only once. It's already pre-filled into every config below.
+				</p>
+			{/if}
+
+			<div class="flex flex-wrap items-center gap-2">
+				<Button onclick={createApiKey} disabled={creatingKey} class="gap-1.5">
+					<KeyRound class="size-4" />
+					{creatingKey ? 'Creating…' : 'Create API key'}
 				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					onclick={() => copy(auth.token, 'token')}
-					disabled={!auth.token}
-					class="gap-1"
-				>
-					{#if copied === 'token'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
-					Copy
-				</Button>
+				{#if apiKeys.length > 0}
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => regenerateApiKey(apiKeys[0].id)}
+						disabled={regenerating !== null}
+						class="gap-1.5"
+					>
+						<RefreshCw class="size-3.5" />
+						{regenerating === apiKeys[0].id ? 'Regenerating…' : 'Regenerate'}
+					</Button>
+				{/if}
 			</div>
+
+			{#if !apiKeysLoaded}
+				<Skeleton class="h-10 w-full" />
+			{:else if apiKeys.length === 0}
+				<p class="text-sm text-muted-foreground">
+					No API keys yet — create one to unlock the one-line installer and per-editor configs
+					below.
+				</p>
+			{:else}
+				<ul class="space-y-2">
+					{#each apiKeys as key (key.id)}
+						<li class="flex items-center justify-between rounded-lg border p-3">
+							<div>
+								<p class="text-sm font-medium">{key.name}</p>
+								<p class="text-xs text-muted-foreground">
+									Created {new Date(key.createdAt).toLocaleDateString()}
+									{#if key.lastRequest}
+										· last used {new Date(key.lastRequest).toLocaleDateString()}{/if}
+								</p>
+							</div>
+							<div class="flex items-center gap-1">
+								<Button
+									size="sm"
+									variant="ghost"
+									onclick={() => regenerateApiKey(key.id)}
+									disabled={regenerating !== null}
+									class="gap-1"
+								>
+									<RefreshCw class="size-3.5" />
+									Regenerate
+								</Button>
+								<Button size="sm" variant="ghost" onclick={() => deleteApiKey(key.id)}>
+									<Trash2 class="size-4" />
+								</Button>
+							</div>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+
 			<div
 				class="flex items-start gap-2 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-muted-foreground"
 			>
 				<TriangleAlert class="mt-0.5 size-3.5 shrink-0 text-amber-500" />
 				<span>
-					Keep this token private — it grants full read/write access to your memory. OAuth clients
+					Keep your key private — it grants full read/write access to your memory. OAuth clients
 					(ChatGPT, Grok, …) sign in separately and never need it.
 				</span>
 			</div>
 
-			<!-- One-line installer — patches MCP configs with the token -->
-			<div class="rounded-lg border border-border/50 bg-muted p-3">
-				<p
-					class="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
-				>
-					<Terminal class="size-3.5" /> One-line installer — also patches MCP configs
-				</p>
-				<div class="space-y-1.5 font-mono text-xs">
-					<div class="flex items-center gap-2">
-						<code class="flex-1 truncate">{revealed['oneliner'] ? oneLiner : displayOneLiner}</code>
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-xs"
-							onclick={() => toggleReveal('oneliner')}
-							class="shrink-0 text-muted-foreground hover:text-foreground"
-							aria-label={revealed['oneliner'] ? 'Hide token' : 'Show token'}
-						>
-							{#if revealed['oneliner']}<EyeOff class="size-3" />{:else}<Eye class="size-3" />{/if}
-						</Button>
-						<Button
-							variant="ghost"
-							size="xs"
-							onclick={() => copy(oneLiner, 'oneliner')}
-							class="h-6 gap-1"
-						>
-							{#if copied === 'oneliner'}<Check class="size-3" />{:else}<Copy class="size-3" />{/if}
-							Copy
-						</Button>
+			<!-- One-line installer — patches MCP configs with the API key -->
+			{#if hasApiKey}
+				<div class="rounded-lg border border-border/50 bg-muted p-3">
+					<p
+						class="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+					>
+						<Terminal class="size-3.5" /> One-line installer — also patches MCP configs
+					</p>
+					<div class="space-y-1.5 font-mono text-xs">
+						<div class="flex items-center gap-2">
+							<code class="flex-1 truncate"
+								>{revealed['oneliner'] ? oneLiner : displayOneLiner}</code
+							>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-xs"
+								onclick={() => toggleReveal('oneliner')}
+								class="shrink-0 text-muted-foreground hover:text-foreground"
+								aria-label={revealed['oneliner'] ? 'Hide token' : 'Show token'}
+							>
+								{#if revealed['oneliner']}<EyeOff class="size-3" />{:else}<Eye
+										class="size-3"
+									/>{/if}
+							</Button>
+							<Button
+								variant="ghost"
+								size="xs"
+								onclick={() => copy(oneLiner, 'oneliner')}
+								class="h-6 gap-1"
+							>
+								{#if copied === 'oneliner'}<Check class="size-3" />{:else}<Copy
+										class="size-3"
+									/>{/if}
+								Copy
+							</Button>
+						</div>
+						<div class="flex items-center gap-2">
+							<code class="flex-1 truncate"
+								>{revealed['oneliner-global'] ? oneLinerGlobal : displayOneLinerGlobal}</code
+							>
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon-xs"
+								onclick={() => toggleReveal('oneliner-global')}
+								class="shrink-0 text-muted-foreground hover:text-foreground"
+								aria-label={revealed['oneliner-global'] ? 'Hide token' : 'Show token'}
+							>
+								{#if revealed['oneliner-global']}<EyeOff class="size-3" />{:else}<Eye
+										class="size-3"
+									/>{/if}
+							</Button>
+							<Button
+								variant="ghost"
+								size="xs"
+								onclick={() => copy(oneLinerGlobal, 'oneliner-global')}
+								class="h-6 gap-1"
+							>
+								{#if copied === 'oneliner-global'}<Check class="size-3" />{:else}<Copy
+										class="size-3"
+									/>{/if}
+								Copy
+							</Button>
+						</div>
 					</div>
-					<div class="flex items-center gap-2">
-						<code class="flex-1 truncate"
-							>{revealed['oneliner-global'] ? oneLinerGlobal : displayOneLinerGlobal}</code
-						>
-						<Button
-							type="button"
-							variant="ghost"
-							size="icon-xs"
-							onclick={() => toggleReveal('oneliner-global')}
-							class="shrink-0 text-muted-foreground hover:text-foreground"
-							aria-label={revealed['oneliner-global'] ? 'Hide token' : 'Show token'}
-						>
-							{#if revealed['oneliner-global']}<EyeOff class="size-3" />{:else}<Eye
-									class="size-3"
-								/>{/if}
-						</Button>
-						<Button
-							variant="ghost"
-							size="xs"
-							onclick={() => copy(oneLinerGlobal, 'oneliner-global')}
-							class="h-6 gap-1"
-						>
-							{#if copied === 'oneliner-global'}<Check class="size-3" />{:else}<Copy
-									class="size-3"
-								/>{/if}
-							Copy
-						</Button>
-					</div>
+					<p class="mt-2 text-xs text-muted-foreground">
+						Global = one-and-done for this machine. Add
+						<code class="rounded bg-muted px-1 font-mono">SEPIA_SCOPE=global</code> to skip repo
+						files. Fallback:
+						<code class="rounded bg-muted px-1 font-mono">npx skills add Michael-Obele/sepia</code>.
+					</p>
 				</div>
-				<p class="mt-2 text-xs text-muted-foreground">
-					Global = one-and-done for this machine. Add
-					<code class="rounded bg-muted px-1 font-mono">SEPIA_SCOPE=global</code> to skip repo
-					files. Fallback:
-					<code class="rounded bg-muted px-1 font-mono">npx skills add Michael-Obele/sepia</code>.
-				</p>
-			</div>
 
-			<!-- Per-editor configs — real token pre-filled -->
-			<div id="editors">
-				<p
-					class="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
-				>
-					<FileText class="size-3.5" /> Per-editor configs — token pre-filled
-				</p>
-				<Tabs.Root value="vscode">
-					<Tabs.List class="h-auto flex-wrap gap-1 p-1">
+				<!-- Per-editor configs — API key pre-filled -->
+				<div id="editors">
+					<p
+						class="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+					>
+						<FileText class="size-3.5" /> Per-editor configs — {bearerCredentialLabel} pre-filled
+					</p>
+					<Tabs.Root value="vscode">
+						<Tabs.List class="h-auto flex-wrap gap-1 p-1">
+							{#each editors as ed (ed.id)}
+								<Tabs.Trigger value={ed.id} class="gap-1.5 px-3 py-1.5 text-xs sm:text-sm">
+									{ed.label}
+								</Tabs.Trigger>
+							{/each}
+						</Tabs.List>
+
 						{#each editors as ed (ed.id)}
-							<Tabs.Trigger value={ed.id} class="gap-1.5 px-3 py-1.5 text-xs sm:text-sm">
-								{ed.label}
-							</Tabs.Trigger>
-						{/each}
-					</Tabs.List>
-
-					{#each editors as ed (ed.id)}
-						<Tabs.Content value={ed.id} class="mt-4 space-y-3">
-							<div class="overflow-hidden rounded-lg border border-border/50 bg-muted">
-								<div
-									class="flex items-center justify-between border-b border-border/50 bg-card/50 px-3 py-1.5"
-								>
-									<span class="font-mono text-xs text-muted-foreground">{ed.file}</span>
-									<div class="flex items-center gap-1">
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon-xs"
-											onclick={() => toggleReveal(ed.id)}
-											class="shrink-0 text-muted-foreground hover:text-foreground"
-											aria-label={revealed[ed.id] ? 'Hide token' : 'Show token'}
-										>
-											{#if revealed[ed.id]}<EyeOff class="size-3" />{:else}<Eye
-													class="size-3"
-												/>{/if}
-										</Button>
-										<Button
-											variant="ghost"
-											size="xs"
-											onclick={() => copy(editorConfigs[ed.config], ed.id)}
-											class="h-6 gap-1"
-										>
-											{#if copied === ed.id}<Check class="size-3 text-green-500" /> Copy ✓{:else}<Copy
-													class="size-3"
-												/> Copy{/if}
-										</Button>
-									</div>
-								</div>
-								{#if ed.id === 'zed'}
-									<pre class="overflow-x-auto p-3 text-xs leading-relaxed"><code
-											>{revealed['zed'] ? editorConfigs.zedRemote : displayConfigs.zedRemote}</code
-										></pre>
-									<details class="border-t border-border/50 bg-card/30">
-										<summary class="cursor-pointer px-3 py-2 text-xs font-medium text-foreground"
-											>Fallback: stdio bridge via mcp-remote (older Zed) — click to show</summary
-										>
-										<div class="border-t border-border/50 bg-muted p-3">
-											<pre class="overflow-x-auto text-xs leading-relaxed"><code
-													>{revealed['zedBridge']
-														? editorConfigs.zedBridge
-														: displayConfigs.zedBridge}</code
-												></pre>
+							<Tabs.Content value={ed.id} class="mt-4 space-y-3">
+								<div class="overflow-hidden rounded-lg border border-border/50 bg-muted">
+									<div
+										class="flex items-center justify-between border-b border-border/50 bg-card/50 px-3 py-1.5"
+									>
+										<span class="font-mono text-xs text-muted-foreground">{ed.file}</span>
+										<div class="flex items-center gap-1">
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon-xs"
+												onclick={() => toggleReveal(ed.id)}
+												class="shrink-0 text-muted-foreground hover:text-foreground"
+												aria-label={revealed[ed.id] ? 'Hide token' : 'Show token'}
+											>
+												{#if revealed[ed.id]}<EyeOff class="size-3" />{:else}<Eye
+														class="size-3"
+													/>{/if}
+											</Button>
 											<Button
 												variant="ghost"
 												size="xs"
-												onclick={() => copy(editorConfigs.zedBridge, 'zedBridge')}
-												class="mt-2 h-6 gap-1"
+												onclick={() => copy(editorConfigs[ed.config], ed.id)}
+												class="h-6 gap-1"
 											>
-												{#if copied === 'zedBridge'}<Check class="size-3" /> Copied{:else}<Copy
-														class="size-3"
-													/> Copy bridge{/if}
+												{#if copied === ed.id}<Check class="size-3 text-green-500" />
+													Copy
+												{:else}
+													<Copy class="size-3" /> Copy{/if}
 											</Button>
 										</div>
-									</details>
-								{:else}
-									<pre class="overflow-x-auto p-3 text-xs leading-relaxed"><code
-											>{revealed[ed.id]
-												? editorConfigs[ed.config]
-												: displayConfigs[ed.config]}</code
-										></pre>
-								{/if}
-							</div>
-							<p class="text-xs leading-relaxed text-muted-foreground">
-								Key: <code class="rounded bg-muted px-1 font-mono text-xs">{ed.key}</code> — {ed.note}
-							</p>
-						</Tabs.Content>
-					{/each}
-				</Tabs.Root>
-			</div>
+									</div>
+									{#if ed.id === 'zed'}
+										<pre class="overflow-x-auto p-3 text-xs leading-relaxed"><code
+												>{revealed['zed']
+													? editorConfigs.zedRemote
+													: displayConfigs.zedRemote}</code
+											></pre>
+										<details class="border-t border-border/50 bg-card/30">
+											<summary class="cursor-pointer px-3 py-2 text-xs font-medium text-foreground"
+												>Fallback: stdio bridge via mcp-remote (older Zed) — click to show</summary
+											>
+											<div class="border-t border-border/50 bg-muted p-3">
+												<pre class="overflow-x-auto text-xs leading-relaxed"><code
+														>{revealed['zedBridge']
+															? editorConfigs.zedBridge
+															: displayConfigs.zedBridge}</code
+													></pre>
+												<Button
+													variant="ghost"
+													size="xs"
+													onclick={() => copy(editorConfigs.zedBridge, 'zedBridge')}
+													class="mt-2 h-6 gap-1"
+												>
+													{#if copied === 'zedBridge'}<Check class="size-3" /> Copied{:else}<Copy
+															class="size-3"
+														/> Copy bridge{/if}
+												</Button>
+											</div>
+										</details>
+									{:else}
+										<pre class="overflow-x-auto p-3 text-xs leading-relaxed"><code
+												>{revealed[ed.id]
+													? editorConfigs[ed.config]
+													: displayConfigs[ed.config]}</code
+											></pre>
+									{/if}
+								</div>
+								<p class="text-xs leading-relaxed text-muted-foreground">
+									Key: <code class="rounded bg-muted px-1 font-mono text-xs">{ed.key}</code> — {ed.note}
+								</p>
+							</Tabs.Content>
+						{/each}
+					</Tabs.Root>
+				</div>
+			{:else}
+				<p class="text-sm text-muted-foreground">
+					Create an API key above to unlock the one-line installer and per-editor configs.
+				</p>
+			{/if}
 		</CardContent>
 	</Card>
 

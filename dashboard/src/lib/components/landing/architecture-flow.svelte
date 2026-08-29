@@ -3,7 +3,7 @@
 	import { Sankey } from 'layerchart/graph';
 
 	// The Sepia architecture as a flow: 12 AI tools + the dashboard funnel
-	// through one Bun process on Fly.io into Neon Postgres.
+	// through one Bun process into Postgres.
 	const data = {
 		nodes: [
 			{ id: 'Local editors', type: 'client' },
@@ -12,7 +12,7 @@
 			{ id: 'MCP', type: 'endpoint' },
 			{ id: 'REST', type: 'endpoint' },
 			{ id: 'Bun', type: 'server' },
-			{ id: 'Neon', type: 'db' }
+			{ id: 'Postgres', type: 'db' }
 		],
 		links: [
 			{ source: 'Local editors', target: 'MCP', value: 6 },
@@ -20,7 +20,7 @@
 			{ source: 'Dashboard', target: 'REST', value: 1 },
 			{ source: 'MCP', target: 'Bun', value: 12 },
 			{ source: 'REST', target: 'Bun', value: 1 },
-			{ source: 'Bun', target: 'Neon', value: 13 }
+			{ source: 'Bun', target: 'Postgres', value: 13 }
 		]
 	};
 

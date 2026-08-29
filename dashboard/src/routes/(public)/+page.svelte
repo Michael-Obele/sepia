@@ -653,9 +653,9 @@
 					Simple architecture.<br />Serious capability.
 				</h2>
 				<p class="mt-4 text-muted-foreground">
-					One Bun process on Fly.io serves both the MCP endpoint and the REST API. The dashboard is
-					server-rendered with remote functions — page loads never wake your VM. Neon Postgres on
-					the free tier handles persistence.
+					One Bun process serves both the MCP endpoint and the REST API. The dashboard is
+					server-rendered with remote functions — page loads never wake your VM. Postgres handles
+					persistence.
 				</p>
 				<div class="mt-8 space-y-3">
 					<div class="flex items-start gap-3">
@@ -663,8 +663,7 @@
 						<div>
 							<p class="text-sm font-medium text-foreground">Scale-to-zero</p>
 							<p class="text-sm text-muted-foreground">
-								The Fly machine only spins up for real API calls — browsing the dashboard never
-								wakes it.
+								The server only spins up for real API calls — browsing the dashboard never wakes it.
 							</p>
 						</div>
 					</div>
@@ -708,8 +707,9 @@
 			Deploy in 10 minutes. Free forever.
 		</h2>
 		<p class="mx-auto mt-4 max-w-xl text-muted-foreground">
-			Fly.io free tier + Neon Postgres free tier + Netlify free tier. Your AI gets persistent memory
-			for $0/month.
+			Deploy the server on any long-running Bun host (Fly.io, Railway, Render, a VPS), the dashboard
+			on any SvelteKit host (Netlify, Vercel, Cloudflare Pages), and use any Postgres — free tiers
+			included. Your AI gets persistent memory for $0/month.
 		</p>
 
 		<!-- Contrast anchor -->
@@ -738,16 +738,20 @@
 			</p>
 			<div class="space-y-1.5 font-mono text-sm">
 				<p class="text-muted-foreground">
-					<span class="text-brand">$</span> fly launch
+					<span class="text-brand">$</span> git clone https://github.com/Michael-Obele/sepia
 				</p>
-				<p class="text-emerald-400/80">→ App created · machine deployed</p>
+				<p class="text-emerald-400/80">→ Clone the repo</p>
 				<p class="text-muted-foreground">
-					<span class="text-brand">$</span> fly secrets set DATABASE_URL=... AUTH_TOKEN=...
+					<span class="text-brand">$</span> bun install
 				</p>
-				<p class="text-emerald-400/80">→ Secrets are set</p>
+				<p class="text-emerald-400/80">→ Dependencies installed</p>
+				<p class="text-muted-foreground">
+					<span class="text-brand">$</span> DATABASE_URL=... AUTH_TOKEN=... bun run src/index.ts
+				</p>
+				<p class="text-emerald-400/80">→ Server running</p>
 				<p class="text-muted-foreground">
 					<span class="text-brand">$</span> open
-					<span class="text-amber-400">https://your-app.fly.dev/mcp</span>
+					<span class="text-amber-400">https://your-app.example.com/mcp</span>
 				</p>
 				<p class="text-emerald-400/80">→ Paste this URL into your AI — done</p>
 			</div>
