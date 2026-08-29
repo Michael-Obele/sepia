@@ -15,7 +15,9 @@
 		Zap,
 		Shield,
 		CircleCheck,
-		TriangleAlert
+		TriangleAlert,
+		Eye,
+		EyeOff
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
@@ -150,42 +152,56 @@
 	// Smart default: configs are pre-filled with the real token — scan and adjust, not type.
 	const token = $derived(auth.token || 'YOUR_TOKEN');
 
-	const bearerConfig = $derived(`{
+	// The token is a Better Auth session token — it expires (7-day sliding
+	// window) and rotates on every sign-in. Configs are derived so they always
+	// carry the current token; the display masks it until revealed.
+	function maskToken(t: string): string {
+		if (t === 'YOUR_TOKEN' || t.length <= 8) return t;
+		return `${t.slice(0, 4)}••••••••${t.slice(-4)}`;
+	}
+	const maskedToken = $derived(maskToken(token));
+
+	function buildBearer(t: string) {
+		return `{
   "mcpServers": {
     "sepia": {
       "type": "http",
       "url": "${MCP_URL}",
       "headers": {
-        "Authorization": "Bearer ${token}"
+        "Authorization": "Bearer ${t}"
       }
     }
   }
-}`);
+}`;
+	}
+	const bearerConfig = $derived(buildBearer(token));
+	const displayBearerConfig = $derived(buildBearer(maskedToken));
 
-	const editorConfigs = $derived({
-		vscode: `{
+	function buildConfigs(t: string) {
+		return {
+			vscode: `{
   "servers": {
     "sepia": {
       "type": "http",
       "url": "${MCP_URL}",
       "headers": {
-        "Authorization": "Bearer ${token}"
+        "Authorization": "Bearer ${t}"
       }
     }
   }
 }`,
-		cursor: `{
+			cursor: `{
   "mcpServers": {
     "sepia": {
       "type": "http",
       "url": "${MCP_URL}",
       "headers": {
-        "Authorization": "Bearer ${token}"
+        "Authorization": "Bearer ${t}"
       }
     }
   }
 }`,
-		opencode: `{
+			opencode: `{
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
     "sepia": {
@@ -193,22 +209,22 @@
       "url": "${MCP_URL}",
       "enabled": true,
       "headers": {
-        "Authorization": "Bearer ${token}"
+        "Authorization": "Bearer ${t}"
       }
     }
   }
 }`,
-		zedRemote: `{
+			zedRemote: `{
   "context_servers": {
     "sepia": {
       "url": "${MCP_URL}",
       "headers": {
-        "Authorization": "Bearer ${token}"
+        "Authorization": "Bearer ${t}"
       }
     }
   }
 }`,
-		zedBridge: `{
+			zedBridge: `{
   "context_servers": {
     "sepia": {
       "source": "custom",
@@ -216,19 +232,32 @@
       "args": [
         "-y", "mcp-remote",
         "${MCP_URL}",
-        "--header", "Authorization: Bearer ${token}"
+        "--header", "Authorization: Bearer ${t}"
       ],
       "env": {}
     }
   }
 }`,
-		claude: `claude mcp add --transport http sepia ${MCP_URL} --header "Authorization: Bearer ${token}"`
-	});
+			claude: `claude mcp add --transport http sepia ${MCP_URL} --header "Authorization: Bearer ${t}"`
+		};
+	}
+	const editorConfigs = $derived(buildConfigs(token));
+	const displayConfigs = $derived(buildConfigs(maskedToken));
 
 	const oneLiner = $derived(`SEPIA_TOKEN=${token} curl -fsSL ${BASE}/install | bash`);
+	const displayOneLiner = $derived(`SEPIA_TOKEN=${maskedToken} curl -fsSL ${BASE}/install | bash`);
 	const oneLinerGlobal = $derived(
 		`SEPIA_TOKEN=${token} SEPIA_SCOPE=global curl -fsSL ${BASE}/install | bash`
 	);
+	const displayOneLinerGlobal = $derived(
+		`SEPIA_TOKEN=${maskedToken} SEPIA_SCOPE=global curl -fsSL ${BASE}/install | bash`
+	);
+
+	// Token visibility — hidden by default, revealed per-config via the eye toggle.
+	let revealed = $state<Record<string, boolean>>({});
+	function toggleReveal(key: string) {
+		revealed[key] = !revealed[key];
+	}
 
 	type Editor = {
 		id: string;
@@ -402,9 +431,21 @@
 					{/each}
 				</ol>
 			{:else}
-				<pre class="overflow-x-auto rounded-md bg-muted p-4 text-xs leading-relaxed"><code
-						>{bearerConfig}</code
-					></pre>
+				<div class="relative">
+					<pre class="overflow-x-auto rounded-md bg-muted p-4 text-xs leading-relaxed"><code
+							>{revealed['config'] ? bearerConfig : displayBearerConfig}</code
+						></pre>
+					<Button
+						type="button"
+						variant="ghost"
+						size="icon-sm"
+						class="absolute top-2 right-2 text-muted-foreground hover:text-foreground"
+						aria-label={revealed['config'] ? 'Hide token' : 'Show token'}
+						onclick={() => toggleReveal('config')}
+					>
+						{#if revealed['config']}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
+					</Button>
+				</div>
 				<div class="flex flex-wrap items-center gap-2">
 					<Button
 						variant="outline"
@@ -561,8 +602,19 @@
 		<CardContent class="space-y-4">
 			<div class="flex items-center gap-2">
 				<code class="flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">
-					{auth.token ? `${auth.token.slice(0, 8)}…${auth.token.slice(-4)}` : 'Not signed in'}
+					{auth.token ? (revealed['token'] ? auth.token : maskedToken) : 'Not signed in'}
 				</code>
+				<Button
+					type="button"
+					variant="ghost"
+					size="icon-sm"
+					onclick={() => toggleReveal('token')}
+					disabled={!auth.token}
+					class="shrink-0 text-muted-foreground hover:text-foreground"
+					aria-label={revealed['token'] ? 'Hide token' : 'Show token'}
+				>
+					{#if revealed['token']}<EyeOff class="size-4" />{:else}<Eye class="size-4" />{/if}
+				</Button>
 				<Button
 					variant="outline"
 					size="sm"
@@ -593,7 +645,17 @@
 				</p>
 				<div class="space-y-1.5 font-mono text-xs">
 					<div class="flex items-center gap-2">
-						<code class="flex-1 truncate">{oneLiner}</code>
+						<code class="flex-1 truncate">{revealed['oneliner'] ? oneLiner : displayOneLiner}</code>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-xs"
+							onclick={() => toggleReveal('oneliner')}
+							class="shrink-0 text-muted-foreground hover:text-foreground"
+							aria-label={revealed['oneliner'] ? 'Hide token' : 'Show token'}
+						>
+							{#if revealed['oneliner']}<EyeOff class="size-3" />{:else}<Eye class="size-3" />{/if}
+						</Button>
 						<Button
 							variant="ghost"
 							size="xs"
@@ -605,7 +667,21 @@
 						</Button>
 					</div>
 					<div class="flex items-center gap-2">
-						<code class="flex-1 truncate">{oneLinerGlobal}</code>
+						<code class="flex-1 truncate"
+							>{revealed['oneliner-global'] ? oneLinerGlobal : displayOneLinerGlobal}</code
+						>
+						<Button
+							type="button"
+							variant="ghost"
+							size="icon-xs"
+							onclick={() => toggleReveal('oneliner-global')}
+							class="shrink-0 text-muted-foreground hover:text-foreground"
+							aria-label={revealed['oneliner-global'] ? 'Hide token' : 'Show token'}
+						>
+							{#if revealed['oneliner-global']}<EyeOff class="size-3" />{:else}<Eye
+									class="size-3"
+								/>{/if}
+						</Button>
 						<Button
 							variant="ghost"
 							size="xs"
@@ -650,20 +726,34 @@
 									class="flex items-center justify-between border-b border-border/50 bg-card/50 px-3 py-1.5"
 								>
 									<span class="font-mono text-xs text-muted-foreground">{ed.file}</span>
-									<Button
-										variant="ghost"
-										size="xs"
-										onclick={() => copy(editorConfigs[ed.config], ed.id)}
-										class="h-6 gap-1"
-									>
-										{#if copied === ed.id}<Check class="size-3 text-green-500" /> Copy ✓{:else}<Copy
-												class="size-3"
-											/> Copy{/if}
-									</Button>
+									<div class="flex items-center gap-1">
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon-xs"
+											onclick={() => toggleReveal(ed.id)}
+											class="shrink-0 text-muted-foreground hover:text-foreground"
+											aria-label={revealed[ed.id] ? 'Hide token' : 'Show token'}
+										>
+											{#if revealed[ed.id]}<EyeOff class="size-3" />{:else}<Eye
+													class="size-3"
+												/>{/if}
+										</Button>
+										<Button
+											variant="ghost"
+											size="xs"
+											onclick={() => copy(editorConfigs[ed.config], ed.id)}
+											class="h-6 gap-1"
+										>
+											{#if copied === ed.id}<Check class="size-3 text-green-500" /> Copy ✓{:else}<Copy
+													class="size-3"
+												/> Copy{/if}
+										</Button>
+									</div>
 								</div>
 								{#if ed.id === 'zed'}
 									<pre class="overflow-x-auto p-3 text-xs leading-relaxed"><code
-											>{editorConfigs.zedRemote}</code
+											>{revealed['zed'] ? editorConfigs.zedRemote : displayConfigs.zedRemote}</code
 										></pre>
 									<details class="border-t border-border/50 bg-card/30">
 										<summary class="cursor-pointer px-3 py-2 text-xs font-medium text-foreground"
@@ -671,7 +761,9 @@
 										>
 										<div class="border-t border-border/50 bg-muted p-3">
 											<pre class="overflow-x-auto text-xs leading-relaxed"><code
-													>{editorConfigs.zedBridge}</code
+													>{revealed['zedBridge']
+														? editorConfigs.zedBridge
+														: displayConfigs.zedBridge}</code
 												></pre>
 											<Button
 												variant="ghost"
@@ -687,7 +779,9 @@
 									</details>
 								{:else}
 									<pre class="overflow-x-auto p-3 text-xs leading-relaxed"><code
-											>{editorConfigs[ed.config]}</code
+											>{revealed[ed.id]
+												? editorConfigs[ed.config]
+												: displayConfigs[ed.config]}</code
 										></pre>
 								{/if}
 							</div>

@@ -121,7 +121,7 @@
 	<title>Account — Sepia</title>
 </svelte:head>
 
-<div class="mx-auto max-w-3xl space-y-6">
+<div class="mx-auto space-y-6">
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Account</h1>

@@ -7,10 +7,10 @@ import { dev } from '$app/environment';
  * /api/auth/* endpoints. The session token (from sign-in) is used as a
  * bearer token by the remote functions — the bearer plugin makes that work.
  *
- * In dev, point at the local server (VITE_AUTH_URL or localhost:8080).
+ * Defaults to the deployed server (it has CORS for localhost:5173). For
+ * local-server dev, set VITE_AUTH_URL=http://localhost:8080 explicitly.
  */
 export const authClient = createAuthClient({
-	baseURL:
-		import.meta.env.VITE_AUTH_URL ?? (dev ? 'http://localhost:8080' : 'https://sepia.fly.dev'),
+	baseURL: import.meta.env.VITE_AUTH_URL,
 	plugins: [apiKeyClient()]
 });
