@@ -30,27 +30,32 @@ preferences/instructions with importance scores).
   (e.g. `user-experience`, `auth`, `performance`) — add 1-4 per write when the
   topic is recurring. Search and query can filter by tags.
 
-## When to recall (READ)
+## When to recall (READ) — ALMOST EVERY MESSAGE
 
-1. **Before meaningful work**, call `search` with the user's current task and
-   topic keywords (e.g. `search` query="rate limiting" namespace="personal").
-2. If results are sparse, also `traverse_graph` from the most relevant entity
-   to pull its neighborhood.
-3. Weave recalled facts into your answer naturally. Cite what came from memory
-   when it matters ("From your memory: ...").
+Default to `search` on every turn — only skip for trivial chitchat ("hi", "thanks", "bye") with zero durable content. If in doubt, search.
+
+1. **Before you answer** (every turn except trivial chitchat), call `search` with 2-5 keywords from the user's current message + task (e.g. `search` query="rate limiting" namespace="personal").
+2. If results are sparse, also `traverse_graph` from the most relevant entity to pull its neighborhood.
+3. Weave recalled facts into your answer naturally. Cite what came from memory when it matters ("From your memory: ...").
 4. If a search returns nothing, say so — never fabricate memories.
 
-## When to write (WRITE)
+> Two Sepia calls per turn is normal and expected: `search` before you answer, persist after you answer.
 
-Persist something when it is **durable and reusable**:
+## When to write (WRITE) — ALMOST EVERY MESSAGE
+
+Persist in the same turn after your response when you learned something durable and reusable:
 
 - Preferences ("prefers tabs over spaces", "wants PRs under 400 lines")
 - Decisions and their rationale ("chose Neon over Supabase because...")
 - Project facts ("mcp-showcase deploys via Vercel")
 - People and roles, tools and stacks, conventions and constraints
+- User corrections ("actually we use pnpm, not npm")
 
-Do **not** store: ephemeral chat content, code snippets, credentials,
-secrets, or anything transient.
+Do **not** store: ephemeral chat content, code snippets, credentials, secrets, or anything transient.
+
+### "Save to memory" → Sepia (not editor memory)
+
+When the user says **"save to memory"**, **"remember this"**, **"save this"**, **"remember that"**, **"save this for later"**, or any variant — ALWAYS write to **Sepia** (`manage_memory` + `manage_entity` if needed), NOT just the editor's built-in memory. Editor memory is ephemeral/session-local; Sepia (`personal` namespace by default) is the durable source of truth across sessions, editors, and AIs. Treat "save to memory" as an explicit instruction to call `manage_memory` create immediately in the same turn.
 
 ## How to write
 

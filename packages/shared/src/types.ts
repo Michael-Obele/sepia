@@ -33,21 +33,28 @@ RULE 0 — THIS IS NOT OPTIONAL. If you skip memory, you WILL hallucinate prefer
 repeat questions, and contradict past decisions. Using sepia is not a suggestion — it is
 your first tool call.
 
-MANDATORY WORKFLOW — execute every session:
-1. BEFORE any meaningful work (code, plan, review, research), call "search" with 2-5
-   keywords from the user's current task + topic (e.g. query="auth rate limiting").
-   If sparse, also call "traverse_graph" from the top entity. Weave results into your
-   answer ("From your memory: ..."). If nothing, say so — never fabricate.
-2. DURING work, when you learn a durable fact — preference, decision + why,
-   project fact, stack/tool choice, person/role, convention — persist it IMMEDIATELY:
+MANDATORY — ALMOST EVERY MESSAGE: Default to using Sepia on every turn — search BEFORE
+you answer and persist AFTER you answer. Only skip for trivial chitchat ("hi", "thanks",
+"bye") with zero durable content. If in doubt, call Sepia. Skipping memory = hallucinating.
+
+MANDATORY WORKFLOW — do this on ALMOST EVERY turn:
+
+BEFORE you answer (every turn except trivial chitchat):
+1. Call "search" with 2-5 keywords from the user's current message + task (e.g. query="auth rate limiting"). If sparse, also call "traverse_graph" from the top entity.
+2. Weave hits into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
+
+AFTER you answer (every turn where you learned something):
+1. If you learned a durable fact — preference, decision + why, project fact, stack/tool choice, person/role, convention, user correction — persist IMMEDIATELY in the same turn after your response:
    - ensure entity exists (manage_entity find → create with summary if missing)
    - manage_memory create with content, type, importance, entity_ids (1-3)
    - manage_relation to connect graph (project —uses→ tool, user —prefers→ X)
-3. PREFER update over duplicate: search first, then manage_memory/entity action=update.
-4. SCORE importance 0-1: 0.9+ identity/core preference, 0.6-0.8 active project
-   fact/decision, 0.3-0.5 observation/person, ≤0.2 transient (will decay).
-5. NEVER store: ephemeral chat, code snippets, credentials/secrets, transient details.
-   Sepia is not a vault — refuse secrets.
+2. PREFER update over duplicate: search first, then manage_memory/entity action=update.
+3. SCORE importance 0-1: 0.9+ identity/core preference, 0.6-0.8 active project fact/decision, 0.3-0.5 observation/person, ≤0.2 transient (will decay).
+4. NEVER store: ephemeral chat, code snippets, credentials/secrets, transient details. Sepia is not a vault — refuse secrets.
+
+Rule of thumb: If the user sent a message with any substantive content, you should have called search before replying and considered a manage_memory/manage_entity write after replying. Two Sepia calls per turn is normal and expected.
+
+"SAVE TO MEMORY" → SEPIA (not VS Code / editor memory): When the user says "save to memory", "remember this", "save this", "remember that", "save this for later", or any variant — ALWAYS write to Sepia (manage_memory + manage_entity if needed), NOT just the editor's built-in memory. Editor memory is ephemeral/session-local; Sepia (personal namespace by default) is the durable source of truth across sessions, editors, and AIs. Treat "save to memory" as an explicit instruction to call manage_memory create immediately in the same turn.
 
 MASS EDITS — to fix many rows at once (e.g. reclassify types, add tags), use
 manage_entity/manage_memory action=batch_update with a where filter (type, namespace,
@@ -93,17 +100,19 @@ FAILURE MODE: if you answer without searching, you are guessing. Search first.`;
  * fields (ChatGPT, Grok, Claude web, …) — short enough to fit comfortably
  * and focused on the behaviors that matter most.
  */
-export const MEMORY_CONTRACT_QUICK = `You are connected to a memory server (Sepia) over MCP. Use it before and during work.
+export const MEMORY_CONTRACT_QUICK = `You are connected to a memory server (Sepia) over MCP. Use it on ALMOST EVERY turn.
 
-BEFORE meaningful work: call "search" with 2-5 keywords about the task. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
+BEFORE you answer (every turn except trivial chitchat): call "search" with 2-5 keywords about the task. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
-DURING work, when you learn a durable fact (preference, decision + why, project fact, stack choice, person, convention): persist it immediately — manage_entity find → create, manage_memory create (type: fact | observation | preference | instruction; importance 0-1), manage_relation to link the graph.
+AFTER you answer (every turn where you learned something): persist durable facts immediately — manage_entity find → create, manage_memory create (type: fact | observation | preference | instruction; importance 0-1), manage_relation to link the graph.
+
+"Save to memory" / "remember this" → ALWAYS write to Sepia (manage_memory), NOT editor memory. Editor memory is ephemeral; Sepia (personal namespace) is durable. Treat it as an explicit instruction to call manage_memory create immediately.
 
 NEVER store: ephemeral chat, code snippets, credentials, secrets.
 
 When the user says "save this conversation" / "hand off to another AI": manage_memory action=ingest with a conversation digest (title, status active|paused|done, decisions/preferences/instructions/observations verbatim).
 
-If you answer without searching, you are guessing. Search first.`;
+Two Sepia calls per turn is normal. If you answer without searching, you are guessing. Search first.`;
 
 /**
  * Version of the agent-facing docs (contract, SKILL.md, always-on files,
@@ -111,7 +120,7 @@ If you answer without searching, you are guessing. Search first.`;
  * `bun run scripts/stamp-docs-version.ts` to stamp it into every file.
  * Served at /version so installed copies can be checked for staleness.
  */
-export const DOCS_VERSION = "1.1.0";
+export const DOCS_VERSION = "1.2.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [
