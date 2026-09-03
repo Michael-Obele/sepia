@@ -11,18 +11,23 @@
 		ArrowRight,
 		Infinity,
 		BadgeCheck,
-		Code
+		Code,
+		Globe,
+		Monitor,
+		Info
 	} from '@lucide/svelte';
 	import { buttonVariants } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
+	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 
 	let billing = $state<'annual' | 'monthly'>('annual');
 
 	const plans = [
 		{
 			name: 'Free',
+			bestFor: 'For trying Sepia',
 			tagline: 'Start with a real memory graph — not a demo.',
 			price: '$0',
 			period: 'forever',
@@ -30,16 +35,21 @@
 			variant: 'outline' as const,
 			highlight: false,
 			features: [
-				'1 namespace',
-				'1,000 memories',
-				'1 AI connection',
-				'Unlimited reads, search & export',
-				'Conversation ingest — switch AIs mid-task',
-				'Self-host free forever, feature-identical'
+				{ label: '1 namespace', hint: null, emphasis: false },
+				{ label: '1,000 memories', hint: null, emphasis: false },
+				{
+					label: '1 Web AI connection',
+					hint: 'AI editors don’t count — connect unlimited editors',
+					emphasis: true
+				},
+				{ label: 'Unlimited reads, search & export', hint: null, emphasis: false },
+				{ label: 'Conversation ingest — switch AIs mid-task', hint: null, emphasis: false },
+				{ label: 'Self-host free forever, feature-identical', hint: null, emphasis: false }
 			]
 		},
 		{
 			name: 'Pro',
+			bestFor: 'For everyday AI users',
 			tagline: 'One graph for every AI you use. Locked in at beta pricing.',
 			price: '$50',
 			period: 'billed annually',
@@ -49,12 +59,16 @@
 			variant: 'default' as const,
 			highlight: true,
 			features: [
-				'Everything in Free',
-				'100 namespaces',
-				'1,000,000 memories (fair use)',
-				'Unlimited AI connections',
-				'Zero-ops hosting — backups, no cold starts',
-				'Priority support + early access to new features'
+				{ label: 'Everything in Free', hint: null, emphasis: false },
+				{ label: '100 namespaces', hint: null, emphasis: false },
+				{ label: '1,000,000 memories (fair use)', hint: null, emphasis: false },
+				{
+					label: 'Unlimited Web AI connections',
+					hint: 'ChatGPT, Claude web, Grok, Gemini — editors still unlimited',
+					emphasis: true
+				},
+				{ label: 'Zero-ops hosting — backups, no cold starts', hint: null, emphasis: false },
+				{ label: 'Priority support + early access', hint: null, emphasis: false }
 			]
 		}
 	];
@@ -76,7 +90,12 @@
 			rows: [
 				{ label: 'Namespaces', free: '1', pro: '100' },
 				{ label: 'Memories', free: '1,000', pro: '1,000,000' },
-				{ label: 'AI connections', free: '1', pro: 'Unlimited' }
+				{
+					label: 'Web AI connections',
+					free: '1',
+					pro: 'Unlimited',
+					info: 'Web AI = ChatGPT, Claude web, Grok, Gemini, Perplexity, Le Chat connected via OAuth. AI editors (Claude Code, Cursor, Copilot, Codex, Zed, OpenCode) use a bearer token and never count toward this limit.'
+				}
 			]
 		},
 		{
@@ -99,6 +118,26 @@
 	];
 
 	const faqs = [
+		{
+			q: 'What is a Web AI connection?',
+			a: 'A Web AI connection is a web-based AI provider you connect to Sepia via OAuth — like ChatGPT, Claude (web), Grok, Gemini, Perplexity, or Le Chat. Each connected provider counts as one Web AI connection. Free includes 1, Pro is unlimited.'
+		},
+		{
+			q: 'Do AI editors count toward my connection limit?',
+			a: 'No — never. AI editors (Claude Code, Cursor, Muse, Codex, Zed, OpenCode) connect with a bearer token, not OAuth, and are unlimited on every plan. Only web AIs count.'
+		},
+		{
+			q: 'What happens when I hit my Web AI connection limit?',
+			a: 'You’ll be asked to upgrade to Pro or disconnect an existing Web AI before adding another. Reads, search, and export are never blocked — only adding a new Web AI is paused.'
+		},
+		{
+			q: 'Can I change my connected Web AI provider?',
+			a: 'Yes, anytime in your dashboard. Disconnect one Web AI and connect another — it still counts as 1. No extra charge, no waiting period.'
+		},
+		{
+			q: 'Are AI editors included on every plan?',
+			a: 'Yes. Connect as many AI editors as you want on Free or Pro. They all share the same memory graph, and they never affect your Web AI connection count.'
+		},
 		{
 			q: 'Is self-hosting still free?',
 			a: 'Yes — forever, and feature-identical. Sepia is open source. Hosted is the zero-ops option; self-hosted is your escape hatch. We will never break that promise.'
@@ -130,7 +169,7 @@
 	<title>Sepia — Pricing</title>
 	<meta
 		name="description"
-		content="Sepia Hosted — one memory graph for every AI you use. Free tier for your first 1,000 memories, Pro at $50/yr (≈ $4.17/mo). Locked-in beta pricing, export everything, cancel anytime. Self-host free forever."
+		content="Sepia Hosted — one memory graph for every AI you use. Free: 1 Web AI connection (editors unlimited), 1,000 memories. Pro at $50/yr (≈ $4.17/mo) — unlimited Web AI connections. Locked-in beta pricing, export everything, cancel anytime. Self-host free forever."
 	/>
 </svelte:head>
 
@@ -210,8 +249,11 @@
 					{#if plan.highlight}
 						<Infinity class="size-4 text-brand" />
 					{/if}
+					<Badge variant="outline" class="ml-auto font-mono text-[10px] tracking-wider uppercase"
+						>{plan.bestFor}</Badge
+					>
 				</div>
-				<p class="mt-1 text-sm text-muted-foreground">{plan.tagline}</p>
+				<p class="mt-2 text-sm text-muted-foreground">{plan.tagline}</p>
 
 				<div class="mt-6 flex items-baseline gap-2">
 					{#if plan.highlight && billing === 'monthly'}
@@ -247,7 +289,14 @@
 					{#each plan.features as feature (feature)}
 						<li class="flex items-start gap-2.5 text-sm">
 							<Check class="mt-0.5 size-4 shrink-0 text-brand" />
-							<span class="text-foreground/90">{feature}</span>
+							<span class="text-foreground/90">
+								{feature.label}
+								{#if feature.hint}
+									<span class="block text-xs leading-snug text-muted-foreground"
+										>{feature.hint}</span
+									>
+								{/if}
+							</span>
 						</li>
 					{/each}
 				</ul>
@@ -290,8 +339,73 @@
 	</div>
 </section>
 
+<!-- What counts? — vocabulary / disambiguation -->
+<section class="relative px-4 pt-6 pb-4">
+	<div class="mx-auto max-w-5xl">
+		<div class="rounded-2xl border border-border/60 bg-card/30 p-6 sm:p-7">
+			<div class="flex items-center gap-2">
+				<Badge variant="outline" class="font-mono text-[10px] tracking-wider uppercase"
+					>What counts?</Badge
+				>
+				<span class="text-xs text-muted-foreground">Web AI vs AI editor — the only distinction</span
+				>
+			</div>
+			<h3 class="mt-3 text-lg font-semibold tracking-tight">What counts as a Web AI connection?</h3>
+			<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+				A <span class="font-medium text-foreground">Web AI connection</span> is a web-based AI you
+				connect via OAuth — ChatGPT, Claude (web), Grok, Gemini, Perplexity, Le Chat. Each provider
+				you connect counts as one. Free includes <span class="font-medium text-foreground">1</span>,
+				Pro is
+				<span class="font-medium text-foreground">unlimited</span>.
+			</p>
+			<div class="mt-5 grid gap-4 sm:grid-cols-2">
+				<div class="rounded-xl border border-border/50 bg-muted/20 p-4">
+					<div class="flex items-center gap-2 text-sm font-medium">
+						<Globe class="size-4 text-brand" /> Web AI connections
+						<Badge class="ml-auto bg-amber-500/15 text-amber-600 dark:text-amber-400">Counted</Badge
+						>
+					</div>
+					<p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+						Connected via OAuth. Each provider = 1 connection. Shown in your dashboard and enforced
+						at the plan limit.
+					</p>
+					<div class="mt-3 flex flex-wrap gap-1.5">
+						{#each ['ChatGPT', 'Claude web', 'Grok', 'Gemini', 'Perplexity', 'Le Chat'] as name (name)}
+							<Badge variant="secondary" class="text-[11px] font-normal">{name}</Badge>
+						{/each}
+					</div>
+				</div>
+				<div class="rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4">
+					<div class="flex items-center gap-2 text-sm font-medium">
+						<Monitor class="size-4 text-emerald-500" /> AI editors
+						<Badge class="ml-auto bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+							>Unlimited — never counted</Badge
+						>
+					</div>
+					<p class="mt-2 text-xs leading-relaxed text-muted-foreground">
+						Connected with a bearer token (MCP). Use as many as you want on any plan — they share
+						the same graph and never affect your Web AI count.
+					</p>
+					<div class="mt-3 flex flex-wrap gap-1.5">
+						{#each ['Claude Code', 'Cursor', 'Copilot', 'Codex', 'Zed', 'OpenCode'] as name (name)}
+							<Badge variant="secondary" class="text-[11px] font-normal">{name}</Badge>
+						{/each}
+					</div>
+				</div>
+			</div>
+			<p class="mt-4 flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+				<Info class="mt-0.5 size-3.5 shrink-0" />
+				<span
+					>Tip: you can swap Web AI providers anytime — disconnect one, connect another. It still
+					counts as 1.</span
+				>
+			</p>
+		</div>
+	</div>
+</section>
+
 <!-- Comparison table -->
-<section class="relative px-4 py-24 sm:py-28">
+<section class="relative px-4 py-16 sm:py-20">
 	<div class="mx-auto max-w-5xl">
 		<div class="text-center">
 			<Badge variant="outline" class="mb-4 font-mono text-xs tracking-wider uppercase"
@@ -305,58 +419,78 @@
 			</p>
 		</div>
 
-		<div class="mt-12 overflow-x-auto rounded-2xl border border-border/60 bg-card/30">
-			<table class="w-full min-w-140 text-sm">
-				<thead>
-					<tr class="border-b border-border/60">
-						<th class="p-4 text-left font-medium text-muted-foreground">Feature</th>
-						<th class="w-28 p-4 text-center font-semibold">Free</th>
-						<th class="w-28 p-4 text-center font-semibold text-brand">Pro</th>
-					</tr>
-				</thead>
-				<tbody>
-					{#each comparison as group (group.group)}
-						<tr class="border-b border-border/40 bg-muted/20">
-							<td
-								colspan="3"
-								class="px-4 py-2 font-mono text-xs tracking-wider text-muted-foreground uppercase"
-							>
-								{group.group}
-							</td>
+		<Tooltip.Provider>
+			<div class="mt-12 overflow-x-auto rounded-2xl border border-border/60 bg-card/30">
+				<table class="w-full min-w-140 text-sm">
+					<thead>
+						<tr class="border-b border-border/60">
+							<th class="p-4 text-left font-medium text-muted-foreground">Feature</th>
+							<th class="w-28 p-4 text-center font-semibold">Free</th>
+							<th class="w-28 p-4 text-center font-semibold text-brand">Pro</th>
 						</tr>
-						{#each group.rows as row (row.label)}
-							<tr class="border-b border-border/30 last:border-b-0">
-								<td class="p-4 text-foreground/90">{row.label}</td>
-								<td class="p-4 text-center">
-									{#if row.free === true}
-										<Check class="mx-auto size-4 text-brand" />
-									{:else if row.free === false}
-										<Minus class="mx-auto size-4 text-muted-foreground/40" />
-									{:else}
-										<span class="font-mono text-xs text-muted-foreground tabular-nums"
-											>{row.free}</span
-										>
-									{/if}
-								</td>
-								<td class="p-4 text-center">
-									{#if row.pro === true}
-										<Check class="mx-auto size-4 text-brand" />
-									{:else if row.pro === false}
-										<Minus class="mx-auto size-4 text-muted-foreground/40" />
-									{:else}
-										<span class="font-mono text-xs font-medium text-foreground tabular-nums"
-											>{row.pro}</span
-										>
-									{/if}
+					</thead>
+					<tbody>
+						{#each comparison as group (group.group)}
+							<tr class="border-b border-border/40 bg-muted/20">
+								<td
+									colspan="3"
+									class="px-4 py-2 font-mono text-xs tracking-wider text-muted-foreground uppercase"
+								>
+									{group.group}
 								</td>
 							</tr>
+							{#each group.rows as row (row.label)}
+								<tr class="border-b border-border/30 last:border-b-0">
+									<td class="p-4 text-foreground/90">
+										<span class="inline-flex items-center gap-1.5">
+											{row.label}
+											{#if (row as any).info}
+												<Tooltip.Root>
+													<Tooltip.Trigger
+														class="inline-flex size-5 items-center justify-center rounded-full border border-border/60 bg-muted/40 text-muted-foreground hover:bg-muted"
+														aria-label="More info about {row.label}"
+													>
+														<Info class="size-3" />
+													</Tooltip.Trigger>
+													<Tooltip.Content side="top" class="max-w-72 text-xs leading-relaxed">
+														{(row as any).info}
+													</Tooltip.Content>
+												</Tooltip.Root>
+											{/if}
+										</span>
+									</td>
+									<td class="p-4 text-center">
+										{#if row.free === true}
+											<Check class="mx-auto size-4 text-brand" />
+										{:else if row.free === false}
+											<Minus class="mx-auto size-4 text-muted-foreground/40" />
+										{:else}
+											<span class="font-mono text-xs text-muted-foreground tabular-nums"
+												>{row.free}</span
+											>
+										{/if}
+									</td>
+									<td class="p-4 text-center">
+										{#if row.pro === true}
+											<Check class="mx-auto size-4 text-brand" />
+										{:else if row.pro === false}
+											<Minus class="mx-auto size-4 text-muted-foreground/40" />
+										{:else}
+											<span class="font-mono text-xs font-medium text-foreground tabular-nums"
+												>{row.pro}</span
+											>
+										{/if}
+									</td>
+								</tr>
+							{/each}
 						{/each}
-					{/each}
-				</tbody>
-			</table>
-		</div>
+					</tbody>
+				</table>
+			</div>
+		</Tooltip.Provider>
 		<p class="mt-3 text-center text-xs text-muted-foreground">
 			Fair-use applies to the 1,000,000-memory ceiling. Reads, search, and export are never limited.
+			AI editors are unlimited on every plan.
 		</p>
 	</div>
 </section>

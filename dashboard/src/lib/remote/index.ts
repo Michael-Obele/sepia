@@ -28,3 +28,4 @@ export { exportAll } from './export.remote';
 export { getMe } from './account.remote';
 export { signIn, signUp } from './auth.remote';
 export { listApiKeys, createApiKey, deleteApiKey } from './api-keys.remote';
+export { listConnections, disconnectConnection } from './connections.remote';

@@ -30,7 +30,8 @@
 				<BrainCircuit class="size-6" />
 			</div>
 			<CardTitle class="text-xl">Create your account</CardTitle>
-			<CardDescription>Free forever — 1 namespace, 1,000 memories, 1 AI connection.</CardDescription
+			<CardDescription
+				>Free forever — 1 namespace, 1,000 memories, 1 Web AI connection. AI editors unlimited.</CardDescription
 			>
 		</CardHeader>
 		<CardContent>

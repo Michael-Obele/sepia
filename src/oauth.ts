@@ -570,7 +570,7 @@ function renderPlanLimitPage(client: OAuthClientInformationFull): Response {
 <body>
   <div class="card">
     <h1>Plan limit reached</h1>
-    <p>Your free plan allows 1 AI connection, and <b>${name}</b> would be a new one. Upgrade to Pro for unlimited connections — or disconnect an existing AI in your dashboard first.</p>
+    <p>Your free plan allows 1 Web AI connection, and <b>${name}</b> would be a new one. Upgrade to Pro for unlimited Web AI connections — or disconnect an existing Web AI in your dashboard first. AI editors don’t count toward this limit.</p>
     <a href="https://sepia.svelte-apps.me/pricing">See pricing</a>
   </div>
 </body>

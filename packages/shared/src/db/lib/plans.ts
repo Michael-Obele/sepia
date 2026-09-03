@@ -7,6 +7,8 @@ import { memories, namespaces, oauthClients } from "../schema.ts";
  * Plan limits — the pricing page's contract (Free vs Pro).
  * Reads/search/export are NEVER blocked; only writes pause at the limit,
  * with the dashboard nudging at ~80%.
+ * Web AI connections = OAuth clients (counted). AI editors = bearer-token
+ * (never counted, unlimited on every plan).
  */
 export type Plan = "free" | "pro";
 
@@ -46,7 +48,7 @@ export async function countMemories(db: Db, ownerId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-/** AI connections = OAuth clients bound to the account. */
+/** Web AI connections = OAuth clients bound to the account. AI editors (bearer-token) are never counted. */
 export async function countAiConnections(
   db: Db,
   ownerId: string,
@@ -99,7 +101,7 @@ export async function assertAiConnectionQuota(
   if (n >= limits.maxAiConnections) {
     throw new MemoryError(
       "plan_limit",
-      `plan limit reached: ${limits.maxAiConnections} AI connection${limits.maxAiConnections === 1 ? "" : "s"} on the ${plan ?? "free"} plan. Upgrade to Pro for unlimited connections.`,
+      `plan limit reached: ${limits.maxAiConnections} Web AI connection${limits.maxAiConnections === 1 ? "" : "s"} on the ${plan ?? "free"} plan. Upgrade to Pro for unlimited Web AI connections. AI editors don’t count toward this limit.`,
     );
   }
 }
