@@ -2,13 +2,15 @@ import type { Db } from "../client.ts";
 import { MemoryError } from "../errors.ts";
 import { eq, sql } from "drizzle-orm";
 import { memories, namespaces, oauthClients } from "../schema.ts";
+import { isLocalClient } from "./oauth-clients.ts";
 
 /**
  * Plan limits — the pricing page's contract (Free vs Pro).
  * Reads/search/export are NEVER blocked; only writes pause at the limit,
  * with the dashboard nudging at ~80%.
- * Web AI connections = OAuth clients (counted). AI editors = bearer-token
- * (never counted, unlimited on every plan).
+ * Web AI connections = remote OAuth clients (counted). Local (loopback)
+ * OAuth clients and bearer-token AI editors are never counted, and are
+ * unlimited on every plan.
  */
 export type Plan = "free" | "pro";
 
@@ -48,16 +50,29 @@ export async function countMemories(db: Db, ownerId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-/** Web AI connections = OAuth clients bound to the account. AI editors (bearer-token) are never counted. */
+/**
+ * Web AI connections = OAuth clients bound to the account, EXCLUDING local
+ * (loopback) clients. A client that only redirects to the user's own machine
+ * is a local editor — LM Studio, Cursor, … — and the plan treats editors as
+ * unlimited.
+ *
+ * Excluding them HERE (not just at the assertion) is what keeps enforcement
+ * and the dashboard's usage meter in agreement — both call this function, and
+ * a mismatch is what makes a limit error contradict the numbers on screen.
+ *
+ * Counted in JS rather than SQL because "is this redirect local?" depends on
+ * parsing each URI; an account has only a handful of clients, so it stays
+ * cheap.
+ */
 export async function countAiConnections(
   db: Db,
   ownerId: string,
 ): Promise<number> {
   const rows = await db
-    .select({ n: sql<number>`count(*)::int` })
+    .select({ redirectUris: oauthClients.redirectUris })
     .from(oauthClients)
     .where(eq(oauthClients.ownerId, ownerId));
-  return rows[0]?.n ?? 0;
+  return rows.filter((row) => !isLocalClient(row.redirectUris)).length;
 }
 
 export async function assertNamespaceQuota(

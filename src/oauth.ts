@@ -30,11 +30,14 @@ import { eq, and, isNull } from "drizzle-orm";
 import { db } from "./db.ts";
 import {
   assertAiConnectionQuota,
+  bindClientToUser,
+  findOwnedConnection,
   getPlanLimits,
   getUserById,
   oauthClients,
   oauthCodes,
   oauthTokens,
+  type OAuthClientRow,
 } from "@sepia/shared";
 import { ensureAdmin, verifyCredentials } from "./auth.ts";
 
@@ -498,68 +501,13 @@ const AUTHENTICATED_HEADER = "x-sepia-oauth-authenticated";
 const AUTHENTICATED_USER_HEADER = "x-sepia-oauth-user";
 
 /**
- * True if the client row is already bound to this user — i.e. this is an
- * EXISTING AI connection being re-authorized (never counts toward the plan
- * limit again).
- */
-async function clientOwnedByUser(
-  clientId: string,
-  userId: string,
-): Promise<boolean> {
-  const rows = await db()
-    .select({ ownerId: oauthClients.ownerId })
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, clientId))
-    .limit(1);
-  return rows[0] ? String(rows[0].ownerId) === userId : false;
-}
-
-/**
- * Bind an OAuth client to its authorizing user (an "AI connection").
- * Adopts an ownerless (dynamically-registered) client, or upserts a fresh
- * URL-based client (ChatGPT/Grok/Gemini) so the plan limit can count them
- * uniformly.
+ * Render the page shown when a genuinely NEW connection exceeds the plan.
  *
- * IMPORTANT: must only be called AFTER the plan quota has been asserted.
- * The row this creates/adopts is exactly what assertAiConnectionQuota()
- * counts, so binding first made the very first connection reject itself
- * (insert → count 1 → free limit 1 → "plan limit reached" on a fresh
- * account). Quota is checked while the row is still unbound, so the first
- * N connections on a plan always go through.
+ * "Already connected?" is decided by the app's stable identity, not its
+ * `client_id` — see `@sepia/shared`'s `oauth-clients.ts`, where that logic
+ * lives so the server (enforcing) and the dashboard (displaying) can't drift
+ * apart and produce a limit error that contradicts the usage meter.
  */
-async function bindClientOwner(
-  client: OAuthClientInformationFull,
-  userId: string,
-): Promise<void> {
-  const sql = db();
-  const existing = await sql
-    .select()
-    .from(oauthClients)
-    .where(eq(oauthClients.clientId, client.client_id))
-    .limit(1);
-  if (existing[0]) {
-    if (!existing[0].ownerId) {
-      await sql
-        .update(oauthClients)
-        .set({ ownerId: userId })
-        .where(eq(oauthClients.clientId, client.client_id));
-    }
-    return;
-  }
-  await sql
-    .insert(oauthClients)
-    .values({
-      clientId: client.client_id,
-      clientSecret: client.client_secret ?? null,
-      name: client.client_name ?? "MCP client",
-      redirectUris: client.redirect_uris ?? [],
-      tokenEndpointAuthMethod: client.token_endpoint_auth_method ?? "none",
-      ownerId: userId,
-    })
-    .onConflictDoNothing();
-}
-
-/** Render a plan-limit page (AI connection quota exceeded). */
 function renderPlanLimitPage(
   client: OAuthClientInformationFull,
   plan?: string | null,
@@ -653,21 +601,33 @@ const handlers = {
         });
       }
 
-      // AI connection, plan-checked BEFORE the client row is bound.
-      // bindClientOwner() creates/adopts the row that assertAiConnectionQuota()
-      // counts, so checking after binding made the FIRST connection reject
-      // itself (count 1 vs free limit 1 on a fresh account). Only a genuinely
-      // new connection for this user is checked — re-authorizing an
-      // already-owned Web AI never counts again.
+      // Quota is checked BEFORE the client row is bound, because binding
+      // creates the very row assertAiConnectionQuota() counts — checking
+      // after made the FIRST connection reject itself on a fresh account.
+      //
+      // Only a GENUINELY new connection is checked. "Already connected?" is
+      // decided by the app's stable identity (name + redirect host), not by
+      // client_id: Dynamic Client Registration hands out a new client_id on
+      // every authorization, so keying on it counted each re-authorization as
+      // a new connection and duplicated the user's dashboard rows.
+      //
+      // Local (loopback) clients are excluded from the count entirely — they
+      // are local editors, which the plan leaves unlimited.
       const user = await getUserById(db(), userId);
-      if (!(await clientOwnedByUser(client.client_id, userId))) {
+      const previous: OAuthClientRow | undefined = await findOwnedConnection(
+        db(),
+        userId,
+        client.client_name,
+        client.redirect_uris,
+      );
+      if (!previous) {
         try {
           await assertAiConnectionQuota(db(), userId, user?.plan);
         } catch {
           return renderPlanLimitPage(client, user?.plan);
         }
       }
-      await bindClientOwner(client, userId);
+      await bindClientToUser(db(), client, userId, previous);
 
       const code = randomToken(48);
       await db()
