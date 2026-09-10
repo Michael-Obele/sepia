@@ -31,7 +31,7 @@
 			</div>
 			<CardTitle class="text-xl">Create your account</CardTitle>
 			<CardDescription
-				>Free forever — 1 namespace, 1,000 memories, 1 Web AI connection. AI editors unlimited.</CardDescription
+				>Free forever — 1 namespace, 1,000 memories, 2 Web AI connections. AI editors unlimited.</CardDescription
 			>
 		</CardHeader>
 		<CardContent>

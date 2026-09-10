@@ -20,7 +20,7 @@ export interface PlanLimits {
 }
 
 export const PLAN_LIMITS: Record<Plan, PlanLimits> = {
-  free: { maxNamespaces: 1, maxMemories: 1_000, maxAiConnections: 1 },
+  free: { maxNamespaces: 1, maxMemories: 1_000, maxAiConnections: 2 },
   pro: { maxNamespaces: 100, maxMemories: 1_000_000, maxAiConnections: null },
 };
 

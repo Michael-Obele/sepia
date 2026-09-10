@@ -38,7 +38,7 @@
 				{ label: '1 namespace', hint: null, emphasis: false },
 				{ label: '1,000 memories', hint: null, emphasis: false },
 				{
-					label: '1 Web AI connection',
+					label: '2 Web AI connections',
 					hint: 'AI editors don’t count — connect unlimited editors',
 					emphasis: true
 				},
@@ -92,7 +92,7 @@
 				{ label: 'Memories', free: '1,000', pro: '1,000,000' },
 				{
 					label: 'Web AI connections',
-					free: '1',
+					free: '2',
 					pro: 'Unlimited',
 					info: 'Web AI = ChatGPT, Claude web, Grok, Gemini, Perplexity, Le Chat connected via OAuth. AI editors (Claude Code, Cursor, Copilot, Codex, Zed, OpenCode) use a bearer token and never count toward this limit.'
 				}
@@ -120,7 +120,7 @@
 	const faqs = [
 		{
 			q: 'What is a Web AI connection?',
-			a: 'A Web AI connection is a web-based AI provider you connect to Sepia via OAuth — like ChatGPT, Claude (web), Grok, Gemini, Perplexity, or Le Chat. Each connected provider counts as one Web AI connection. Free includes 1, Pro is unlimited.'
+			a: 'A Web AI connection is a web-based AI provider you connect to Sepia via OAuth — like ChatGPT, Claude (web), Grok, Gemini, Perplexity, or Le Chat. Each connected provider counts as one Web AI connection. Free includes 2, Pro is unlimited.'
 		},
 		{
 			q: 'Do AI editors count toward my connection limit?',
@@ -169,7 +169,7 @@
 	<title>Sepia — Pricing</title>
 	<meta
 		name="description"
-		content="Sepia Hosted — one memory graph for every AI you use. Free: 1 Web AI connection (editors unlimited), 1,000 memories. Pro at $50/yr (≈ $4.17/mo) — unlimited Web AI connections. Locked-in beta pricing, export everything, cancel anytime. Self-host free forever."
+		content="Sepia Hosted — one memory graph for every AI you use. Free: 2 Web AI connections (editors unlimited), 1,000 memories. Pro at $50/yr (≈ $4.17/mo) — unlimited Web AI connections. Locked-in beta pricing, export everything, cancel anytime. Self-host free forever."
 	/>
 </svelte:head>
 

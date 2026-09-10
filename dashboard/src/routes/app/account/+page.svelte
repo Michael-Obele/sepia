@@ -330,7 +330,7 @@
 								</div>
 								<p class="text-xs leading-relaxed text-muted-foreground">
 									<span class="font-medium text-foreground">OAuth 2.1</span> — ChatGPT, Claude web,
-									Grok, Gemini, Perplexity, Le Chat. Each provider = 1 connection. Free: 1 · Pro:
+									Grok, Gemini, Perplexity, Le Chat. Each provider = 1 connection. Free: 2 · Pro:
 									unlimited.
 									<a
 										href="/pricing"
