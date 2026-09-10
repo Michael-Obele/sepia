@@ -43,7 +43,7 @@ async function main() {
         updatedAt: now,
       })
       .returning();
-    user = inserted[0];
+    user = inserted[0]!;
     console.log(`Created user: ${user.id} ${user.email}`);
 
     // Create credential account
@@ -99,6 +99,7 @@ async function main() {
       .where(eq(users.id, user.id));
     console.log("Updated user to verified/free");
   }
+  if (!user) throw new Error("Failed to create or find the demo user");
 
   const ownerId = user.id;
 
@@ -121,7 +122,7 @@ async function main() {
         description: "Default namespace",
       })
       .returning();
-    ns = inserted[0];
+    ns = inserted[0]!;
     console.log(`Created personal namespace: ${ns.id}`);
     namespaceId = ns.id;
   } else {
@@ -177,7 +178,7 @@ async function main() {
       tags: ["demo"],
     })
     .returning();
-  const entity = entityRows[0];
+  const entity = entityRows[0]!;
   console.log(`Created entity: ${entity.id} ${entity.name}`);
 
   const mem1 = await d
@@ -192,7 +193,7 @@ async function main() {
       tags: ["demo"],
     })
     .returning();
-  console.log(`Created memory 1: ${mem1[0].id}`);
+  console.log(`Created memory 1: ${mem1[0]!.id}`);
 
   const mem2 = await d
     .insert(memories)
@@ -207,11 +208,11 @@ async function main() {
       tags: ["demo"],
     })
     .returning();
-  console.log(`Created memory 2: ${mem2[0].id}`);
+  console.log(`Created memory 2: ${mem2[0]!.id}`);
 
   // Link first memory to entity (optional, shows graph)
   await d.insert(memoryEntityLinks).values({
-    memoryId: mem1[0].id,
+    memoryId: mem1[0]!.id,
     entityId: entity.id,
   });
   console.log("Linked memory 1 to entity");
