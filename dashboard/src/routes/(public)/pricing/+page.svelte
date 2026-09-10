@@ -94,7 +94,7 @@
 					label: 'Web AI connections',
 					free: '2',
 					pro: 'Unlimited',
-					info: 'Web AI = ChatGPT, Claude web, Grok, Gemini, Perplexity, Le Chat connected via OAuth. AI editors (Claude Code, Cursor, Copilot, Codex, Zed, OpenCode) use a bearer token and never count toward this limit.'
+					info: 'Web AI = ChatGPT, Claude web, Grok, Gemini, Perplexity, Le Chat connected via OAuth. Local apps that redirect back to your own machine (LM Studio, Cursor) and editors that use an API key never count toward this limit.'
 				}
 			]
 		},
@@ -366,8 +366,8 @@
 						>
 					</div>
 					<p class="mt-2 text-xs leading-relaxed text-muted-foreground">
-						Connected via OAuth. Each provider = 1 connection. Shown in your dashboard and enforced
-						at the plan limit.
+						Connected via OAuth. Each provider = 1 connection. Local apps (LM Studio, Cursor) are
+						free. Shown in your dashboard and enforced at the plan limit.
 					</p>
 					<div class="mt-3 flex flex-wrap gap-1.5">
 						{#each ['ChatGPT', 'Claude web', 'Grok', 'Gemini', 'Perplexity', 'Le Chat'] as name (name)}

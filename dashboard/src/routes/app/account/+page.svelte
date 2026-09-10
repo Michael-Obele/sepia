@@ -96,10 +96,18 @@
 			createdAt: string;
 			lastUsedAt: string | null;
 			active: boolean;
+			local: boolean;
 		}>
 	>([]);
 	let connectionsLoaded = $state(false);
 	let disconnectingId = $state<string | null>(null);
+
+	/**
+	 * Only non-local connections count toward the plan. Local (loopback) clients
+	 * are editors — LM Studio, Cursor, … — and `countAiConnections` excludes them
+	 * from the meter above, so this keeps the list and the numbers consistent.
+	 */
+	const countedConnections = $derived(connections.filter((c) => !c.local).length);
 	let pendingDisconnect: { clientId: string; name: string } | null = $state(null);
 
 	function hostFromUris(uris: string[]): string {
@@ -334,8 +342,8 @@
 											</Tooltip.Trigger>
 											<Tooltip.Content side="top" class="max-w-72 text-xs leading-relaxed">
 												Web AIs connect via OAuth 2.1 — ChatGPT, Claude web, Grok, Gemini,
-												Perplexity, Le Chat. Each provider you authorize counts as 1. AI editors use
-												a bearer token and never count.
+												Perplexity, Le Chat. Each provider you authorize counts as 1. Local apps (LM
+												Studio, Cursor) and editors that use an API key never count.
 											</Tooltip.Content>
 										</Tooltip.Root>
 									</span>
@@ -360,8 +368,8 @@
 								</div>
 								<p class="text-xs leading-relaxed text-muted-foreground">
 									<span class="font-medium text-foreground">OAuth 2.1</span> — ChatGPT, Claude web,
-									Grok, Gemini, Perplexity, Le Chat. Each provider = 1 connection. Free: 2 · Pro:
-									unlimited.
+									Grok, Gemini, Perplexity, Le Chat. Each provider = 1 connection. Local apps (LM
+									Studio, Cursor) don’t count. Free: 2 · Pro: unlimited.
 									<a
 										href="/pricing"
 										class="underline decoration-dotted underline-offset-2 hover:text-foreground"
@@ -406,6 +414,11 @@
 																<Globe class="size-3.5" />
 															</span>
 															<span class="text-sm font-medium">{c.name}</span>
+															{#if c.local}
+																<Badge variant="outline" class="text-muted-foreground"
+																	>Local — doesn’t count</Badge
+																>
+															{/if}
 															<Badge variant="secondary" class="font-mono text-[11px] font-normal"
 																>{hostFromUris(c.redirectUris)}</Badge
 															>
@@ -457,10 +470,10 @@
 												</li>
 											{/each}
 										</ul>
-										{#if connections.length > 1}
+										{#if countedConnections > 1}
 											<p class="mt-2 text-xs text-muted-foreground">
 												<PlugZap class="mr-1 inline size-3" />
-												You have {connections.length} Web AI connections. Each counts toward your limit
+												You have {countedConnections} Web AI connections. Each counts toward your limit
 												({account.usage.ai_connections} shown above). Disconnect any you no longer use
 												to free a slot.
 											</p>

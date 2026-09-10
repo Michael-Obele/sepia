@@ -2,8 +2,8 @@ import { query, command } from '$app/server';
 import * as v from 'valibot';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
-import { oauthClients, oauthTokens } from '@sepia/shared';
-import { eq, and, isNull, gt, desc } from 'drizzle-orm';
+import { isLocalClient, oauthClients, oauthTokens } from '@sepia/shared';
+import { eq, and, desc } from 'drizzle-orm';
 
 export interface ConnectionRow {
 	id: string;
@@ -15,17 +15,12 @@ export interface ConnectionRow {
 	lastUsedAt: string | null;
 	/** true if at least one non-revoked refresh token is still valid */
 	active: boolean;
-}
-
-function hostFromUris(uris: string[]): string | null {
-	for (const u of uris) {
-		try {
-			return new URL(u).hostname.toLowerCase();
-		} catch {
-			// ignore
-		}
-	}
-	return null;
+	/**
+	 * A loopback-only client (LM Studio, Cursor, …) — a local editor rather than
+	 * a Web AI. Exempt from the plan's connection limit, matching
+	 * `countAiConnections`, which excludes these from the usage meter too.
+	 */
+	local: boolean;
 }
 
 /** List Web AI connections (OAuth clients) for the current user. */
@@ -68,7 +63,8 @@ export const listConnections = query(async (): Promise<ConnectionRow[]> => {
 			redirectUris: c.redirectUris as string[],
 			createdAt: String(c.createdAt),
 			lastUsedAt,
-			active
+			active,
+			local: isLocalClient(c.redirectUris as string[])
 		});
 	}
 	return rows;
