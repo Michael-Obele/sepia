@@ -58,23 +58,21 @@
 		// ── Conversion psychology: copy = progress ──────────────────────
 		// Every copy action ticks its step (Goal Gradient + IKEA Effect).
 		// Persisted to localStorage so investment survives refresh.
-		if (key === 'url' || key === 'mcp-url') markStep(1);
-		else if (key === 'quick' || key === 'full') markStep(3);
-		else if (
-			key === 'config' ||
-			key === 'vscode' ||
-			key === 'cursor' ||
-			key === 'opencode' ||
-			key === 'zed' ||
-			key === 'zedBridge' ||
-			key === 'claude' ||
-			key === 'oneliner' ||
-			key === 'oneliner-global' ||
-			key === 'new-key'
-		) {
-			markStep(1);
-			// Copying a key/config also implies token is ready
-			if (hasApiKey) markStep(2);
+		switch (key) {
+			case 'url':
+			case 'mcp-url':
+				markStep(1);
+				break;
+			case 'quick':
+			case 'full':
+				markStep(3);
+				break;
+			default:
+				// Config, key, installer, and per-editor copies all tick the
+				// config step — and if an API key exists, the token step too.
+				markStep(1);
+				if (hasApiKey) markStep(2);
+				break;
 		}
 	}
 
@@ -93,7 +91,6 @@
 			id: 'chatgpt',
 			name: 'ChatGPT',
 			auth: 'OAuth',
-			popular: true,
 			steps: [
 				'Settings → Apps → Developer mode → Create',
 				'Choose "Custom app"',
@@ -118,6 +115,7 @@
 			id: 'grok',
 			name: 'Grok (xAI)',
 			auth: 'OAuth',
+			popular: true,
 			steps: [
 				'grok.com/connectors → New Connector → Custom',
 				'Paste the MCP URL',
@@ -165,6 +163,27 @@
 			name: 'Cursor',
 			auth: 'Bearer',
 			steps: ['Add a remote MCP server', 'Paste the MCP URL', 'Set the Authorization header']
+		},
+		{
+			id: 'vscode',
+			name: 'VS Code',
+			auth: 'Bearer',
+			steps: [
+				'Open MCP settings (Ctrl+Shift+P → MCP: Add Server)',
+				'Add a remote server config',
+				'Set the Authorization header'
+			]
+		},
+		{
+			id: 'lmstudio',
+			name: 'LM Studio (Bionic)',
+			auth: 'OAuth',
+			steps: [
+				'Open LM Studio → Connected Apps (or MCP Servers)',
+				'Add a custom connection → paste the MCP URL',
+				'Approve in the browser — token stored automatically'
+			],
+			instructionsLocation: 'Chat → Paste into your prompt or custom instructions'
 		},
 		{
 			id: 'zed',
@@ -430,8 +449,10 @@
 			progress.current[key][idx] = true;
 			if (idx === 1 || idx === 3) toast.success(steps[idx]);
 		} else {
-			// allow toggling off (except step 0 which is the smart default)
-			if (idx !== 0) progress.current[key][idx] = false;
+			// Only allow toggling off steps 1 and 2 (config + token) — step 0 is
+			// the smart default and step 3 is the final verification. Keeping steps
+			// sticky prevents the frustration of progress vanishing on a misclick.
+			if (idx === 1 || idx === 2) progress.current[key][idx] = false;
 		}
 	}
 	function resetProgress() {
