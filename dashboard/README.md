@@ -59,7 +59,11 @@ src/routes/
 
 - `src/lib/remote/*.remote.ts` — SvelteKit **remote functions**: type-safe client↔server calls that run in Netlify Functions and talk to Neon via `@sepia/shared` (no CORS, no exposed API keys)
 - `src/lib/server/db.ts` — Drizzle client wired to `$env/dynamic/private`
-- `src/lib/auth-client.ts` — Better Auth client (email/password sessions)
+- `src/lib/server/cookies.ts` — the dashboard's own HTTP-only session cookie (`__Host-sepia_session` in prod) + session-lifetime policy (sliding window, absolute cap)
+- `src/lib/server/auth.ts` — `requireAuth()` / `getSessionUser()` — cookie → Neon lookup, with activity-based session renewal
+- `src/routes/+layout.server.ts` — exposes `data.user` to every route (the app's auth truth)
+- `packages/shared/src/db/lib/users.ts` — session + API-key helpers shared with the MCP server: `getSessionWithUser`, `slideSession`, `deleteOtherSessions`, `deleteSessionByToken`, `getUserByApiKey`, `createApiKeyForUser` / `listApiKeysForUser` / `deleteApiKeyForUser`, plus `API_KEY_PREFIX` (`sepia_`) and `API_KEY_START_LENGTH`
+- `src/lib/auth-client.ts` — Better Auth client, used only for the password-reset flows
 
 ## Deploy
 
