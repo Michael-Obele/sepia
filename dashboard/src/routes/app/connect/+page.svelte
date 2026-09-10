@@ -48,8 +48,6 @@
 	const BASE = 'https://sepia.fly.dev';
 
 	let copied = $state('');
-	// Smart default: ChatGPT is pre-selected — the most common web AI.
-	let selected = $state('chatgpt');
 
 	async function copy(text: string, key: string) {
 		await navigator.clipboard.writeText(text);
@@ -193,6 +191,8 @@
 		}
 	];
 
+	// Auto-select whichever target is marked most popular.
+	let selected = $state(targets.find((t) => t.popular)?.id ?? targets[0].id);
 	const current = $derived(targets.find((t) => t.id === selected) ?? targets[0]);
 
 	// Goal gradient: the stepper adapts to the auth path — OAuth AIs authorize,
