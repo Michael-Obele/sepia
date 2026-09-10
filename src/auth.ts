@@ -1,15 +1,23 @@
 /**
  * Authentication for /mcp and /api/* — multi-tenant accounts (Phase 3).
  *
- * Identity: Better Auth (email/password) with the apiKey + bearer plugins,
- * mounted in the same Bun.serve process at /api/auth/*. Every request
- * resolves to a USER; the business logic scopes all data by user id.
+ * Identity: Better Auth (email/password) with the apiKey plugin, mounted in
+ * the same Bun.serve process at /api/auth/*. Every request resolves to a
+ * USER; the business logic scopes all data by user id.
  *
  * Token resolution chain (first match wins):
  *   1. Legacy global MCP_BEARER_TOKEN  → the admin user (self-host compat)
- *   2. Better Auth session token       → its user (bearer plugin)
- *   3. Better Auth API key             → its user (local editors)
- *   4. OAuth 2.1 access token          → its user (web AIs)
+ *   2. Better Auth API key             → its user (local editors; the
+ *      dashboard mints these directly against Neon)
+ *   3. OAuth 2.1 access token          → its user (web AIs)
+ *
+ * Dashboard browser sessions are deliberately NOT accepted here. They live in
+ * the dashboard's own HTTP-only cookie and are validated against the `sessions`
+ * table by the dashboard itself, so a session token never reaches /mcp — a
+ * leaked MCP credential can't be exchanged for a browser session, and signing
+ * out of the dashboard can't silently break an editor. Better Auth's `bearer`
+ * plugin was removed along with this split: its only job was letting session
+ * tokens authenticate /api/auth/*, which nothing does any more.
  *
  * Modes:
  *   - Dev mode (no BETTER_AUTH_SECRET, no MCP_BEARER_TOKEN): no auth; a
@@ -22,17 +30,17 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { apiKey } from "@better-auth/api-key";
-import { bearer } from "better-auth/plugins/bearer";
 import { hashPassword } from "better-auth/crypto";
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "./db.ts";
 import {
   accounts,
   apikey,
+  API_KEY_PREFIX,
+  API_KEY_START_LENGTH,
   getUserByApiKey,
   getUserByEmail,
   getUserById,
-  getUserBySessionToken,
   namespaces,
   oauthClients,
   oauthTokens,
@@ -119,7 +127,19 @@ export const auth = betterAuth({
       plan: { type: "string", defaultValue: "free", input: false },
     },
   },
-  plugins: [apiKey(), bearer()],
+  plugins: [
+    apiKey({
+      // Keys carry a greppable brand prefix (`sepia_…`) so a leaked credential
+      // is recognisable on sight and to secret scanners. The constants live in
+      // @sepia/shared because the dashboard mints keys too — via
+      // createApiKeyForUser — and the two paths must not drift.
+      defaultPrefix: API_KEY_PREFIX,
+      startingCharactersConfig: {
+        shouldStore: true,
+        charactersLength: API_KEY_START_LENGTH,
+      },
+    }),
+  ],
 });
 
 export function authEnabled(): boolean {
@@ -166,13 +186,10 @@ export async function requireAuth(request: Request): Promise<AuthResult> {
     ) {
       return { user: await ensureAdmin() };
     }
-    // 2. Better Auth session token (bearer plugin — dashboard).
-    const sessionUser = await getUserBySessionToken(db(), token);
-    if (sessionUser) return { user: sessionUser };
-    // 3. Better Auth API key (local editors: Claude Code, Cursor, …).
+    // 2. Better Auth API key (local editors: Claude Code, Cursor, …).
     const keyUser = await getUserByApiKey(db(), token);
     if (keyUser) return { user: keyUser };
-    // 4. OAuth 2.1 access token (web AIs).
+    // 3. OAuth 2.1 access token (web AIs).
     if (oauthEnabled()) {
       try {
         const info = await oauth.verify(request);
