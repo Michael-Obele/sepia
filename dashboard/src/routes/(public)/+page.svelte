@@ -25,7 +25,8 @@
 		Copy,
 		Check,
 		CreditCard,
-		Sparkles
+		Sparkles,
+		LayoutDashboard
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -36,7 +37,11 @@
 	import ArchitectureFlow from '$lib/components/landing/architecture-flow.svelte';
 	import RecallDemo from '$lib/components/landing/recall-demo.svelte';
 
+	let { data } = $props();
+
 	const INSTALL_URL = 'https://sepia.fly.dev/install';
+
+	let authed = $derived(Boolean(data.user));
 
 	let copied = $state('');
 	async function copy(text: string, key: string) {
@@ -154,17 +159,36 @@
 			</p>
 
 			<div class="mt-8 flex flex-wrap items-center gap-3">
-				<a href="#install">
-					<Button size="lg" class="gap-2 px-6">
-						<Download class="size-4" /> Install in one line <ArrowRight class="size-4" />
-					</Button>
-				</a>
-				<a href="/app/connect">
-					<Button variant="outline" size="lg" class="gap-2 px-6">
-						<Globe class="size-4" /> Connect an AI
-					</Button>
-				</a>
+				{#if authed}
+					<a href="/app">
+						<Button size="lg" class="gap-2 px-6 shadow-lg shadow-brand/20">
+							<LayoutDashboard class="size-4" /> Open dashboard <ArrowRight class="size-4" />
+						</Button>
+					</a>
+					<a href="#install">
+						<Button variant="outline" size="lg" class="gap-2 px-6">
+							<Download class="size-4" /> Install in one line
+						</Button>
+					</a>
+				{:else}
+					<a href="#install">
+						<Button size="lg" class="gap-2 px-6">
+							<Download class="size-4" /> Install in one line <ArrowRight class="size-4" />
+						</Button>
+					</a>
+					<a href="/app/connect">
+						<Button variant="outline" size="lg" class="gap-2 px-6">
+							<Globe class="size-4" /> Connect an AI
+						</Button>
+					</a>
+				{/if}
 			</div>
+			{#if authed}
+				<p class="mt-3 flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+					<span class="size-1.5 rounded-full bg-emerald-500"></span>
+					You're signed in — your memory graph is one click away.
+				</p>
+			{/if}
 
 			<div class="mt-10 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
 				<Badge variant="secondary" class="gap-1 font-mono">

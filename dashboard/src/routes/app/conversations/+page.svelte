@@ -17,7 +17,6 @@
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getMemories, getNamespaces, removeMemory, updateMemoryData } from '$lib/remote/index.js';
-	import { auth, isAuthed } from '$lib/auth.svelte';
 	import {
 		timeAgo,
 		sourceBadge,
@@ -35,7 +34,10 @@
 	import { conversationsSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
 	import { onMount } from 'svelte';
 
-	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
+	let { data } = $props();
+	const isAuthed = () => Boolean(data.user);
+
+	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
 	let namespaceList = $state<string[]>([]);
 
 	$effect(() => {
@@ -81,7 +83,7 @@
 			// Real digests are auto-tagged `conversation` AND have
 			// metadata.kind === "conversation" — filter out regular memories
 			// that merely carry the tag.
-			digests = (await getMemories([auth.token, { tags: ['conversation'], limit: 50 }])).filter(
+			digests = (await getMemories({ tags: ['conversation'], limit: 50 })).filter(
 				(d) => (d.metadata as Record<string, unknown> | null)?.kind === 'conversation'
 			);
 		} catch (e) {
@@ -142,7 +144,7 @@
 		await Promise.all(
 			group.items.map(async (d) => {
 				const meta = (d.metadata ?? {}) as Record<string, unknown>;
-				await updateMemoryData([auth.token, String(d.id), { metadata: { ...meta, status } }]);
+				await updateMemoryData([String(d.id), { metadata: { ...meta, status } }]);
 			})
 		);
 		toast.success(
@@ -157,7 +159,7 @@
 
 	/** Delete the whole conversation — every digest in the group. */
 	async function delConversation(group: { items: Digest[] }) {
-		await Promise.all(group.items.map((d) => removeMemory([auth.token, String(d.id)])));
+		await Promise.all(group.items.map((d) => removeMemory(String(d.id))));
 		toast.success('Conversation deleted');
 		load();
 	}

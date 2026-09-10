@@ -23,7 +23,6 @@
 		removeMemory
 	} from '$lib/remote/index.js';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
-	import { auth, isAuthed } from '$lib/auth.svelte';
 	import {
 		timeAgo,
 		formatDate,
@@ -36,6 +35,9 @@
 		statusBadge,
 		type ConversationStatus
 	} from '$lib/format.js';
+
+	let { data } = $props();
+	const isAuthed = () => Boolean(data.user);
 
 	const conversationId = $derived(String(page.params.id));
 
@@ -87,11 +89,11 @@
 		loading = true;
 		error = '';
 		try {
-			memories = await getConversationData([auth.token, conversationId]);
+			memories = await getConversationData(conversationId);
 			// Fallback: a digest may lack conversation_id (older data or a
 			// direct create) — if the param is a UUID, fetch the digest by id.
 			if (memories.length === 0 && UUID_RE.test(conversationId)) {
-				const m = await getMemoryDetail([auth.token, conversationId]);
+				const m = await getMemoryDetail(conversationId);
 				memories = [m as unknown as ConvMemory];
 			}
 		} catch (e) {
@@ -105,7 +107,7 @@
 	async function setStatus(status: ConversationStatus) {
 		if (!digest) return;
 		const meta = (digest.metadata ?? {}) as Record<string, unknown>;
-		await updateMemoryData([auth.token, String(digest.id), { metadata: { ...meta, status } }]);
+		await updateMemoryData([String(digest.id), { metadata: { ...meta, status } }]);
 		toast.success(
 			status === 'active'
 				? 'Marked active — this is the one to continue'
@@ -129,7 +131,7 @@
 
 	async function del() {
 		if (!digest) return;
-		await removeMemory([auth.token, String(digest.id)]);
+		await removeMemory(String(digest.id));
 		toast.success('Conversation deleted');
 		goto('/app/conversations');
 	}

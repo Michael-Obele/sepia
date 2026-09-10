@@ -9,12 +9,17 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card/index.js';
-	import { login } from '$lib/auth.svelte';
 	import { signUp } from '$lib/remote/index.js';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 
+	let { data } = $props();
+
 	let showPassword = $state(false);
+
+	$effect(() => {
+		if (data.user) goto('/app');
+	});
 </script>
 
 <svelte:head>
@@ -31,7 +36,7 @@
 			</div>
 			<CardTitle class="text-xl">Create your account</CardTitle>
 			<CardDescription
-				>Free forever — 1 namespace, 1,000 memories, 2 Web AI connections. AI editors unlimited.</CardDescription
+				>Free forever — 1 namespace, 1,000 memories, 1 Web AI connection. AI editors unlimited.</CardDescription
 			>
 		</CardHeader>
 		<CardContent>
@@ -39,13 +44,10 @@
 				{...signUp.enhance(async (form) => {
 					try {
 						if (await form.submit()) {
-							const result = signUp.result;
-							if (result?.token) {
-								login(result.token);
-								goto('/app');
-							} else {
-								toast.error('Account created but no session token was returned.');
-							}
+							// The session cookie is set on the response — re-run the root
+							// layout load so `data.user` reflects it before rendering /app.
+							await invalidateAll();
+							await goto('/app');
 						}
 					} catch (e) {
 						toast.error((e as Error)?.message ?? 'Sign-up failed.');

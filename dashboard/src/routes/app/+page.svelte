@@ -34,7 +34,6 @@
 		getNamespaces,
 		removeMemory
 	} from '$lib/remote/index.js';
-	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { formatDate, timeAgo, importancePct, TYPE_BADGE, truncate } from '$lib/format.js';
 	import { goto } from '$app/navigation';
 	import { useSearchParams } from 'runed/kit';
@@ -43,9 +42,12 @@
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { onMount } from 'svelte';
 
-	// Only create queries when signed in — avoids SSR calls with an empty token.
-	const stats = $derived(isAuthed() ? getStatsData(auth.token) : null);
-	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
+	let { data } = $props();
+	const isAuthed = () => Boolean(data.user);
+
+	// Only create queries when signed in — anonymous visitors see the sign-in form.
+	const stats = $derived(isAuthed() ? getStatsData() : null);
+	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
 
 	// URL-backed search — validated with valibot, restored on back/forward.
 	const params = useSearchParams(appSearchSchema, SEARCH_PARAMS_OPTIONS);
@@ -60,14 +62,11 @@
 		const seq = ++searchSeq;
 		searching = true;
 		try {
-			const res = await searchAll([
-				auth.token,
-				{
-					q,
-					namespace: ns === 'all' ? undefined : ns,
-					limit: 10
-				}
-			]);
+			const res = await searchAll({
+				q,
+				namespace: ns === 'all' ? undefined : ns,
+				limit: 10
+			});
 			if (seq !== searchSeq) return;
 			results = res;
 		} finally {
@@ -101,7 +100,7 @@
 	}
 
 	async function consolidate() {
-		const res = await runConsolidate(auth.token);
+		const res = await runConsolidate();
 		toast.success('Consolidation complete', {
 			description: `${res.archived_stale} stale, ${res.archived_duplicates} duplicates archived, ${res.purged} purged`
 		});
@@ -123,7 +122,7 @@
 	} | null>(null);
 
 	async function deleteRecent(id: string) {
-		await removeMemory([auth.token, id]);
+		await removeMemory(id);
 		toast.success('Memory deleted');
 		stats?.refresh();
 	}

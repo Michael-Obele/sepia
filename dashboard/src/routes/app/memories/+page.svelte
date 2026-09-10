@@ -17,7 +17,6 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getMemories, getNamespaces, removeMemory, updateMemoryData } from '$lib/remote/index.js';
-	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { timeAgo, importancePct, TYPE_BADGE, truncate } from '$lib/format.js';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
@@ -27,7 +26,10 @@
 	import { memoriesSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
 	import { onMount } from 'svelte';
 
-	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
+	let { data } = $props();
+	const isAuthed = () => Boolean(data.user);
+
+	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
 	let namespaceList = $state<string[]>([]);
 
 	$effect(() => {
@@ -66,18 +68,15 @@
 		error = '';
 		offset = 0;
 		try {
-			const result = await getMemories([
-				auth.token,
-				{
-					q: params.q || undefined,
-					type: params.type === 'all' ? undefined : params.type,
-					namespace: params.namespace === 'all' ? undefined : params.namespace,
-					archived: params.archived,
-					importance_min: params.minImportance > 0 ? params.minImportance : undefined,
-					limit,
-					offset: 0
-				}
-			]);
+			const result = await getMemories({
+				q: params.q || undefined,
+				type: params.type === 'all' ? undefined : params.type,
+				namespace: params.namespace === 'all' ? undefined : params.namespace,
+				archived: params.archived,
+				importance_min: params.minImportance > 0 ? params.minImportance : undefined,
+				limit,
+				offset: 0
+			});
 			if (seq !== loadSeq) return;
 			memories = result;
 			hasMore = result.length >= limit;
@@ -94,18 +93,15 @@
 		loadingMore = true;
 		error = '';
 		try {
-			const next = await getMemories([
-				auth.token,
-				{
-					q: params.q || undefined,
-					type: params.type === 'all' ? undefined : params.type,
-					namespace: params.namespace === 'all' ? undefined : params.namespace,
-					archived: params.archived,
-					importance_min: params.minImportance > 0 ? params.minImportance : undefined,
-					limit,
-					offset: offset + limit
-				}
-			]);
+			const next = await getMemories({
+				q: params.q || undefined,
+				type: params.type === 'all' ? undefined : params.type,
+				namespace: params.namespace === 'all' ? undefined : params.namespace,
+				archived: params.archived,
+				importance_min: params.minImportance > 0 ? params.minImportance : undefined,
+				limit,
+				offset: offset + limit
+			});
 			memories = [...memories, ...next];
 			offset += limit;
 			hasMore = next.length >= limit;
@@ -117,13 +113,13 @@
 	}
 
 	async function del(id: string) {
-		await removeMemory([auth.token, id]);
+		await removeMemory(id);
 		toast.success('Memory deleted');
 		load();
 	}
 
 	async function toggleArchive(m: { id: string; archived: boolean | null }) {
-		await updateMemoryData([auth.token, String(m.id), { archived: !m.archived }]);
+		await updateMemoryData([String(m.id), { archived: !m.archived }]);
 		toast.success(m.archived ? 'Restored from archive' : 'Archived');
 		load();
 	}
@@ -198,7 +194,7 @@
 						<select
 							id="filter-type"
 							bind:value={params.type}
-							class="h-9 w-full min-w-[160px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							class="h-9 w-full min-w-40 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
 							aria-label="Memory type filter"
 						>
 							<option value="all">All types</option>
@@ -214,7 +210,7 @@
 						<select
 							id="filter-ns"
 							bind:value={params.namespace}
-							class="h-9 w-full min-w-[180px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							class="h-9 w-full min-w-45 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
 							aria-label="Namespace filter"
 						>
 							<option value="all">All namespaces</option>
@@ -230,7 +226,7 @@
 						<select
 							id="filter-imp"
 							bind:value={params.minImportance}
-							class="h-9 w-full min-w-[160px] shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							class="h-9 w-full min-w-40 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
 							aria-label="Minimum importance"
 						>
 							<option value={0}>Any importance</option>
@@ -244,7 +240,7 @@
 				<div class="flex flex-wrap items-center gap-3 xl:justify-end">
 					<label
 						for="filter-archived"
-						class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-colors has-[[data-state=checked]]:bg-muted"
+						class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-colors has-data-[state=checked]:bg-muted"
 					>
 						<Switch id="filter-archived" bind:checked={params.archived} />
 						<span>Show archived</span>

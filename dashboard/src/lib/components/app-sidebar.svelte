@@ -13,8 +13,8 @@
 		UserRound,
 		BrainCircuit
 	} from '@lucide/svelte';
-	import { logout } from '$lib/auth.svelte';
-	import { goto } from '$app/navigation';
+	import { signOut } from '$lib/remote/index.js';
+	import { goto, invalidateAll } from '$app/navigation';
 
 	const nav = [
 		{ href: '/app', label: 'Search', icon: Search },
@@ -32,9 +32,10 @@
 		return page.url.pathname.startsWith(href);
 	}
 
-	function handleLogout() {
-		logout();
-		goto('/');
+	async function handleLogout() {
+		await signOut();
+		await invalidateAll();
+		await goto('/');
 	}
 </script>
 

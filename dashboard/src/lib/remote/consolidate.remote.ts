@@ -1,11 +1,10 @@
 import { command } from '$app/server';
-import * as v from 'valibot';
 import { consolidate } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
 
 /** Run the decay/dedup/purge maintenance sweep. */
-export const runConsolidate = command(v.string(), async (token) => {
-	const user = await requireAuth(token);
+export const runConsolidate = command(async () => {
+	const user = await requireAuth();
 	return consolidate(db(), user.id);
 });

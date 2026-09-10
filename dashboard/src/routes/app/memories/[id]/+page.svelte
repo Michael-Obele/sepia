@@ -11,17 +11,17 @@
 		updateMemoryData,
 		getNamespaces
 	} from '$lib/remote/index.js';
-	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { formatDate, importancePct, TYPE_BADGE } from '$lib/format.js';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { goto } from '$app/navigation';
 
-	let { params } = $props();
+	let { data, params } = $props();
+	const isAuthed = () => Boolean(data.user);
 
 	const memoryId = $derived(params.id);
-	const memory = $derived(isAuthed() ? getMemoryDetail([auth.token, memoryId]) : null);
-	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
+	const memory = $derived(isAuthed() ? getMemoryDetail(memoryId) : null);
+	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
 	let namespaceList = $state<string[]>([]);
 	$effect(() => {
 		namespaces?.then((ns) => (namespaceList = ns.map((n) => n.name)));
@@ -53,13 +53,13 @@
 	});
 
 	async function del() {
-		await removeMemory([auth.token, params.id]);
+		await removeMemory(params.id);
 		toast.success('Memory deleted');
 		goto('/app/memories');
 	}
 
 	async function toggleArchive(m: { archived: boolean | null }) {
-		await updateMemoryData([auth.token, params.id, { archived: !m.archived }]);
+		await updateMemoryData([params.id, { archived: !m.archived }]);
 		toast.success(m.archived ? 'Restored from archive' : 'Archived');
 		memory?.refresh();
 	}

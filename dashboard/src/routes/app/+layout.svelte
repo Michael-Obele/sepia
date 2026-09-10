@@ -1,10 +1,10 @@
 <script lang="ts">
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import AppSidebar from '$lib/components/app-sidebar.svelte';
-	import { isAuthed } from '$lib/auth.svelte';
 	import SignIn from '$lib/components/sign-in.svelte';
 
-	let { children } = $props();
+	let { data, children } = $props();
+	const isAuthed = () => Boolean(data.user);
 </script>
 
 <svelte:head>

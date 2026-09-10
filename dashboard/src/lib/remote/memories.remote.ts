@@ -27,52 +27,46 @@ const MemoryFilters = v.object({
 });
 
 /** Query memories with filters. */
-export const getMemories = query(v.tuple([v.string(), MemoryFilters]), async ([token, filters]) => {
-	const user = await requireAuth(token);
+export const getMemories = query(MemoryFilters, async (filters) => {
+	const user = await requireAuth();
 	return queryMemories(db(), user.id, filters);
 });
 
 /** Full memory detail: memory + linked entities. */
-export const getMemoryDetail = query(v.tuple([v.string(), v.string()]), async ([token, id]) => {
-	const user = await requireAuth(token);
+export const getMemoryDetail = query(v.string(), async (id) => {
+	const user = await requireAuth();
 	return getMemory(db(), user.id, id);
 });
 
 /** Create a memory (optionally linked to entities). */
-export const addMemory = command(v.tuple([v.string(), MemoryInput]), async ([token, input]) => {
-	const user = await requireAuth(token);
+export const addMemory = command(MemoryInput, async (input) => {
+	const user = await requireAuth();
 	return createMemory(db(), user.id, input, 'dashboard', user.plan);
 });
 
 /** Update a memory. */
 export const updateMemoryData = command(
-	v.tuple([v.string(), v.string(), MemoryUpdateInput]),
-	async ([token, id, update]) => {
-		const user = await requireAuth(token);
+	v.tuple([v.string(), MemoryUpdateInput]),
+	async ([id, update]) => {
+		const user = await requireAuth();
 		return updateMemory(db(), user.id, id, update);
 	}
 );
 
 /** Delete a memory. */
-export const removeMemory = command(v.tuple([v.string(), v.string()]), async ([token, id]) => {
-	const user = await requireAuth(token);
+export const removeMemory = command(v.string(), async (id) => {
+	const user = await requireAuth();
 	return deleteMemory(db(), user.id, id);
 });
 
 /** Ingest a distilled conversation (handoff digest bundle). */
-export const ingestConversationData = command(
-	v.tuple([v.string(), ConversationInput]),
-	async ([token, input]) => {
-		const user = await requireAuth(token);
-		return ingestConversation(db(), user.id, input, 'dashboard');
-	}
-);
+export const ingestConversationData = command(ConversationInput, async (input) => {
+	const user = await requireAuth();
+	return ingestConversation(db(), user.id, input, 'dashboard');
+});
 
 /** Fetch every memory of a conversation (digest + constituents) by conversation_id. */
-export const getConversationData = query(
-	v.tuple([v.string(), v.string()]),
-	async ([token, conversationId]) => {
-		const user = await requireAuth(token);
-		return getConversation(db(), user.id, conversationId);
-	}
-);
+export const getConversationData = query(v.string(), async (conversationId) => {
+	const user = await requireAuth();
+	return getConversation(db(), user.id, conversationId);
+});

@@ -7,7 +7,6 @@
 	import { Slider } from '$lib/components/ui/slider/index.js';
 	import { toast } from 'svelte-sonner';
 	import { addEntity, updateEntityData } from '$lib/remote/index.js';
-	import { auth } from '$lib/auth.svelte';
 	import { ENTITY_TYPES } from '@sepia/shared';
 
 	let {
@@ -57,14 +56,10 @@
 		try {
 			const tags = parseTags(tagsText);
 			if (entity?.id) {
-				await updateEntityData([
-					auth.token,
-					String(entity.id),
-					{ name, type, summary, importance, tags }
-				]);
+				await updateEntityData([String(entity.id), { name, type, summary, importance, tags }]);
 				toast.success('Entity updated');
 			} else {
-				await addEntity([auth.token, namespace, { name, type, summary, importance, tags }]);
+				await addEntity([namespace, { name, type, summary, importance, tags }]);
 				toast.success('Entity created');
 			}
 			open = false;

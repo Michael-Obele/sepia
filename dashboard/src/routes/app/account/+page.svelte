@@ -36,12 +36,16 @@
 		createApiKey,
 		deleteApiKey,
 		listConnections,
-		disconnectConnection
+		disconnectConnection,
+		signOut,
+		signOutOtherSessions
 	} from '$lib/remote/index.js';
-	import { auth, isAuthed, logout } from '$lib/auth.svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 
-	const me = $derived(isAuthed() ? getMe(auth.token) : null);
+	let { data } = $props();
+	const isAuthed = () => Boolean(data.user);
+
+	const me = $derived(isAuthed() ? getMe() : null);
 
 	/**
 	 * Usage meter helpers — the "what you've burned" view.
@@ -72,7 +76,13 @@
 	let creatingKey = $state(false);
 	let newKey = $state<string | null>(null);
 	let keys = $state<
-		Array<{ id: string; name: string; createdAt: string; lastRequest: string | null }>
+		Array<{
+			id: string;
+			name: string;
+			start: string | null;
+			createdAt: string;
+			lastRequest: string | null;
+		}>
 	>([]);
 	let keysLoaded = $state(false);
 
@@ -120,7 +130,7 @@
 		if (!isAuthed()) return;
 		keysLoaded = false;
 		try {
-			keys = await listApiKeys(auth.token);
+			keys = await listApiKeys();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Failed to load API keys');
 		} finally {
@@ -132,7 +142,7 @@
 		if (!isAuthed()) return;
 		connectionsLoaded = false;
 		try {
-			connections = await listConnections(auth.token);
+			connections = await listConnections();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Failed to load Web AI connections');
 		} finally {
@@ -146,7 +156,7 @@
 		pendingDisconnect = null;
 		disconnectingId = clientId;
 		try {
-			await disconnectConnection([auth.token, clientId]);
+			await disconnectConnection(clientId);
 			toast.success(`Disconnected ${name}`);
 			await Promise.all([loadConnections(), loadKeys()]);
 			// Refresh usage (me) by re-triggering the derived query — force reload via page reload of data
@@ -164,7 +174,7 @@
 		creatingKey = true;
 		newKey = null;
 		try {
-			const { key } = await createApiKey(auth.token);
+			const { key } = await createApiKey();
 			newKey = key;
 			toast.success('API key created — copy it now, it is shown only once');
 			await loadKeys();
@@ -178,7 +188,7 @@
 	async function deleteKey(id: string) {
 		if (!confirm('Delete this API key? Anything using it will stop working.')) return;
 		try {
-			await deleteApiKey([auth.token, id]);
+			await deleteApiKey(id);
 			toast.success('API key deleted');
 			await loadKeys();
 		} catch (e) {
@@ -192,9 +202,24 @@
 		setTimeout(() => (copied = ''), 1500);
 	}
 
-	function handleLogout() {
-		logout();
-		goto('/');
+	async function handleLogout() {
+		await signOut();
+		await invalidateAll();
+		await goto('/');
+	}
+
+	/** Revoke every other session for this account — the post-leak escape hatch. */
+	let signingOutOthers = $state(false);
+	async function handleSignOutOthers() {
+		signingOutOthers = true;
+		try {
+			await signOutOtherSessions();
+			toast.success('Signed out of all other sessions');
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Failed to sign out other sessions');
+		} finally {
+			signingOutOthers = false;
+		}
 	}
 
 	$effect(() => {
@@ -215,7 +240,12 @@
 			<h1 class="text-2xl font-semibold tracking-tight">Account</h1>
 			<p class="text-sm text-muted-foreground">Your plan, usage, and API keys.</p>
 		</div>
-		<Button variant="outline" onclick={handleLogout}>Sign out</Button>
+		<div class="flex items-center gap-2">
+			<Button variant="ghost" size="sm" onclick={handleSignOutOthers} disabled={signingOutOthers}>
+				{signingOutOthers ? 'Signing out…' : 'Sign out other sessions'}
+			</Button>
+			<Button variant="outline" onclick={handleLogout}>Sign out</Button>
+		</div>
 	</div>
 
 	{#if me?.current}
@@ -600,7 +630,8 @@
 								<div>
 									<p class="text-sm font-medium">{key.name}</p>
 									<p class="text-xs text-muted-foreground">
-										Created {new Date(key.createdAt).toLocaleDateString()}
+										{#if key.start}<code class="font-mono text-foreground">{key.start}…</code> ·
+										{/if}Created {new Date(key.createdAt).toLocaleDateString()}
 										{#if key.lastRequest}
 											· last used {new Date(key.lastRequest).toLocaleDateString()}{/if}
 									</p>

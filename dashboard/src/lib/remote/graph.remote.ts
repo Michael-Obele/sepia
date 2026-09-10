@@ -1,28 +1,21 @@
 import { query } from '$app/server';
-import * as v from 'valibot';
 import { traverseGraph, fullGraph, TraverseInput } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
 
 /** BFS traversal of the knowledge graph from a start entity. */
-export const getGraph = query(v.tuple([v.string(), TraverseInput]), async ([token, input]) => {
-	const user = await requireAuth(token);
+export const getGraph = query(TraverseInput, async (input) => {
+	const user = await requireAuth();
 	return traverseGraph(db(), user.id, input.start_id, input.depth);
 });
 
 /** The entire knowledge graph (all entities + relations) for the full view. */
-export const getFullGraph = query(v.string(), async (token) => {
-	const user = await requireAuth(token);
+export const getFullGraph = query(async () => {
+	const user = await requireAuth();
 	try {
 		return await fullGraph(db(), user.id);
 	} catch (e) {
 		console.error('[getFullGraph] error:', e);
 		throw e;
 	}
-});
-
-/** TEMP: simple test to isolate the serialization issue. */
-export const getFullGraphTest = query(v.string(), async (token) => {
-	requireAuth(token);
-	return { ok: true, token: token?.slice(0, 4) };
 });

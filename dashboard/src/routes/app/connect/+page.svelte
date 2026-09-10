@@ -19,7 +19,9 @@
 		Eye,
 		EyeOff,
 		RefreshCw,
-		Trash2
+		Trash2,
+		PartyPopper,
+		Trophy
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
@@ -32,13 +34,14 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { auth, isAuthed } from '$lib/auth.svelte';
+	import { Progress } from '$lib/components/ui/progress/index.js';
 	import {
 		listApiKeys as fetchApiKeys,
 		createApiKey as createApiKeyRemote,
 		deleteApiKey as deleteApiKeyRemote
 	} from '$lib/remote/index.js';
-	import { MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared';
+	import { API_KEY_PREFIX, MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared';
+	import { IsMounted, PersistedState } from 'runed';
 	import { toast } from 'svelte-sonner';
 
 	const MCP_URL = 'https://sepia.fly.dev/mcp';
@@ -52,6 +55,27 @@
 		await navigator.clipboard.writeText(text);
 		copied = key;
 		setTimeout(() => (copied = ''), 1500);
+		// ── Conversion psychology: copy = progress ──────────────────────
+		// Every copy action ticks its step (Goal Gradient + IKEA Effect).
+		// Persisted to localStorage so investment survives refresh.
+		if (key === 'url' || key === 'mcp-url') markStep(1);
+		else if (key === 'quick' || key === 'full') markStep(3);
+		else if (
+			key === 'config' ||
+			key === 'vscode' ||
+			key === 'cursor' ||
+			key === 'opencode' ||
+			key === 'zed' ||
+			key === 'zedBridge' ||
+			key === 'claude' ||
+			key === 'oneliner' ||
+			key === 'oneliner-global' ||
+			key === 'new-key'
+		) {
+			markStep(1);
+			// Copying a key/config also implies token is ready
+			if (hasApiKey) markStep(2);
+		}
 	}
 
 	type Target = {
@@ -158,17 +182,16 @@
 	const bearerSteps = ['Pick your AI', 'Copy the config', 'Add your token', 'Verify'];
 	const steps = $derived(current.auth === 'OAuth' ? oauthSteps : bearerSteps);
 
-	// Smart default: configs are pre-filled with the real token — scan and adjust, not type.
-	const token = $derived(auth.token || 'YOUR_TOKEN');
+	let { data } = $props();
+	const isAuthed = () => Boolean(data.user);
 
-	// The token is a Better Auth session token — it expires (7-day sliding
-	// window) and rotates on every sign-in. Configs are derived so they always
-	// carry the current token; the display masks it until revealed.
+	/** Masks a credential for the config previews, which are hidden by default. */
 	function maskToken(t: string): string {
 		if (t === 'YOUR_TOKEN' || t === 'YOUR_API_KEY' || t.length <= 8) return t;
-		return `${t.slice(0, 4)}••••••••${t.slice(-4)}`;
+		// Keep the brand prefix readable — recognising `sepia_…` is its whole job.
+		const head = t.startsWith(API_KEY_PREFIX) ? API_KEY_PREFIX : t.slice(0, 4);
+		return `${head}••••••••${t.slice(-4)}`;
 	}
-	const maskedToken = $derived(maskToken(token));
 
 	// ── API key (preferred for Bearer clients) ──────────────────────────────
 	// The session token rotates (7-day sliding expiry, new token per sign-in).
@@ -178,6 +201,7 @@
 	type ApiKeyRow = {
 		id: string;
 		name: string;
+		start: string | null;
 		createdAt: string;
 		lastRequest: string | null;
 	};
@@ -303,7 +327,7 @@
 		if (!isAuthed()) return;
 		apiKeysLoaded = false;
 		try {
-			apiKeys = await fetchApiKeys(auth.token);
+			apiKeys = await fetchApiKeys();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Failed to load API keys');
 		} finally {
@@ -316,7 +340,7 @@
 		newKey = null;
 		newKeyId = null;
 		try {
-			const { id, key } = await createApiKeyRemote(auth.token);
+			const { id, key } = await createApiKeyRemote();
 			newKey = key;
 			newKeyId = id;
 			toast.success('API key created — copy it now, it is shown only once');
@@ -332,8 +356,8 @@
 	async function regenerateApiKey(id: string) {
 		regenerating = id;
 		try {
-			await deleteApiKeyRemote([auth.token, id]);
-			const { key } = await createApiKeyRemote(auth.token);
+			await deleteApiKeyRemote(id);
+			const { key } = await createApiKeyRemote();
 			newKey = key;
 			newKeyId = null;
 			toast.success('Key regenerated — copy the new key now');
@@ -347,7 +371,7 @@
 
 	async function deleteApiKey(id: string) {
 		try {
-			await deleteApiKeyRemote([auth.token, id]);
+			await deleteApiKeyRemote(id);
 			toast.success('API key deleted');
 			await loadApiKeys();
 		} catch (e) {
@@ -359,6 +383,78 @@
 		if (isAuthed() && !apiKeysLoaded) {
 			void loadApiKeys();
 		}
+	});
+
+	// ── Connect progress (Goal Gradient + IKEA Effect) ──────────────────
+	// 4 steps: 0 Pick AI (pre-completed), 1 Copy URL/config, 2 Authorize/token, 3 Instructions/verify.
+	// Persisted per-auth-path via PersistedState so refresh doesn't reset momentum.
+	type ProgressState = { oauth: boolean[]; bearer: boolean[] };
+	const STARTER_STEPS = [true, false, false, false];
+	function defaultProgress(): ProgressState {
+		return { oauth: [...STARTER_STEPS], bearer: [...STARTER_STEPS] };
+	}
+	/** Validate a stored step array — defends against stale or corrupt data. */
+	function isStepArray(value: unknown): value is boolean[] {
+		return Array.isArray(value) && value.length === 4 && value.every((v) => typeof v === 'boolean');
+	}
+	function coerceProgress(value: unknown): ProgressState {
+		const d = defaultProgress();
+		if (!value || typeof value !== 'object') return d;
+		const parsed = value as Partial<ProgressState>;
+		return {
+			oauth: isStepArray(parsed.oauth) ? parsed.oauth : d.oauth,
+			bearer: isStepArray(parsed.bearer) ? parsed.bearer : d.bearer
+		};
+	}
+	// PersistedState persists plain objects/arrays deeply, so mutating
+	// progress.current.oauth[i] writes to storage automatically (and syncs across
+	// tabs). The validating serializer replaces the old manual JSON round-trip.
+	const progress = new PersistedState<ProgressState>('sepia:connect-progress', defaultProgress(), {
+		serializer: {
+			serialize: JSON.stringify,
+			deserialize: (raw: string) => {
+				try {
+					return coerceProgress(JSON.parse(raw));
+				} catch {
+					return defaultProgress();
+				}
+			}
+		}
+	});
+	// Storage is unavailable during SSR, so render defaults until mounted —
+	// otherwise hydration would mismatch for returning visitors with progress.
+	const isMounted = new IsMounted();
+	function markStep(idx: number) {
+		const key = current.auth === 'OAuth' ? 'oauth' : 'bearer';
+		if (!progress.current[key][idx]) {
+			progress.current[key][idx] = true;
+			if (idx === 1 || idx === 3) toast.success(steps[idx]);
+		} else {
+			// allow toggling off (except step 0 which is the smart default)
+			if (idx !== 0) progress.current[key][idx] = false;
+		}
+	}
+	function resetProgress() {
+		progress.current = defaultProgress();
+		toast('Progress reset');
+	}
+	// Derived for current auth path
+	const curProgress = $derived(
+		isMounted.current
+			? progress.current[current.auth === 'OAuth' ? 'oauth' : 'bearer']
+			: STARTER_STEPS
+	);
+	const completedCount = $derived(curProgress.filter(Boolean).length);
+	const progressPct = $derived(Math.round((completedCount / steps.length) * 100));
+	const allDone = $derived(completedCount === steps.length);
+	// Celebrate completion once per mount
+	let celebrated = $state(false);
+	$effect(() => {
+		if (allDone && !celebrated) {
+			celebrated = true;
+			toast.success('All steps done — restart your AI and ask “what do you know about me?”');
+		}
+		if (!allDone) celebrated = false;
 	});
 
 	type Editor = {
@@ -426,34 +522,95 @@
 		</p>
 	</div>
 
-	<!-- Goal gradient: step 1 pre-completed, ChatGPT pre-selected, steps adapt to auth path -->
-	<Card>
+	<!-- Goal gradient: progress ticks as you copy — never stuck at 25% -->
+	<Card class={allDone ? 'border-emerald-500/30 bg-emerald-500/5' : ''}>
 		<CardContent class="p-4">
-			<div class="flex flex-wrap items-center gap-2 sm:gap-3">
+			<div class="flex items-center justify-between gap-3">
+				<p
+					class="text-xs font-medium {allDone
+						? 'text-emerald-600 dark:text-emerald-400'
+						: 'text-foreground'}"
+				>
+					{#if allDone}
+						<span class="inline-flex items-center gap-1.5"
+							><PartyPopper class="size-3.5" /> All done — {completedCount} of {steps.length} complete</span
+						>
+					{:else}
+						{completedCount} of {steps.length} complete — {progressPct}%
+					{/if}
+				</p>
+				<span class="text-xs text-muted-foreground">{current.name} · {current.auth}</span>
+			</div>
+			<Progress
+				value={progressPct}
+				max={100}
+				class="mt-3 h-2 [&>div]:bg-primary {allDone ? '[&>div]:bg-emerald-500' : ''}"
+			/>
+			<div class="mt-3 flex flex-wrap items-center gap-2 sm:gap-3">
 				{#each steps as step, i (step)}
+					{@const done = curProgress[i]}
 					<div class="flex items-center gap-2 sm:gap-3">
-						<div class="flex items-center gap-2">
+						<button
+							type="button"
+							onclick={() => markStep(i)}
+							aria-label="{done ? 'Completed: ' : 'Mark complete: '}{step}"
+							aria-pressed={done}
+							class="flex items-center gap-2 rounded-full px-1 py-0.5 transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none {done
+								? 'text-foreground'
+								: 'text-muted-foreground hover:text-foreground'}"
+						>
 							<div
-								class="flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium {i ===
-								0
-									? 'bg-primary text-primary-foreground'
-									: 'bg-muted text-muted-foreground'}"
+								class="flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium transition-all {done
+									? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20'
+									: i === 0
+										? 'bg-primary text-primary-foreground'
+										: 'bg-muted text-muted-foreground'}"
 							>
-								{#if i === 0}<Check class="size-3.5" />{:else}{i + 1}{/if}
+								{#if done}<Check class="size-3.5" />{:else if i === 0}<Check
+										class="size-3.5"
+									/>{:else}{i + 1}{/if}
 							</div>
 							<span
-								class="text-xs {i === 0 ? 'font-medium text-foreground' : 'text-muted-foreground'}"
-								>{step}</span
+								class="text-xs {done
+									? 'font-medium line-through decoration-emerald-500/40'
+									: i === 0
+										? 'font-medium'
+										: ''}">{step}</span
 							>
-						</div>
-						{#if i < steps.length - 1}<div class="h-px w-4 bg-border sm:w-8"></div>{/if}
+						</button>
+						{#if i < steps.length - 1}
+							<div
+								class="h-px w-4 bg-border sm:w-8 {curProgress[i] && curProgress[i + 1]
+									? 'bg-emerald-500/40'
+									: curProgress[i]
+										? 'bg-emerald-500/20'
+										: ''}"
+							></div>
+						{/if}
 					</div>
 				{/each}
 			</div>
-			<p class="mt-3 text-xs text-muted-foreground">
-				Step 1 of {steps.length} — <span class="font-medium text-foreground">{current.name}</span> is
-				pre-selected. Pick a different AI below if you use one.
-			</p>
+			<div class="mt-3 flex flex-wrap items-center gap-2">
+				<p class="text-xs text-muted-foreground">
+					{#if allDone}
+						<span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"
+							><Trophy class="size-3" />
+							{current.name} is ready — restart your AI and verify below.</span
+						>
+					{:else}
+						Copy the URL and instructions below — each copy ticks the next step. Tap any step to
+						toggle it.
+					{/if}
+				</p>
+				{#if completedCount > 1}
+					<button
+						type="button"
+						onclick={resetProgress}
+						class="ml-auto text-xs text-muted-foreground underline underline-offset-4 hover:text-foreground"
+						>Reset</button
+					>
+				{/if}
+			</div>
 		</CardContent>
 	</Card>
 
@@ -497,11 +654,15 @@
 		</CardContent>
 	</Card>
 
-	<!-- Step 2: personalized setup -->
-	<Card>
+	<!-- Step 2: personalized setup — copy ticks progress (Goal Gradient) -->
+	<Card class={curProgress[1] ? 'border-emerald-500/20' : ''}>
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2 text-base">
 				<Server class="size-4" /> 2. Your setup — {current.name}
+				{#if curProgress[1]}<Badge
+						class="gap-1 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+						><CircleCheck class="size-3" /> Copied</Badge
+					>{/if}
 			</CardTitle>
 			<CardDescription>
 				{#if current.auth === 'OAuth'}
@@ -515,23 +676,55 @@
 			{#if current.auth === 'OAuth'}
 				<div class="flex items-center gap-2">
 					<code class="flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">{MCP_URL}</code>
-					<Button variant="outline" size="sm" onclick={() => copy(MCP_URL, 'url')} class="gap-1">
-						{#if copied === 'url'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
-						Copy URL
+					<Button
+						variant={curProgress[1] ? 'secondary' : 'outline'}
+						size="sm"
+						onclick={() => copy(MCP_URL, 'url')}
+						class="gap-1"
+					>
+						{#if copied === 'url'}<Check class="size-4 text-emerald-500" /> Copied{:else if curProgress[1]}<CircleCheck
+								class="size-4 text-emerald-500"
+							/> Copied{:else}<Copy class="size-4" /> Copy URL{/if}
 					</Button>
 				</div>
 				<ol class="space-y-2">
 					{#each current.steps as step, i (i)}
-						<li class="flex items-start gap-3 text-sm text-muted-foreground">
+						<li
+							class="flex items-start gap-3 text-sm {i === 1 && curProgress[1]
+								? 'text-foreground'
+								: 'text-muted-foreground'}"
+						>
 							<span
-								class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-muted/60 font-mono text-[11px] text-foreground"
+								class="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full font-mono text-[11px] {i ===
+									1 && curProgress[1]
+									? 'bg-emerald-500 text-white'
+									: 'bg-muted/60 text-foreground'}"
 							>
-								{i + 1}
+								{#if i === 1 && curProgress[1]}<Check class="size-3" />{:else}{i + 1}{/if}
 							</span>
-							<span class="leading-relaxed">{step}</span>
+							<span
+								class="leading-relaxed {i === 1 && curProgress[1]
+									? 'line-through decoration-emerald-500/30'
+									: ''}">{step}</span
+							>
 						</li>
 					{/each}
 				</ol>
+				<div class="flex flex-wrap gap-2 pt-1">
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => markStep(2)}
+						class="gap-1.5 {curProgress[2] ? 'border-emerald-500/30 bg-emerald-500/5' : ''}"
+					>
+						{#if curProgress[2]}<CircleCheck class="size-3.5 text-emerald-500" /> Authorized{:else}<Check
+								class="size-3.5"
+							/> I've authorized{/if}
+					</Button>
+					<span class="text-xs leading-8 text-muted-foreground"
+						>Tap after signing in — we can't detect it automatically.</span
+					>
+				</div>
 			{:else}
 				{#if hasApiKey}
 					<div class="relative">
@@ -551,13 +744,24 @@
 					</div>
 					<div class="flex flex-wrap items-center gap-2">
 						<Button
-							variant="outline"
+							variant={curProgress[1] ? 'secondary' : 'outline'}
 							size="sm"
 							onclick={() => copy(bearerConfig, 'config')}
-							class="gap-1"
+							class="gap-1 {curProgress[1] ? 'border-emerald-500/30' : ''}"
 						>
-							{#if copied === 'config'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
-							Copy config
+							{#if copied === 'config'}<Check class="size-4 text-emerald-500" /> Copied{:else if curProgress[1]}<CircleCheck
+									class="size-4 text-emerald-500"
+								/> Copied{:else}<Copy class="size-4" /> Copy config{/if}
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() => markStep(2)}
+							class="gap-1.5 {curProgress[2] ? 'border-emerald-500/30 bg-emerald-500/5' : ''}"
+						>
+							{#if curProgress[2]}<CircleCheck class="size-3.5 text-emerald-500" /> Token added{:else}<Check
+									class="size-3.5"
+								/> I've added the token{/if}
 						</Button>
 						<p class="text-xs text-muted-foreground">
 							Cursor and Zed use slightly different config keys — see the
@@ -576,12 +780,16 @@
 		</CardContent>
 	</Card>
 
-	<!-- Step 3: memory instructions (web AIs may not read the MCP instructions field) -->
+	<!-- Step 3: memory instructions — copy ticks the final step -->
 	{#if current.auth === 'OAuth'}
-		<Card>
+		<Card class={curProgress[3] ? 'border-emerald-500/20' : ''}>
 			<CardHeader>
 				<CardTitle class="flex items-center gap-2 text-base">
 					<Sparkles class="size-4" /> 3. Add the memory instructions
+					{#if curProgress[3]}<Badge
+							class="gap-1 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+							><CircleCheck class="size-3" /> Copied</Badge
+						>{/if}
 				</CardTitle>
 				<CardDescription>
 					Web AIs don't always read the MCP server's built-in instructions. Paste this into
@@ -600,13 +808,14 @@
 								>{MEMORY_CONTRACT_QUICK}</code
 							></pre>
 						<Button
-							variant="outline"
+							variant={curProgress[3] ? 'secondary' : 'outline'}
 							size="sm"
 							onclick={() => copy(MEMORY_CONTRACT_QUICK, 'quick')}
 							class="gap-1"
 						>
-							{#if copied === 'quick'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
-							Copy quick instructions
+							{#if copied === 'quick'}<Check class="size-4 text-emerald-500" /> Copied{:else if curProgress[3]}<CircleCheck
+									class="size-4 text-emerald-500"
+								/> Copied — step done{:else}<Copy class="size-4" /> Copy quick instructions{/if}
 						</Button>
 					</Tabs.Content>
 					<Tabs.Content value="full" class="space-y-3">
@@ -615,21 +824,26 @@
 								>{MEMORY_CONTRACT}</code
 							></pre>
 						<Button
-							variant="outline"
+							variant={curProgress[3] ? 'secondary' : 'outline'}
 							size="sm"
 							onclick={() => copy(MEMORY_CONTRACT, 'full')}
 							class="gap-1"
 						>
-							{#if copied === 'full'}<Check class="size-4" />{:else}<Copy class="size-4" />{/if}
-							Copy full contract
+							{#if copied === 'full'}<Check class="size-4 text-emerald-500" /> Copied{:else if curProgress[3]}<CircleCheck
+									class="size-4 text-emerald-500"
+								/> Copied — step done{:else}<Copy class="size-4" /> Copy full contract{/if}
 						</Button>
 					</Tabs.Content>
 				</Tabs.Root>
 				{#if current.instructionsLocation}
 					<div
-						class="flex items-start gap-2 rounded-lg border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground"
+						class="flex items-start gap-2 rounded-lg border {curProgress[3]
+							? 'border-emerald-500/20 bg-emerald-500/5'
+							: 'border-primary/20 bg-primary/5'} p-3 text-xs text-muted-foreground"
 					>
-						<ExternalLink class="mt-0.5 size-3.5 shrink-0" />
+						{#if curProgress[3]}<CircleCheck
+								class="mt-0.5 size-3.5 shrink-0 text-emerald-500"
+							/>{:else}<ExternalLink class="mt-0.5 size-3.5 shrink-0" />{/if}
 						<span>
 							Paste it in <span class="font-medium text-foreground"
 								>{current.instructionsLocation}</span
@@ -640,15 +854,53 @@
 			</CardContent>
 		</Card>
 	{:else}
-		<Card>
+		<Card class={curProgress[2] || curProgress[3] ? 'border-emerald-500/20' : ''}>
 			<CardHeader>
 				<CardTitle class="flex items-center gap-2 text-base">
 					<Sparkles class="size-4" /> 3. Memory instructions
+					{#if curProgress[2] && curProgress[3]}<Badge
+							class="gap-1 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400"
+							><CircleCheck class="size-3" /> Ready</Badge
+						>{/if}
 				</CardTitle>
 				<CardDescription>
-					{current.name} reads the server's built-in instructions automatically — nothing to paste.
+					{#if curProgress[2] && hasApiKey}
+						<span class="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400"
+							><CircleCheck class="size-3" /> Token ready —</span
+						>
+						{current.name} reads the server's built-in instructions automatically — nothing to paste.
+					{:else}
+						{current.name} reads the server's built-in instructions automatically — nothing to paste.
+						Copy a config above to mark this step done.
+					{/if}
 				</CardDescription>
 			</CardHeader>
+			<CardContent>
+				{#if hasApiKey && !curProgress[2]}
+					<p class="text-xs text-muted-foreground">
+						Copy any config above — it ticks both “Add your token” and this step. Then <button
+							type="button"
+							onclick={() => markStep(3)}
+							class="underline underline-offset-4 hover:text-foreground">mark verify done</button
+						> after restarting your editor.
+					</p>
+				{:else if !hasApiKey}
+					<p class="text-xs text-muted-foreground">
+						Create an API key above to unlock configs — copying one ticks the remaining steps.
+					</p>
+				{:else}
+					<Button
+						variant="outline"
+						size="sm"
+						onclick={() => markStep(3)}
+						class="gap-1.5 {curProgress[3] ? 'border-emerald-500/30 bg-emerald-500/5' : ''}"
+					>
+						{#if curProgress[3]}<CircleCheck class="size-3.5 text-emerald-500" /> Verified{:else}<Check
+								class="size-3.5"
+							/> I've verified — mark done{/if}
+					</Button>
+				{/if}
+			</CardContent>
 		</Card>
 	{/if}
 
@@ -753,7 +1005,8 @@
 							<div>
 								<p class="text-sm font-medium">{key.name}</p>
 								<p class="text-xs text-muted-foreground">
-									Created {new Date(key.createdAt).toLocaleDateString()}
+									{#if key.start}<code class="font-mono text-foreground">{key.start}…</code> ·
+									{/if}Created {new Date(key.createdAt).toLocaleDateString()}
 									{#if key.lastRequest}
 										· last used {new Date(key.lastRequest).toLocaleDateString()}{/if}
 								</p>

@@ -10,22 +10,19 @@ const RelationFilters = v.object({
 });
 
 /** List relations (by entity or namespace). */
-export const getRelations = query(
-	v.tuple([v.string(), RelationFilters]),
-	async ([token, filters]) => {
-		const user = await requireAuth(token);
-		return listRelations(db(), user.id, filters);
-	}
-);
+export const getRelations = query(RelationFilters, async (filters) => {
+	const user = await requireAuth();
+	return listRelations(db(), user.id, filters);
+});
 
 /** Create a relation (upserts weight on conflict). */
-export const addRelation = command(v.tuple([v.string(), RelationInput]), async ([token, input]) => {
-	const user = await requireAuth(token);
+export const addRelation = command(RelationInput, async (input) => {
+	const user = await requireAuth();
 	return createRelation(db(), user.id, input);
 });
 
 /** Delete a relation. */
-export const removeRelation = command(v.tuple([v.string(), v.string()]), async ([token, id]) => {
-	const user = await requireAuth(token);
+export const removeRelation = command(v.string(), async (id) => {
+	const user = await requireAuth();
 	return deleteRelation(db(), user.id, id);
 });

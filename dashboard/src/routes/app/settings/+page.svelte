@@ -12,12 +12,27 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
-	import { getNamespaces, addNamespace, removeNamespace, exportAll } from '$lib/remote/index.js';
+	import {
+		getNamespaces,
+		addNamespace,
+		removeNamespace,
+		exportAll,
+		signOut
+	} from '$lib/remote/index.js';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
-	import { auth, isAuthed, logout } from '$lib/auth.svelte';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 
-	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
+	let { data } = $props();
+	const isAuthed = () => Boolean(data.user);
+
+	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
+
+	/** Sign out on the server (revokes the session + clears the cookie), then re-run loads. */
+	async function handleSignOut() {
+		await signOut();
+		await invalidateAll();
+		await goto('/');
+	}
 
 	let newName = $state('');
 	let newDesc = $state('');
@@ -38,7 +53,7 @@
 		}
 		creating = true;
 		try {
-			await addNamespace([auth.token, { name: newName.trim(), description: newDesc.trim() }]);
+			await addNamespace({ name: newName.trim(), description: newDesc.trim() });
 			toast.success(`Namespace "${newName.trim()}" created`);
 			newName = '';
 			newDesc = '';
@@ -56,7 +71,7 @@
 			return;
 		}
 		try {
-			await removeNamespace([auth.token, id]);
+			await removeNamespace(id);
 			toast.success(`Namespace "${name}" deleted`);
 			namespaces?.refresh();
 		} catch (e) {
@@ -67,7 +82,7 @@
 	async function downloadJson() {
 		exporting = true;
 		try {
-			const data = await exportAll(auth.token);
+			const data = await exportAll();
 			const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
@@ -86,7 +101,7 @@
 	async function downloadMarkdown() {
 		exporting = true;
 		try {
-			const data = await exportAll(auth.token);
+			const data = await exportAll();
 			let md = `# Sepia Memory Export\n\n_Generated ${new Date().toISOString()}_\n\n`;
 			for (const ns of data.namespaces) {
 				md += `\n## Namespace: ${ns.name}\n\n`;
@@ -123,11 +138,6 @@
 			exporting = false;
 		}
 	}
-
-	function signOut() {
-		logout();
-		goto('/');
-	}
 </script>
 
 <svelte:head><title>Sepia — Settings</title></svelte:head>
@@ -159,13 +169,13 @@
 			{#if namespaces}
 				{#await namespaces}
 					<div class="space-y-2">
-						{#each [0, 1] as _}
+						{#each [0, 1] as i (i)}
 							<Skeleton class="h-14 w-full" />
 						{/each}
 					</div>
 				{:then ns}
 					<div class="space-y-2">
-						{#each ns as n}
+						{#each ns as n (n.id)}
 							<div class="flex items-center justify-between gap-3 rounded-md border p-3">
 								<div class="min-w-0">
 									<div class="flex items-center gap-2">
@@ -213,19 +223,20 @@
 			<CardTitle class="flex items-center gap-2 text-base">
 				<KeyRound class="size-4" /> Access
 			</CardTitle>
-			<CardDescription>Your session token is stored in this browser only.</CardDescription>
+			<CardDescription>How this browser is signed in.</CardDescription>
 		</CardHeader>
 		<CardContent class="space-y-3">
 			<div class="flex items-center gap-2">
 				<code class="flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">
-					{auth.token ? `${auth.token.slice(0, 8)}…${auth.token.slice(-4)}` : 'Not signed in'}
+					{data.user?.email ?? 'Not signed in'}
 				</code>
-				<Button variant="outline" onclick={signOut}>Sign out</Button>
+				<Button variant="outline" onclick={handleSignOut}>Sign out</Button>
 			</div>
 			<p class="text-xs text-muted-foreground">
-				To rotate the token, set a new <code class="rounded bg-muted px-1">MCP_BEARER_TOKEN</code>
-				on the server (<code class="rounded bg-muted px-1">fly secrets set MCP_BEARER_TOKEN=…</code
-				>) and sign in again.
+				Your session is held in an HTTP-only cookie and renewed as you work — it is never exposed to
+				page scripts. Need a long-lived credential for an editor or MCP client? Create an API key on
+				the
+				<a href="/app/connect" class="underline">Connect an AI</a> page.
 			</p>
 		</CardContent>
 	</Card>

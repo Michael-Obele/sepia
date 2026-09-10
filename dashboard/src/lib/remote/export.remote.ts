@@ -1,5 +1,4 @@
 import { query } from '$app/server';
-import * as v from 'valibot';
 import { listNamespaces, listRelations, queryMemories, findEntities } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
@@ -8,8 +7,8 @@ import { requireAuth } from '$lib/server/auth';
  * Full data export: all namespaces, entities, memories, and relations.
  * Used by the Settings page for JSON/Markdown download.
  */
-export const exportAll = query(v.string(), async (token) => {
-	const user = await requireAuth(token);
+export const exportAll = query(async () => {
+	const user = await requireAuth();
 	const sql = db();
 	const [namespaces, relations] = await Promise.all([
 		listNamespaces(sql, user.id),

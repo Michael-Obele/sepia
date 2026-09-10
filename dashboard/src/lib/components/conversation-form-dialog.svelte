@@ -6,7 +6,6 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { toast } from 'svelte-sonner';
 	import { ingestConversationData } from '$lib/remote/index.js';
-	import { auth } from '$lib/auth.svelte';
 
 	let {
 		open = $bindable(false),
@@ -106,26 +105,23 @@
 		}
 		saving = true;
 		try {
-			const result = await ingestConversationData([
-				auth.token,
-				{
-					summary: summary.trim(),
-					title: title.trim(),
-					status,
-					conversation_id: cid,
-					decisions: lines(decisions),
-					preferences: lines(preferences),
-					instructions: lines(instructions),
-					observations: lines(observations),
-					open_questions: lines(openQuestions),
-					entities: parseEntities(entitiesText),
-					source: sourceAi.trim()
-						? { ai: sourceAi.trim(), ref: sourceRef.trim() || undefined }
-						: undefined,
-					tags: parseTags(tagsText),
-					namespace
-				}
-			]);
+			const result = await ingestConversationData({
+				summary: summary.trim(),
+				title: title.trim(),
+				status,
+				conversation_id: cid,
+				decisions: lines(decisions),
+				preferences: lines(preferences),
+				instructions: lines(instructions),
+				observations: lines(observations),
+				open_questions: lines(openQuestions),
+				entities: parseEntities(entitiesText),
+				source: sourceAi.trim()
+					? { ai: sourceAi.trim(), ref: sourceRef.trim() || undefined }
+					: undefined,
+				tags: parseTags(tagsText),
+				namespace
+			});
 			toast.success(
 				`Conversation saved — ${result.memories_created} memories, ${result.entities_created} entities created`
 			);
@@ -173,7 +169,9 @@
 						<option value="paused">paused</option>
 						<option value="done">done</option>
 					</select>
-					<p class="text-xs text-muted-foreground">Active conversations are the ones to continue.</p>
+					<p class="text-xs text-muted-foreground">
+						Active conversations are the ones to continue.
+					</p>
 				</div>
 			</div>
 
@@ -194,11 +192,7 @@
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">
 					<Label for="conv-id">Conversation ID</Label>
-					<Input
-						id="conv-id"
-						bind:value={conversationId}
-						placeholder="auto-derived from title"
-					/>
+					<Input id="conv-id" bind:value={conversationId} placeholder="auto-derived from title" />
 					<p class="text-xs text-muted-foreground">
 						Groups digests of the same conversation. Leave empty to derive from the title.
 					</p>

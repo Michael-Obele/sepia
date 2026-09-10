@@ -13,7 +13,13 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
+	let { data } = $props();
+
 	const token = $derived(String(page.url.searchParams.get('token') ?? ''));
+
+	$effect(() => {
+		if (data.user) goto('/app');
+	});
 
 	let password = $state('');
 	let confirm = $state('');

@@ -10,8 +10,15 @@
 		CardTitle
 	} from '$lib/components/ui/card/index.js';
 	import { authClient } from '$lib/auth-client';
+	import { goto } from '$app/navigation';
+
+	let { data } = $props();
 
 	let email = $state('');
+
+	$effect(() => {
+		if (data.user) goto('/app');
+	});
 	let error = $state('');
 	let sent = $state(false);
 	let loading = $state(false);

@@ -29,8 +29,8 @@ function hostFromUris(uris: string[]): string | null {
 }
 
 /** List Web AI connections (OAuth clients) for the current user. */
-export const listConnections = query(v.string(), async (token): Promise<ConnectionRow[]> => {
-	const user = await requireAuth(token);
+export const listConnections = query(async (): Promise<ConnectionRow[]> => {
+	const user = await requireAuth();
 	const clients = await db()
 		.select()
 		.from(oauthClients)
@@ -75,25 +75,22 @@ export const listConnections = query(v.string(), async (token): Promise<Connecti
 });
 
 /** Disconnect (revoke + delete) a Web AI connection. Only the owner can do this. */
-export const disconnectConnection = command(
-	v.tuple([v.string(), v.string()]),
-	async ([token, clientId]): Promise<{ ok: true }> => {
-		const user = await requireAuth(token);
-		const rows = await db()
-			.select()
-			.from(oauthClients)
-			.where(and(eq(oauthClients.clientId, clientId), eq(oauthClients.ownerId, user.id)));
-		if (rows.length === 0) throw new Error('Connection not found');
+export const disconnectConnection = command(v.string(), async (clientId): Promise<{ ok: true }> => {
+	const user = await requireAuth();
+	const rows = await db()
+		.select()
+		.from(oauthClients)
+		.where(and(eq(oauthClients.clientId, clientId), eq(oauthClients.ownerId, user.id)));
+	if (rows.length === 0) throw new Error('Connection not found');
 
-		// Revoke all tokens for this client
-		await db()
-			.update(oauthTokens)
-			.set({ revokedAt: new Date() })
-			.where(eq(oauthTokens.clientId, clientId));
+	// Revoke all tokens for this client
+	await db()
+		.update(oauthTokens)
+		.set({ revokedAt: new Date() })
+		.where(eq(oauthTokens.clientId, clientId));
 
-		// Delete the client row — frees the quota slot
-		await db().delete(oauthClients).where(eq(oauthClients.clientId, clientId));
+	// Delete the client row — frees the quota slot
+	await db().delete(oauthClients).where(eq(oauthClients.clientId, clientId));
 
-		return { ok: true };
-	}
-);
+	return { ok: true };
+});

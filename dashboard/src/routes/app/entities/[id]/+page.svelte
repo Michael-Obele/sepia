@@ -17,15 +17,15 @@
 		addRelation,
 		getEntities
 	} from '$lib/remote/index.js';
-	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { formatDate, importancePct, entityTypeBadge, TYPE_BADGE, truncate } from '$lib/format.js';
 	import EntityFormDialog from '$lib/components/entity-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { goto } from '$app/navigation';
 
-	let { params } = $props();
+	let { data, params } = $props();
+	const isAuthed = () => Boolean(data.user);
 	const entityId = $derived(params.id);
-	const entity = $derived(isAuthed() ? getEntityDetail([auth.token, entityId]) : null);
+	const entity = $derived(isAuthed() ? getEntityDetail(entityId) : null);
 
 	let showEdit = $state(false);
 	let editEntity = $state<Record<string, unknown> | null>(null);
@@ -51,19 +51,19 @@
 	});
 
 	async function del() {
-		await removeEntity([auth.token, entityId]);
+		await removeEntity(entityId);
 		toast.success('Entity deleted');
 		goto('/app/entities');
 	}
 
 	async function delMemory(id: string) {
-		await removeMemory([auth.token, id]);
+		await removeMemory(id);
 		toast.success('Memory deleted');
 		entity?.refresh();
 	}
 
 	async function delRelation(id: string) {
-		await removeRelation([auth.token, id]);
+		await removeRelation(id);
 		toast.success('Relation deleted');
 		entity?.refresh();
 	}
@@ -81,7 +81,7 @@
 			relResults = [];
 			return;
 		}
-		relResults = await getEntities([auth.token, { q: relSearch, limit: 8 }]);
+		relResults = await getEntities({ q: relSearch, limit: 8 });
 	}
 
 	async function createRelation() {
@@ -91,15 +91,19 @@
 		}
 		try {
 			if (relDirection === 'out') {
-				await addRelation([
-					auth.token,
-					{ source_id: entityId, target_id: relTarget, relation_type: relType, weight: relWeight }
-				]);
+				await addRelation({
+					source_id: entityId,
+					target_id: relTarget,
+					relation_type: relType,
+					weight: relWeight
+				});
 			} else {
-				await addRelation([
-					auth.token,
-					{ source_id: relTarget, target_id: entityId, relation_type: relType, weight: relWeight }
-				]);
+				await addRelation({
+					source_id: relTarget,
+					target_id: entityId,
+					relation_type: relType,
+					weight: relWeight
+				});
 			}
 			toast.success('Relation created');
 			relTarget = '';

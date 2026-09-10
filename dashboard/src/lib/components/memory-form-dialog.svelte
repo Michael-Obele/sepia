@@ -9,7 +9,6 @@
 	import { Search, X } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { addMemory, updateMemoryData, getEntities } from '$lib/remote/index.js';
-	import { auth } from '$lib/auth.svelte';
 	import { MEMORY_TYPES } from '@sepia/shared';
 
 	let {
@@ -57,7 +56,7 @@
 		}
 		searchingEntities = true;
 		try {
-			entityResults = await getEntities([auth.token, { q: entityQuery, namespace, limit: 8 }]);
+			entityResults = await getEntities({ q: entityQuery, namespace, limit: 8 });
 		} finally {
 			searchingEntities = false;
 		}
@@ -90,16 +89,12 @@
 			const tags = parseTags(tagsText);
 			if (memory?.id) {
 				await updateMemoryData([
-					auth.token,
 					String(memory.id),
 					{ content, type, importance, entity_ids: entityIds, tags }
 				]);
 				toast.success('Memory updated');
 			} else {
-				await addMemory([
-					auth.token,
-					{ content, type, importance, namespace, entity_ids: entityIds, tags }
-				]);
+				await addMemory({ content, type, importance, namespace, entity_ids: entityIds, tags });
 				toast.success('Memory created');
 			}
 			open = false;

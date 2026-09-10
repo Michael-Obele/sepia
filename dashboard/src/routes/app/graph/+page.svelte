@@ -7,7 +7,6 @@
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { getGraph, getFullGraph, getEntities, getStatsData } from '$lib/remote/index.js';
-	import { auth } from '$lib/auth.svelte';
 	import { importancePct } from '$lib/format.js';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -96,7 +95,7 @@
 			mode = 'focus';
 			rootId = focus;
 		} else if (!rootId) {
-			getStatsData(auth.token).then((s) => {
+			getStatsData().then((s) => {
 				if (s.top_entities[0]) rootId = s.top_entities[0].id;
 			});
 		}
@@ -107,10 +106,10 @@
 		error = '';
 		try {
 			if (mode === 'full') {
-				graphData = await getFullGraph(auth.token);
+				graphData = await getFullGraph();
 			} else {
 				if (!rootId) return;
-				graphData = await getGraph([auth.token, { start_id: rootId, depth }]);
+				graphData = await getGraph({ start_id: rootId, depth });
 			}
 		} catch (e) {
 			error = (e as Error)?.message ?? 'Failed to load graph';
@@ -215,7 +214,7 @@
 			rootResults = [];
 			return;
 		}
-		rootResults = await getEntities([auth.token, { q: rootSearch, limit: 8 }]);
+		rootResults = await getEntities({ q: rootSearch, limit: 8 });
 	}
 
 	function pickRoot(id: string, name: string) {

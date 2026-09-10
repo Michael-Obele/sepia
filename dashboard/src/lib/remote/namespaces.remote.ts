@@ -5,25 +5,19 @@ import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
 
 /** List namespaces with entity/memory/relation counts. */
-export const getNamespaces = query(v.string(), async (token) => {
-	const user = await requireAuth(token);
+export const getNamespaces = query(async () => {
+	const user = await requireAuth();
 	return listNamespaces(db(), user.id);
 });
 
 /** Create a namespace. */
-export const addNamespace = command(
-	v.tuple([v.string(), NamespaceInput]),
-	async ([token, input]) => {
-		const user = await requireAuth(token);
-		return createNamespace(db(), user.id, input.name, input.description, user.plan);
-	}
-);
+export const addNamespace = command(NamespaceInput, async (input) => {
+	const user = await requireAuth();
+	return createNamespace(db(), user.id, input.name, input.description, user.plan);
+});
 
 /** Delete a namespace (cascades entities → relations/memories). */
-export const removeNamespace = command(
-	v.tuple([v.string(), v.string()]),
-	async ([token, idOrName]) => {
-		const user = await requireAuth(token);
-		return deleteNamespace(db(), user.id, idOrName);
-	}
-);
+export const removeNamespace = command(v.string(), async (idOrName) => {
+	const user = await requireAuth();
+	return deleteNamespace(db(), user.id, idOrName);
+});

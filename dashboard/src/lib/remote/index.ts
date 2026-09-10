@@ -26,6 +26,6 @@ export { getGraph, getFullGraph } from './graph.remote';
 export { runConsolidate } from './consolidate.remote';
 export { exportAll } from './export.remote';
 export { getMe } from './account.remote';
-export { signIn, signUp } from './auth.remote';
+export { signIn, signUp, signOut, signOutOtherSessions } from './auth.remote';
 export { listApiKeys, createApiKey, deleteApiKey } from './api-keys.remote';
 export { listConnections, disconnectConnection } from './connections.remote';

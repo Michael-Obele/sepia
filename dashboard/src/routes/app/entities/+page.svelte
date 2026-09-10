@@ -7,7 +7,6 @@
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getEntities, getNamespaces, removeEntity } from '$lib/remote/index.js';
-	import { auth, isAuthed } from '$lib/auth.svelte';
 	import { importancePct, entityTypeBadge, truncate } from '$lib/format.js';
 	import EntityFormDialog from '$lib/components/entity-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
@@ -18,7 +17,10 @@
 	import { entitiesSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
 	import { onMount } from 'svelte';
 
-	const namespaces = $derived(isAuthed() ? getNamespaces(auth.token) : null);
+	let { data } = $props();
+	const isAuthed = () => Boolean(data.user);
+
+	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
 	let namespaceList = $state<string[]>([]);
 	$effect(() => {
 		namespaces?.then((ns) => (namespaceList = ns.map((n) => n.name)));
@@ -50,15 +52,12 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await getEntities([
-				auth.token,
-				{
-					q: params.q || undefined,
-					namespace: params.namespace === 'all' ? undefined : params.namespace,
-					type: params.type || undefined,
-					limit: PAGE_SIZE
-				}
-			]);
+			const result = await getEntities({
+				q: params.q || undefined,
+				namespace: params.namespace === 'all' ? undefined : params.namespace,
+				type: params.type || undefined,
+				limit: PAGE_SIZE
+			});
 			if (seq !== loadSeq) return;
 			entities = result;
 			hasMore = result.length >= PAGE_SIZE;
@@ -75,16 +74,13 @@
 		loadingMore = true;
 		error = '';
 		try {
-			const next = await getEntities([
-				auth.token,
-				{
-					q: params.q || undefined,
-					namespace: params.namespace === 'all' ? undefined : params.namespace,
-					type: params.type || undefined,
-					limit: PAGE_SIZE,
-					offset: entities.length
-				}
-			]);
+			const next = await getEntities({
+				q: params.q || undefined,
+				namespace: params.namespace === 'all' ? undefined : params.namespace,
+				type: params.type || undefined,
+				limit: PAGE_SIZE,
+				offset: entities.length
+			});
 			entities = [...entities, ...next];
 			hasMore = next.length >= PAGE_SIZE;
 		} catch (e) {
@@ -95,7 +91,7 @@
 	}
 
 	async function del(id: string) {
-		await removeEntity([auth.token, id]);
+		await removeEntity(id);
 		toast.success('Entity deleted');
 		load();
 	}

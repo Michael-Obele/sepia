@@ -9,9 +9,9 @@
 		CardHeader,
 		CardTitle
 	} from '$lib/components/ui/card/index.js';
-	import { login } from '$lib/auth.svelte';
 	import { signIn } from '$lib/remote/index.js';
 	import { toast } from 'svelte-sonner';
+	import { goto, invalidateAll } from '$app/navigation';
 
 	let showPassword = $state(false);
 </script>
@@ -32,12 +32,10 @@
 				{...signIn.enhance(async (form) => {
 					try {
 						if (await form.submit()) {
-							const result = signIn.result;
-							if (result?.token) {
-								login(result.token);
-							} else {
-								toast.error('Sign-in succeeded but no session token was returned.');
-							}
+							// The session cookie is set on the response — re-run the root
+							// layout load so `data.user` reflects it before rendering /app.
+							await invalidateAll();
+							await goto('/app');
 						}
 					} catch (e) {
 						toast.error((e as Error)?.message ?? 'Sign-in failed.');

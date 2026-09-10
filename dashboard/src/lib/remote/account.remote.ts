@@ -1,5 +1,4 @@
 import { query } from '$app/server';
-import * as v from 'valibot';
 import { getUsage, type UserRow } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
@@ -16,8 +15,8 @@ export interface MeResult {
 }
 
 /** Current account + usage (plan limits for the nudge). */
-export const getMe = query(v.string(), async (token): Promise<MeResult> => {
-	const user = await requireAuth(token);
+export const getMe = query(async (): Promise<MeResult> => {
+	const user = await requireAuth();
 	return {
 		user: {
 			id: user.id,
