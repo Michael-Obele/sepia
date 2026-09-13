@@ -1,19 +1,24 @@
 name: Release sepia-mcp
 
 # Publishes the self-contained `sepia-mcp` npm package whenever its source
-# (or the shared schemas it bundles) changes on main. Uses Changesets for
+# (or the shared schemas it bundles) changes on master. Uses Changesets for
 # versioning and npm provenance (OIDC) for supply-chain attestation.
 #
-# Provenance setup (one-time):
-#   1. npmjs.com → Access → Trusted Publishers → Add publisher:
-#      - Provider: GitHub Actions
-#      - Owner: <your-github-owner>
-#      - Repository: sepia
-#      - Workflow: release.yml
-#      - Environment: (leave empty for all)
-#   2. That's it — no NPM_TOKEN needed. `id-token: write` below lets npm
-#      mint a short-lived OIDC token and attach a provenance statement.
-#   (Alternative: set an NPM_TOKEN secret; provenance still works.)
+# Provenance setup (one-time, on npmjs.com):
+#   1. Go to https://www.npmjs.com/package/sepia-mcp → Settings
+#   2. Under "Trusted Publisher" → "Select your publisher" → click GitHub Actions
+#   3. Fill in:
+#        - Organization or user: Michael-Obele
+#        - Repository: sepia
+#        - Workflow filename: release.yml
+#        - Environment name: (leave empty)
+#        - Allowed actions: npm publish (check this box)
+#   4. Click "Set up connection"
+#   5. That's it — no NPM_TOKEN needed. `id-token: write` on the release job
+#      lets npm mint a short-lived OIDC token and attach a provenance
+#      attestation to the published package.
+#
+# Requirements: npm >= 11.5.1 (bundled with Bun 2.x+)
 
 on:
   push:
@@ -43,6 +48,10 @@ jobs:
   release:
     needs: check
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,13 +68,7 @@ jobs:
         run: |
           if ! ls .changeset/*.md 2>/dev/null | grep -qv README; then
             mkdir -p .changeset
-            cat > ".changeset/auto-bump-$(date +%s%N).md" <<'EOF'
-          ---
-          "sepia-mcp": patch
-          ---
-
-          Auto-bump: sepia-mcp (or @sepia/shared) changed
-          EOF
+            printf -- '---\n"sepia-mcp": patch\n---\n\nAuto-bump: sepia-mcp (or @sepia/shared) changed\n' > ".changeset/auto-bump-$(date +%s%N).md"
           fi
 
       - name: Version (Changesets)
@@ -74,15 +77,15 @@ jobs:
       - name: Build
         run: cd packages/sepia-mcp && bun run build
 
-      - name: Publish to npm (provenance)
+      - name: Publish to npm (provenance via OIDC)
         run: |
           cd packages/sepia-mcp
           bunx changeset publish --provenance
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
 
-      # Commit the version bump + changelog back to main so package.json stays
-      # in sync with what was published.
+      # Commit the version bump + changelog back to master so package.json
+      # stays in sync with what was published.
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
