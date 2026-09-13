@@ -20,8 +20,6 @@ If you're re-explaining preferences every chat or paying SaaS per memory, you're
 | **No memory contract** — you re-prompt every session    | **Instructions + always-on files + Skill** — auto-injected usage contract          | Remember without being asked         |
 | **No dashboard** — raw JSONL or vendor UI               | **SvelteKit dashboard** — search, graph, CRUD, conversations                       | Browse the same data agents write    |
 
-**Proof:** 7 tools cover what 17-tool servers split across admin, conversation, and search tools. **$0/mo** on Fly.io + Neon + Netlify free tiers (see [Costs](#costs)). M1–M5 shipped and verified in fresh chats with zero reminder prompts. [Benchmark: recall latency, TBD].
-
 ## Features
 
 | Feature                       | What it does                                                                                                                                                                                                                                                                                   |
@@ -119,7 +117,7 @@ A SvelteKit app at `sepia.svelte-apps.me` (SSR + remote functions on Netlify), t
 
 - 🏠 **Landing + pricing pages** — what Sepia is, how to install it, and the hosted plan
 - 🔍 Search all memories/entities; browse by namespace, type, importance — filters persist in the URL (back/forward works)
-- 🕸️ Interactive knowledge-graph view (cytoscape.js + dagre)
+- 🕸️ Interactive knowledge-graph view (layerchat)
 - ✏️ CRUD on memories, entities, and relations from the browser
 - 💬 **Conversations** — browse handoff digests by status (active/paused/done), resume or delete them
 - 📊 Stats: counts, top entities, recent memories, decay/consolidation status
@@ -244,8 +242,6 @@ fly deploy
 - `fly.toml` uses **scale-to-zero** (`min_machines_running = 0`): the free tier covers it, and cold starts (~1–2s for a thin Bun process) are acceptable for personal use. Set `min_machines_running = 1` (~$1–3/mo) if you want always-on.
 - ⚠️ Don't add a Fly HTTP smoke check — raw GETs confuse Streamable HTTP servers. If you want a health endpoint, expose `GET /healthz` with a TCP check.
 
-Verify with `curl -i https://sepia.fly.dev/mcp` (expect 401 without a token — correct) or `npx @modelcontextprotocol/inspector` (Streamable HTTP, `Authorization: Bearer <token>`).
-
 ### Dashboard → Netlify
 
 SvelteKit app (SSR + remote functions), built from the repo root (the workspace install must happen at root), published from `dashboard/build`. Attach the `sepia.svelte-apps.me` subdomain, and add the origin to the API's CORS allowlist in `src/index.ts`. Remote functions run in Netlify Functions (Node runtime) and talk to Neon directly via `@sepia/shared` — no CORS, no exposed API keys.
@@ -281,14 +277,13 @@ claude mcp add --transport http sepia https://sepia.fly.dev/mcp \
 
 ### Online AIs (Phase 2 — OAuth 2.1, verified mid-2026)
 
-| AI             | Where                                             | Gate                            |
-| -------------- | ------------------------------------------------- | ------------------------------- |
-| **Claude**     | Settings → Connectors → custom connector          | Every plan (Free = 1 connector) |
-| **Grok**       | grok.com/connectors → New Connector → Custom      | Paid plans                      |
-| **ChatGPT**    | Settings → Apps → Developer mode → Create         | Plus+, web only                 |
-| **Gemini**     | Settings → Connected Apps → Custom apps for Spark | Google AI Pro/Ultra (Spark)     |
-| **Perplexity** | Settings → Connectors → Custom → Remote           | Pro/Max/Enterprise              |
-| **Le Chat**    | Connectors → + Add Connector → Custom             | Free/paid                       |
+| AI             | Where                                        | Gate                            |
+| -------------- | -------------------------------------------- | ------------------------------- |
+| **Claude**     | Settings → Connectors → custom connector     | Every plan (Free = 1 connector) |
+| **Grok**       | grok.com/connectors → New Connector → Custom | Paid plans                      |
+| **ChatGPT**    | Settings → Apps → Developer mode → Create    | Plus+, web only                 |
+| **Perplexity** | Settings → Connectors → Custom → Remote      | Pro/Max/Enterprise              |
+| **Le Chat**    | Connectors → + Add Connector → Custom        | Free/paid                       |
 
 All connect from the **provider's cloud**, so the server must be publicly reachable (it is — Fly with `force_https`); Streamable HTTP is the universal transport.
 
@@ -327,36 +322,12 @@ Restart your editor to pick it up. Claude Code users can also invoke the skill o
 
 [![skills.sh](https://skills.sh/b/Michael-Obele/sepia)](https://skills.sh/Michael-Obele/sepia)
 
-## Roadmap
-
-| Milestone                                      | Exit criteria                                                                                                                                   |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| M1 — Server on Fly.io, Bearer auth, 7 tools ✅ | Inspector connects; CRUD works end-to-end against Neon                                                                                          |
-| M2 — Server instructions + skill ✅            | New chat in Claude Code recalls a memory with zero reminder prompts; skill works in Zed + Cursor; always-on files installed in VS Code + Cursor |
-| M3 — REST API + dashboard on Netlify ✅        | Browse/search/graph/CRUD at `sepia.svelte-apps.me`; stats load                                                                                  |
-| M4 — OAuth 2.1 (`@tmcp/auth`) ✅               | `codex mcp login` + inspector OAuth flow succeed; Claude connector works                                                                        |
-| M5 — Online AI rollout ✅                      | Grok + ChatGPT + Gemini connectors authorized; memory usable from web chats                                                                     |
-| M6 — Hosted accounts 🚧                        | Signup/sign-in, per-user namespaces, plan limits, API keys, per-user rate limits — built and smoke-tested, shipping soon                        |
-
-**Release gate:** everything in M1–M3 works in a fresh chat with zero reminder prompts (verified via instructions + always-on files + skill), and the dashboard shows the same data the agents write.
-
 ### Future enhancements
 
 - **Semantic search** — pgvector on Neon (paid) or a small embeddings service; `search` is already a single tool, so the engine swaps without schema changes
-- **Multi-user namespaces** — per-person namespaces + shared read-only access
 - **Memory ingestion API** — browser extension or CLI to dump chat transcripts into memory
-- **MCP resources** — expose the graph as `memory://` resources for subscription-capable clients
-- **Publishing** — the skill to skills.sh; the server to an MCP marketplace
 
-## Costs
-
-| Item                                        | Cost                                                   |
-| ------------------------------------------- | ------------------------------------------------------ |
-| Fly.io (shared-cpu 256MB VM, scale-to-zero) | **$0** (free tier)                                     |
-| Netlify (dashboard SPA)                     | **$0** (~20–60 of 300 credits/mo)                      |
-| Neon Postgres free tier                     | **$0** (0.5 GB, 100 CU-hours — fine for ~10K memories) |
-| Domains                                     | $0–12/yr                                               |
-| **Total**                                   | **$0/mo** (always-on variant: ~$1–3/mo)                |
+##
 
 ## Name
 
