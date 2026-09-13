@@ -25,6 +25,7 @@ on:
       - "packages/sepia-mcp/**"
       - "packages/shared/src/**"
       - ".changeset/**"
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: write
