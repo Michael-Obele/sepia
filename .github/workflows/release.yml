@@ -60,12 +60,12 @@ jobs:
           if ! ls .changeset/*.md 2>/dev/null | grep -qv README; then
             mkdir -p .changeset
             cat > ".changeset/auto-bump-$(date +%s%N).md" <<'EOF'
----
-"sepia-mcp": patch
----
+          ---
+          "sepia-mcp": patch
+          ---
 
-Auto-bump: sepia-mcp (or @sepia/shared) changed
-EOF
+          Auto-bump: sepia-mcp (or @sepia/shared) changed
+          EOF
           fi
 
       - name: Version (Changesets)
