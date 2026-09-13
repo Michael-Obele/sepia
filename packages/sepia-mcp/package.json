@@ -1,0 +1,38 @@
+{
+  "name": "sepia-mcp",
+  "version": "0.1.0",
+  "description": "Self-contained MCP server for Sepia — a personal knowledge-graph memory server. Talks to the Sepia REST API (SEPIA_URL + SEPIA_API_KEY); stdio or HTTP transport.",
+  "type": "module",
+  "bin": {
+    "sepia-mcp": "./dist/index.js"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build ./src/index.ts --target=bun --outdir=dist --external tmcp --external @tmcp/transport-http --external valibot && chmod +x dist/index.js",
+    "check": "tsc --noEmit",
+    "dev": "bun --hot ./src/index.ts"
+  },
+  "dependencies": {
+    "@tmcp/transport-http": "^0.9.0",
+    "tmcp": "^1.20.0",
+    "valibot": "^1.4.2"
+  },
+  "devDependencies": {
+    "@sepia/shared": "workspace:*"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "keywords": [
+    "mcp",
+    "memory",
+    "knowledge-graph",
+    "sepia"
+  ],
+  "license": "MIT"
+}

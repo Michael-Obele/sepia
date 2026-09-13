@@ -82,7 +82,10 @@ export async function search(
       entConditions.push(eq(entities.namespaceId, nsId));
     }
     if (opts.tags !== undefined && opts.tags.length) {
-      const tagArray = sql`ARRAY[${sql.join(opts.tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+      const tagArray = sql`ARRAY[${sql.join(
+        opts.tags.map((t) => sql`${t}`),
+        sql`, `,
+      )}]::text[]`;
       memConditions.push(sql`${memories.tags} @> ${tagArray}`);
       entConditions.push(sql`${entities.tags} @> ${tagArray}`);
     }
@@ -145,11 +148,20 @@ export async function search(
   // WORD_RE so they are alphanumeric-only — no LIKE metacharacters to escape.
   // Falls back to the phrase filter when the query has no words (e.g. "!!!").
   const wordArray = words.length
-    ? sql`ARRAY[${sql.join(words.map((w) => sql`${`%${w}%`}`), sql`, `)}]::text[]`
+    ? sql`ARRAY[${sql.join(
+        words.map((w) => sql`${`%${w}%`}`),
+        sql`, `,
+      )}]::text[]`
     : null;
+  // Searchable text for a memory = content + metadata (JSONB cast to text).
+  // Conversation digests store their human-readable `title`, `conversation_id`
+  // and `source_ai` in metadata, so a digest is only findable by name if we
+  // index metadata too — content alone misses digests whose title isn't
+  // duplicated verbatim in the summary.
+  const memText = sql`(m.content || ' ' || COALESCE(m.metadata::text, ''))`;
   const memWordFilter = wordArray
-    ? sql`AND m.content ILIKE ALL (${wordArray})`
-    : sql`AND m.content ILIKE ${like} ESCAPE '\\'`;
+    ? sql`AND ${memText} ILIKE ALL (${wordArray})`
+    : sql`AND ${memText} ILIKE ${like} ESCAPE '\\'`;
   const entWordFilter = wordArray
     ? sql`(e.name ILIKE ALL (${wordArray}) OR e.summary ILIKE ALL (${wordArray}))`
     : sql`(e.name ILIKE ${like} ESCAPE '\\' OR e.summary ILIKE ${like} ESCAPE '\\')`;
@@ -169,7 +181,10 @@ export async function search(
     entWhere.push(sql`e.type = ${opts.type}`);
   }
   if (opts.tags !== undefined && opts.tags.length) {
-    const tagArray = sql`ARRAY[${sql.join(opts.tags.map((t) => sql`${t}`), sql`, `)}]::text[]`;
+    const tagArray = sql`ARRAY[${sql.join(
+      opts.tags.map((t) => sql`${t}`),
+      sql`, `,
+    )}]::text[]`;
     memWhere.push(sql`m.tags @> ${tagArray}`);
     entWhere.push(sql`e.tags @> ${tagArray}`);
   }
@@ -181,11 +196,11 @@ export async function search(
     : sql``;
 
   const res = await db.execute(sql`
-    SELECT 'memory' AS kind, m.id, m.content AS text, m.type, m.importance, m.updated_at, n.name AS namespace
+    SELECT 'memory' AS kind, m.id, m.content AS text, COALESCE(m.metadata::text, '') AS meta, m.type, m.importance, m.updated_at, n.name AS namespace
       FROM ${memories} m JOIN ${namespaces} n ON n.id = m.namespace_id
       WHERE NOT m.archived ${memWordFilter} ${memWhereSql}
     UNION ALL
-    SELECT 'entity' AS kind, e.id, e.name AS text, e.type, e.importance, e.updated_at, n.name AS namespace
+    SELECT 'entity' AS kind, e.id, e.name AS text, '' AS meta, e.type, e.importance, e.updated_at, n.name AS namespace
       FROM ${entities} e JOIN ${namespaces} n ON n.id = e.namespace_id
       WHERE ${entWordFilter} ${entWhereSql}
     ORDER BY updated_at DESC
@@ -201,7 +216,11 @@ export async function search(
     if (seen.has(key)) continue;
     seen.add(key);
     const text = String(row.text);
-    const score = matchScore(text, words, phrase);
+    const meta = String(row.meta ?? "");
+    // Score against content + metadata so a digest ranks when its title
+    // (metadata.title) or conversation_id matches, even if the summary text
+    // doesn't contain those exact words.
+    const score = matchScore(`${text} ${meta}`, words, phrase);
     hits.push({
       kind,
       id: String(row.id),

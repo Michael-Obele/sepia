@@ -143,6 +143,58 @@ export const MemoryUpdateInput = v.object({
   tags: v.optional(tagsSchema),
 });
 
+/** Batch-update entities — where filters + update fields + optional limit. */
+export const EntityBatchInput = v.object({
+  /** filters — at least one of type/namespace/query required */
+  where: v.pipe(
+    v.object({
+      type: v.optional(v.string()),
+      namespace: v.optional(v.string()),
+      query: v.optional(v.string()),
+    }),
+    v.description(
+      "batch_update: filters — at least one of type/namespace/query required",
+    ),
+  ),
+  update: EntityUpdateInput,
+  batch_limit: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(1),
+      v.maxValue(500),
+      v.description("batch_update: max rows to touch (default 100, max 500)"),
+    ),
+    100,
+  ),
+});
+
+/** Batch-update memories — where filters + update fields + optional limit. */
+export const MemoryBatchInput = v.object({
+  /** filters — at least one of type/namespace/tags/importance_min/q required */
+  where: v.pipe(
+    v.object({
+      type: v.optional(v.picklist(MEMORY_TYPES)),
+      namespace: v.optional(v.string()),
+      tags: v.optional(tagsSchema),
+      importance_min: v.optional(importanceSchema),
+      q: v.optional(v.string()),
+    }),
+    v.description(
+      "batch_update: filters — at least one of type/namespace/tags/importance_min/q required",
+    ),
+  ),
+  update: MemoryUpdateInput,
+  batch_limit: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(1),
+      v.maxValue(500),
+      v.description("batch_update: max rows to touch (default 100, max 500)"),
+    ),
+    100,
+  ),
+});
+
 /** One entity referenced by a conversation (find-or-create on ingest). */
 export const ConversationEntity = v.object({
   name: v.pipe(v.string(), v.minLength(1), v.maxLength(200)),

@@ -15,6 +15,7 @@ WORKDIR /app
 # 1) Workspace manifests + lockfile first → Docker layer caching.
 COPY package.json bun.lock ./
 COPY packages/shared/package.json packages/shared/
+COPY packages/sepia-mcp/package.json packages/sepia-mcp/
 COPY dashboard/package.json dashboard/
 
 # 2) Install all workspace deps (filtered installs skip the root's own deps).

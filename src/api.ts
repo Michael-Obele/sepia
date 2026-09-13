@@ -11,11 +11,13 @@ import {
   updateEntity,
   deleteEntity,
   findEntities,
+  batchUpdateEntities,
   createMemory,
   getMemory,
   updateMemory,
   deleteMemory,
   queryMemories,
+  batchUpdateMemories,
   ingestConversation,
   getConversation,
   createRelation,
@@ -31,8 +33,10 @@ import {
   NamespaceInput,
   EntityInput,
   EntityUpdateInput,
+  EntityBatchInput,
   MemoryInput,
   MemoryUpdateInput,
+  MemoryBatchInput,
   ConversationInput,
   RelationInput,
   SearchInput,
@@ -122,6 +126,16 @@ function boolParam(value: string | null, fallback: boolean): boolean {
   return value === "true" || value === "1";
 }
 
+/** Parse a comma-separated `tags` query param into an array (or undefined). */
+function tagsParam(value: string | null): string[] | undefined {
+  if (value === null || value === "") return undefined;
+  const tags = value
+    .split(",")
+    .map((t) => t.trim().toLowerCase())
+    .filter((t) => t.length > 0);
+  return tags.length ? tags : undefined;
+}
+
 /** Validate a body against a Valibot schema; throw 422 on failure. */
 function validate<T extends v.GenericSchema>(
   schema: T,
@@ -208,6 +222,26 @@ export async function handleApi(
         cors,
       );
     }
+    const namespaceMatch = path.match(/^\/api\/namespaces\/([^/]+)$/);
+    if (namespaceMatch) {
+      const idOrName = namespaceMatch[1]
+        ? decodeURIComponent(namespaceMatch[1])
+        : "";
+      if (!idOrName)
+        return error("invalid_input", "namespace id or name is required", 422);
+      if (method === "GET")
+        return json(
+          { namespace: await getNamespace(sql, ownerId, idOrName) },
+          200,
+          cors,
+        );
+      if (method === "DELETE")
+        return json(
+          { deleted: await deleteNamespace(sql, ownerId, idOrName) },
+          200,
+          cors,
+        );
+    }
 
     // ── Entities ──────────────────────────────────────────────────────────
     if (path === "/api/entities" && method === "GET") {
@@ -229,6 +263,24 @@ export async function handleApi(
       return json(
         { entity: await createEntity(sql, ownerId, namespace, input) },
         201,
+        cors,
+      );
+    }
+    if (path === "/api/entities/batch" && method === "POST") {
+      const input = validate(EntityBatchInput, await readBody(request));
+      return json(
+        {
+          count: (
+            await batchUpdateEntities(
+              sql,
+              ownerId,
+              input.where,
+              input.update,
+              input.batch_limit,
+            )
+          ).count,
+        },
+        200,
         cors,
       );
     }
@@ -269,6 +321,7 @@ export async function handleApi(
           ? numParam(url.searchParams.get("importance_min"), 0)
           : undefined,
         archived: boolParam(url.searchParams.get("archived"), false),
+        tags: tagsParam(url.searchParams.get("tags")),
         limit: numParam(url.searchParams.get("limit"), 20),
       });
       return json({ count: memories.length, memories }, 200, cors);
@@ -280,6 +333,24 @@ export async function handleApi(
       return json(
         { memory: await createMemory(sql, ownerId, input, source, plan) },
         201,
+        cors,
+      );
+    }
+    if (path === "/api/memories/batch" && method === "POST") {
+      const input = validate(MemoryBatchInput, await readBody(request));
+      return json(
+        {
+          count: (
+            await batchUpdateMemories(
+              sql,
+              ownerId,
+              input.where,
+              input.update,
+              input.batch_limit,
+            )
+          ).count,
+        },
+        200,
         cors,
       );
     }
@@ -363,6 +434,7 @@ export async function handleApi(
         q: url.searchParams.get("q") ?? "",
         namespace: url.searchParams.get("namespace") ?? undefined,
         type: url.searchParams.get("type") ?? undefined,
+        tags: tagsParam(url.searchParams.get("tags")),
         limit: numParam(url.searchParams.get("limit"), 10),
       });
       const results = await search(sql, ownerId, input);

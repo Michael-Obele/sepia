@@ -1,0 +1,94 @@
+name: Release sepia-mcp
+
+# Publishes the self-contained `sepia-mcp` npm package whenever its source
+# (or the shared schemas it bundles) changes on main. Uses Changesets for
+# versioning and npm provenance (OIDC) for supply-chain attestation.
+#
+# Provenance setup (one-time):
+#   1. npmjs.com → Access → Trusted Publishers → Add publisher:
+#      - Provider: GitHub Actions
+#      - Owner: <your-github-owner>
+#      - Repository: sepia
+#      - Workflow: release.yml
+#      - Environment: (leave empty for all)
+#   2. That's it — no NPM_TOKEN needed. `id-token: write` below lets npm
+#      mint a short-lived OIDC token and attach a provenance statement.
+#   (Alternative: set an NPM_TOKEN secret; provenance still works.)
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "packages/sepia-mcp/**"
+      - "packages/shared/src/**"
+      - ".changeset/**"
+
+permissions:
+  contents: write
+  id-token: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Type-check
+        run: cd packages/sepia-mcp && bun run check
+      - name: Build
+        run: cd packages/sepia-mcp && bun run build
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+
+      - run: bun install --frozen-lockfile
+
+      # Auto-bump: if the package (or the shared schemas it bundles) changed
+      # but no changeset was added, create a patch changeset so every edit to
+      # that folder ships a new npm version — the MCP must track the app.
+      - name: Auto-create patch changeset if missing
+        run: |
+          if ! ls .changeset/*.md 2>/dev/null | grep -qv README; then
+            mkdir -p .changeset
+            cat > ".changeset/auto-bump-$(date +%s%N).md" <<'EOF'
+---
+"sepia-mcp": patch
+---
+
+Auto-bump: sepia-mcp (or @sepia/shared) changed
+EOF
+          fi
+
+      - name: Version (Changesets)
+        run: bunx changeset version
+
+      - name: Build
+        run: cd packages/sepia-mcp && bun run build
+
+      - name: Publish to npm (provenance)
+        run: |
+          cd packages/sepia-mcp
+          bunx changeset publish --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      # Commit the version bump + changelog back to main so package.json stays
+      # in sync with what was published.
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): bump sepia-mcp"
+            git push
+          fi
