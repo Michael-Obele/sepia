@@ -41,3 +41,6 @@ plan/
 .vscode/mcp.json
 .playwright-mcp/
 docs/superpowers/
+
+# local npm auth (never commit tokens)
+packages/sepia-mcp/.npmrc
