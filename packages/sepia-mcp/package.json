@@ -3,6 +3,11 @@
   "version": "0.2.0",
   "description": "Self-contained MCP server for Sepia — a personal knowledge-graph memory server. Talks to the Sepia REST API (SEPIA_URL + SEPIA_API_KEY); stdio or HTTP transport.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Michael-Obele/sepia",
+    "directory": "packages/sepia-mcp"
+  },
   "bin": "./dist/index.js",
   "exports": {
     ".": "./dist/index.js"
