@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
+  <title id="title">Sepia — remember everything</title>
+  <desc id="desc">Dark sepia banner with a glowing knowledge-graph motif</desc>
+  <rect width="1200" height="400" rx="16" fill="#17120c"/>
+  <radialGradient id="sepiaglow" cx="50%" cy="52%" r="38%">
+    <stop offset="0%" stop-color="#d4a373" stop-opacity="0.38"/>
+    <stop offset="50%" stop-color="#d4a373" stop-opacity="0.10"/>
+    <stop offset="100%" stop-color="#17120c" stop-opacity="0"/>
+  </radialGradient>
+  <rect width="1200" height="400" rx="16" fill="url(#sepiaglow)"/>
+  <!-- knowledge-graph motif -->
+  <g stroke="#d4a373" stroke-width="1.4" opacity="0.55">
+    <line x1="600" y1="150" x2="540" y2="110"/>
+    <line x1="600" y1="150" x2="660" y2="108"/>
+    <line x1="600" y1="150" x2="528" y2="178"/>
+    <line x1="600" y1="150" x2="672" y2="178"/>
+    <line x1="600" y1="150" x2="600" y2="88"/>
+    <line x1="540" y1="110" x2="600" y2="88"/>
+    <line x1="660" y1="108" x2="600" y2="88"/>
+  </g>
+  <g>
+    <circle cx="600" cy="150" r="30" fill="#f5e6c8" stroke="#d4a373" stroke-width="1.6"/>
+    <circle cx="600" cy="150" r="30" fill="#d4a373" opacity="0.22"/>
+    <circle cx="600" cy="150" r="10" fill="#704214"/>
+    <circle cx="540" cy="110" r="12" fill="#e9d5b3" stroke="#d4a373" stroke-width="1.2"/>
+    <circle cx="660" cy="108" r="12" fill="#e9d5b3" stroke="#d4a373" stroke-width="1.2"/>
+    <circle cx="528" cy="178" r="10" fill="#e9d5b3" stroke="#d4a373" stroke-width="1.2"/>
+    <circle cx="672" cy="178" r="10" fill="#e9d5b3" stroke="#d4a373" stroke-width="1.2"/>
+    <circle cx="600" cy="88" r="9" fill="#d4a373" opacity="0.9"/>
+  </g>
+  <!-- ink underline -->
+  <rect x="560" y="208" width="80" height="4" rx="2" fill="#d4a373" opacity="0.6"/>
+  <text x="600" y="310" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="44" font-weight="700" fill="#faf6ef" letter-spacing="-0.02em">sepia</text>
+  <text x="600" y="336" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="15" font-weight="400" fill="#a8a29e" letter-spacing="0.08em">remember everything  ·  self-hosted memory for AI agents</text>
+  <text x="600" y="359" text-anchor="middle" font-family="system-ui, -apple-system, sans-serif" font-size="11" font-weight="400" fill="#78716c" letter-spacing="0.06em">7 tools  ·  dashboard  ·  skill  ·  $0/mo</text>
+</svg>

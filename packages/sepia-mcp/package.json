@@ -1,6 +1,6 @@
 {
   "name": "sepia-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Self-contained MCP server for Sepia — a personal knowledge-graph memory server. Talks to the Sepia REST API (SEPIA_URL + SEPIA_API_KEY); stdio or HTTP transport.",
   "type": "module",
   "bin": {
@@ -13,7 +13,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun build ./src/index.ts --target=bun --outdir=dist --external tmcp --external @tmcp/transport-http --external valibot && chmod +x dist/index.js",
+    "build": "bun build ./src/index.ts --target=node --outdir=dist --external tmcp --external @tmcp/transport-http --external valibot && chmod +x dist/index.js",
     "check": "tsc --noEmit",
     "dev": "bun --hot ./src/index.ts"
   },

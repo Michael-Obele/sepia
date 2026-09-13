@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * sepia-mcp — self-contained MCP server for Sepia.
  *
@@ -128,20 +129,50 @@ async function startStdio(server: McpServer<any, any>) {
 async function startHttp(server: McpServer<any, any>, port: number) {
   const { HttpTransport } = await import("@tmcp/transport-http");
   const transport = new HttpTransport(server, { path: "/mcp" });
-  const bun = await import("bun");
-  bun.serve({
-    port,
-    async fetch(request: Request) {
-      const url = new URL(request.url);
-      if (url.pathname === "/mcp") {
-        const response = await transport.respond(request, {});
-        if (response != null) return response;
-        return new Response("no response", { status: 202 });
+  const http = await import("node:http");
+
+  http
+    .createServer(async (req, res) => {
+      const url = new URL(
+        req.url ?? "/",
+        `http://${req.headers.host ?? "localhost"}`,
+      );
+      if (url.pathname !== "/mcp") {
+        res.writeHead(404);
+        res.end("not found");
+        return;
       }
-      return new Response("not found", { status: 404 });
-    },
-  });
-  console.error(`[sepia-mcp] HTTP transport listening on :${port}/mcp`);
+      // Convert Node.js IncomingMessage → standard Request for HttpTransport
+      const body = await new Promise<string>((resolve) => {
+        const chunks: Buffer[] = [];
+        req.on("data", (c: Buffer) => chunks.push(c));
+        req.on("end", () => resolve(Buffer.concat(chunks).toString()));
+      });
+      const request = new Request(url.toString(), {
+        method: req.method,
+        headers: req.headers as Record<string, string>,
+        body: body || undefined,
+      });
+      try {
+        const response = await transport.respond(request, {});
+        if (response != null) {
+          res.writeHead(response.status, Object.fromEntries(response.headers));
+          const responseBody = await response.text();
+          res.end(responseBody);
+        } else {
+          res.writeHead(202);
+          res.end("no response");
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[sepia-mcp] error:", msg);
+        res.writeHead(500);
+        res.end(msg);
+      }
+    })
+    .listen(port, () => {
+      console.error(`[sepia-mcp] HTTP transport listening on :${port}/mcp`);
+    });
 }
 
 const isHttp =

@@ -1,24 +1,26 @@
-# Sepia — Memory MCP Server
+# Sepia
 
-[![License: AGPL-3.0](https://img.shields.io/github/license/Michael-Obele/sepia)](LICENSE)
+[![Sepia — remember everything banner](banner.svg)](banner.svg)
 
-> **7 tools. 1 purpose: remember everything so your AI doesn't forget — and never needs to be reminded.**
+[![License: AGPL-3.0](https://img.shields.io/github/license/Michael-Obele/sepia)](LICENSE) [![npm version](https://img.shields.io/npm/v/sepia-mcp?label=sepia-mcp&color=cb0000)](https://www.npmjs.com/package/sepia-mcp) [![npm downloads](https://img.shields.io/npm/dm/sepia-mcp)](https://www.npmjs.com/package/sepia-mcp) [![Bun](https://img.shields.io/badge/Bun-1.x-f9f1e1?logo=bun&logoColor=black)](https://bun.sh) [![Svelte 5](https://img.shields.io/badge/Svelte-5-ff3e00?logo=svelte&logoColor=white)](https://svelte.dev) [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org) [![GitHub stars](https://img.shields.io/github/stars/Michael-Obele/sepia?style=social)](https://github.com/Michael-Obele/sepia)
 
-A personal, self-hosted **remote knowledge-graph memory server for AI coding agents** — a drop-in upgrade from the official local-file memory MCP server, with:
+_remember everything — self-hosted memory for AI agents_
+Turn every session into durable memory. One server, 7 tools, $0/mo.
 
-- **7 focused MCP tools** over Streamable HTTP (not 17)
-- **MCP server instructions** — a usage contract auto-injected into the model's system prompt, so your AI recalls and persists _without you asking_
-- **Always-on editor instructions** — per-editor instruction files (VS Code prompts, Cursor rules, CLAUDE.md, AGENTS.md) injected into **every** session, so no editor can skip memory
-- **A bundled Agent Skill** (`SKILL.md`, open standard) that teaches any editor the full usage guide
-- **A web dashboard** with search, CRUD, stats, and an interactive knowledge-graph view
-- **Out-of-the-box support for online AIs** that speak MCP: Grok, ChatGPT, Claude, Gemini, Perplexity
-- **$0/month** on the free tiers of Fly.io + Neon Postgres + Netlify
+[Quick start](#getting-started) · [Why Sepia](#why-sepia) · [The 7 Tools](#the-7-tools) · [Architecture](#architecture) · [Connect an AI](#connect-clients) · [Dashboard](#the-dashboard) · [Costs](#costs)
 
-## Why this exists
+## Why Sepia
 
-The [official MCP memory server](https://github.com/modelcontextprotocol/servers) is a single local JSONL file — no remote access, no search across sessions, no scaling. The remote alternatives are either overkill (17 tools, RBAC, audit trails, team workflows), gone (mem0 went hosted-only SaaS), or local-first (basic-memory, claude-mem).
+If you're re-explaining preferences every chat or paying SaaS per memory, you're overpaying.
 
-**Nobody ships a self-hosted, single-user, remote knowledge-graph memory server with a dashboard and a skill.** That's the gap this project fills — the Goldilocks version, on infrastructure you control.
+| What hurts with alternatives                            | What Sepia gives you                                                               | Outcome                              |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
+| **Local JSONL** — no remote, no search across sessions  | **Remote knowledge graph** — entities, relations, memories with importance scoring | Recall from any editor or web AI     |
+| **17-tool SaaS** + RBAC, audit trails, per-seat pricing | **7 tools, not 17** — `action` enums, pure-SQL `consolidate`, no team bloat        | Small LLM surface, $0/mo self-hosted |
+| **No memory contract** — you re-prompt every session    | **Instructions + always-on files + Skill** — auto-injected usage contract          | Remember without being asked         |
+| **No dashboard** — raw JSONL or vendor UI               | **SvelteKit dashboard** — search, graph, CRUD, conversations                       | Browse the same data agents write    |
+
+**Proof:** 7 tools cover what 17-tool servers split across admin, conversation, and search tools. **$0/mo** on Fly.io + Neon + Netlify free tiers (see [Costs](#costs)). M1–M5 shipped and verified in fresh chats with zero reminder prompts. [Benchmark: recall latency, TBD].
 
 ## Features
 
@@ -86,6 +88,8 @@ flowchart LR
 ```
 
 ## The 7 Tools
+
+7 tools, not 17 — resource-oriented (`action` enum).
 
 | #   | Tool               | Actions                                                  | What it does                                                                 |
 | --- | ------------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -177,6 +181,22 @@ cp .env.example .env # set DATABASE_URL + MCP_BEARER_TOKEN (see below)
 bun run dev          # starts the server (MCP on /mcp, REST on /api/*)
 bun run dev:dashboard
 ```
+
+### Your first memory
+
+```bash
+# Save a fact (same auth as /mcp)
+curl -X POST http://localhost:8080/api/memories \
+  -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "User prefers Bun over Node", "type": "preference", "importance": 0.8}'
+
+# Recall it
+curl "http://localhost:8080/api/search?q=Bun+preference" \
+  -H "Authorization: Bearer $MCP_BEARER_TOKEN"
+```
+
+No extra flags needed — `search` covers memories, entities, and relations. To [connect an AI](#connect-clients), point it at `/mcp` with the same bearer token.
 
 ### Environment variables
 
@@ -337,6 +357,10 @@ Restart your editor to pick it up. Claude Code users can also invoke the skill o
 | Neon Postgres free tier                     | **$0** (0.5 GB, 100 CU-hours — fine for ~10K memories) |
 | Domains                                     | $0–12/yr                                               |
 | **Total**                                   | **$0/mo** (always-on variant: ~$1–3/mo)                |
+
+## Name
+
+**Sepia** — the reddish-brown ink from cuttlefish, prized for archival writing that doesn't fade. Memory as ink: write once, recall for years.
 
 ## License
 
