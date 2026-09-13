@@ -86,11 +86,13 @@ jobs:
       - name: Build
         run: cd packages/sepia-mcp && bun run build
 
-      # Publish via npm (not bunx) so OIDC trusted publishing works.
-      # npm >= 11.5.1 auto-detects GitHub Actions OIDC, authenticates
-      # without any token, and attaches provenance automatically.
+      # Publish via npm directly — simpler than changeset publish in CI.
+      # The setup-node step has configured npm for OIDC, so this
+      # authenticates automatically and attaches provenance.
       - name: Publish to npm (OIDC trusted publishing)
-        run: npx changeset publish
+        run: |
+          cd packages/sepia-mcp
+          npm publish --access public
         env:
           NPM_CONFIG_PROVENANCE: "true"
 
