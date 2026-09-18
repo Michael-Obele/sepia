@@ -78,6 +78,16 @@ if [ -d "$HOME/.claude" ]; then
   append_section "$HOME/.claude/CLAUDE.md" "$SRC/always-on/claude.md"
 fi
 
+# Codex — user-global AGENTS.md.
+if [ -d "$HOME/.codex" ]; then
+  append_section "$HOME/.codex/AGENTS.md" "$SRC/always-on/agents.md"
+fi
+
+# OpenCode — user-global AGENTS.md.
+if [ -d "$HOME/.config/opencode" ]; then
+  append_section "$HOME/.config/opencode/AGENTS.md" "$SRC/always-on/agents.md"
+fi
+
 # AGENTS.md (Codex, Cursor, Copilot, any agentsmd-compliant agent) — install
 # into the current repo's AGENTS.md if one exists, else print the snippet.
 if [ -f "AGENTS.md" ]; then

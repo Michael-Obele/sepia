@@ -11,7 +11,10 @@
  * NOTE: this stamps ONLY the shared docs version. The `version:` keys in
  * SKILL.md / vscode / cursor frontmatter are those files' OWN versions
  * (managed by the skill/instruction system) — they are deliberately left
- * alone so the two version concepts never conflate.
+ * alone so the two version concepts never conflate. vscode.instructions.md
+ * and cursor.mdc DO get the `sepia-docs-version` comment stamped into their
+ * body: install-skill.sh copies them whole (no block-marker section), so the
+ * comment is the only staleness signal check-docs-version.ts can read.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
@@ -27,6 +30,10 @@ const COMMENT = [
   "skills/sepia/always-on/agents.md",
   "skills/sepia/always-on/opencode.md",
   "skills/sepia/always-on/zed.md",
+  // Copied whole-file by install-skill.sh — no block markers, so this comment
+  // is their only staleness signal (their `version:` frontmatter is their own).
+  "skills/sepia/always-on/vscode.instructions.md",
+  "skills/sepia/always-on/cursor.mdc",
   "AGENTS.md",
 ];
 

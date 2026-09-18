@@ -131,12 +131,24 @@ check("tools capability advertised", Boolean(init.capabilities?.tools));
 
 await rpc("notifications/initialized", undefined, { notify: true });
 
-const listed = (await rpc("tools/list")) as { tools?: Array<{ name: string }> };
+const listed = (await rpc("tools/list")) as {
+  tools?: Array<{ name: string; inputSchema?: { required?: string[] } }>;
+};
 const names = (listed.tools ?? []).map((t) => t.name);
 for (const expected of TOOL_NAMES) {
   check(`tool: ${expected}`, names.includes(expected));
 }
 check("exactly 7 tools", names.length === 7, names.length.toString());
+
+// `prune_memories` deletes data, so `confirm` must be REQUIRED in the
+// advertised schema — not merely documented. A weak model reaching for it as
+// a "save" action is exactly what the rename + gate exist to stop.
+const prune = listed.tools?.find((t) => t.name === "prune_memories");
+check(
+  "prune_memories requires confirm in its schema",
+  prune?.inputSchema?.required?.includes("confirm") === true,
+  JSON.stringify(prune?.inputSchema?.required ?? null),
+);
 
 // ── 3. CRUD scenario (requires DATABASE_URL) ────────────────────────────────
 if (hasDb) {
