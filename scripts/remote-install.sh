@@ -13,6 +13,12 @@ BASE="${SEPIA_BASE:-https://sepia.fly.dev}"
 TOKEN="${SEPIA_TOKEN:-${MCP_BEARER_TOKEN:-}}"
 SCOPE="${SEPIA_SCOPE:-both}" # both | global | repo — "global" = user-level only, one-and-done
 
+# Served docs version — printed with each install so a stale copy is obvious
+# (`/version` is also what check-docs-version.ts compares against).
+SERVED_VERSION="$(curl -fsSL "$BASE/version" 2>/dev/null \
+  | sed -n 's/.*"docs_version":"\([^"]*\)".*/\1/p' | sed -n '1p' || true)"
+SERVED_VERSION="${SERVED_VERSION:-unknown}"
+
 install_to() {
   local dir="$1"
   mkdir -p "$dir/references"
@@ -21,25 +27,72 @@ install_to() {
   echo "installed → $dir"
 }
 
-# Append a section to a file idempotently (marker-based, never duplicates).
-append_section() {
-  local file="$1" url="$2" marker="$3"
-  if [ -f "$file" ] && grep -qF "$marker" "$file"; then
-    echo "already present → $file"
-    return
-  fi
-  mkdir -p "$(dirname "$file")"
-  if ! curl -fsSL "$url" -o /tmp/_sepia_append 2>/dev/null; then
+# Read the sepia-docs-version marker from a file (empty if absent).
+section_version() {
+  awk 'match($0, /sepia-docs-version: [0-9][0-9.]*/) { print substr($0, RSTART+20, RLENGTH-20); exit }' \
+    "$1" 2>/dev/null || true
+}
+
+# Replace the sepia block in a file, idempotently - MIRRORS install-skill.sh
+# (`append_section`): the block sits between <!-- sepia:start --> and
+# <!-- sepia:end -->, so re-running UPDATES it in place instead of skipping.
+# NOTE: this function used to bail out as soon as the heading was present,
+# which meant an editor that had EVER installed the block kept its old text
+# forever - a new docs version never reached it. Keep this in sync with
+# scripts/install-skill.sh.
+replace_section() {
+  local file="$1" url="$2"
+  local start_marker="<!-- sepia:start -->"
+  local end_marker="<!-- sepia:end -->"
+  local heading="## Sepia memory (always-on)"
+  local payload=/tmp/_sepia_section
+
+  if ! curl -fsSL "$url" -o "$payload" 2>/dev/null; then
     echo "warn: could not fetch $url — server may not be updated yet, skipping $file"
     return
   fi
-  if [ -f "$file" ]; then
-    printf '\n' >> "$file"
-    cat /tmp/_sepia_append >> "$file"
+
+  local new_ver old_ver
+  new_ver="$(section_version "$payload")"
+  new_ver="${new_ver:-$SERVED_VERSION}"
+  old_ver=""
+  [ -f "$file" ] && old_ver="$(section_version "$file")"
+
+  mkdir -p "$(dirname "$file")"
+  if [ -f "$file" ] && grep -qF "$start_marker" "$file"; then
+    # (1) Marker-wrapped block → replace in place.
+    {
+      sed "/^${start_marker}$/,/^${end_marker}$/d" "$file"
+      printf '%s\n' "$start_marker"
+      cat "$payload"
+      printf '%s\n' "$end_marker"
+    } > "$file.tmp" && mv "$file.tmp" "$file"
+    if [ "$old_ver" = "$new_ver" ]; then
+      echo "refreshed → $file (v$new_ver)"
+    else
+      echo "updated → $file (${old_ver:-unknown} → $new_ver)"
+    fi
+  elif [ -f "$file" ] && grep -qF "$heading" "$file"; then
+    # (2) Legacy block, no markers (installed by an older remote installer):
+    # the block always ran to EOF, so replace from the heading down, then wrap
+    # it in markers so future runs take path (1).
+    {
+      awk -v h="$heading" 'index($0, h) { exit } { print }' "$file"
+      printf '%s\n' "$start_marker"
+      cat "$payload"
+      printf '%s\n' "$end_marker"
+    } > "$file.tmp" && mv "$file.tmp" "$file"
+    echo "migrated → $file (${old_ver:-unknown} → $new_ver, block was unmarked)"
   else
-    cat /tmp/_sepia_append > "$file"
+    # (3) First install → append a marker-wrapped block.
+    {
+      [ -f "$file" ] && printf '\n'
+      printf '%s\n' "$start_marker"
+      cat "$payload"
+      printf '%s\n' "$end_marker"
+    } >> "$file"
+    echo "appended → $file (v$new_ver)"
   fi
-  echo "appended → $file"
 }
 
 safe_fetch() {
@@ -99,23 +152,19 @@ fi
 
 # Claude Code — user-global CLAUDE.md (loaded at the start of every session).
 if [ -d "$HOME/.claude" ]; then
-  append_section "$HOME/.claude/CLAUDE.md" "$BASE/instructions/claude" "## Sepia memory (always-on)"
+  replace_section "$HOME/.claude/CLAUDE.md" "$BASE/instructions/claude"
 fi
 
 # AGENTS.md (Codex, Cursor, Copilot, OpenCode, generic agentsmd) — repo + global
 if [ "$SCOPE" != "global" ]; then
-  if [ -f "AGENTS.md" ]; then
-    append_section "AGENTS.md" "$BASE/instructions/agents" "## Sepia memory (always-on)"
-  else
-    echo "note: no AGENTS.md in $(pwd) — will create one"
-    append_section "AGENTS.md" "$BASE/instructions/agents" "## Sepia memory (always-on)"
-  fi
+  [ -f "AGENTS.md" ] || echo "note: no AGENTS.md in $(pwd) — creating one"
+  replace_section "AGENTS.md" "$BASE/instructions/agents"
 fi
 # Global AGENTS.md for OpenCode/Codex user-level
 if [ "$SCOPE" != "repo" ]; then
   for f in "$HOME/.config/opencode/AGENTS.md" "$HOME/.codex/AGENTS.md" "$HOME/AGENTS.md"; do
     if [ -d "$(dirname "$f")" ]; then
-      append_section "$f" "$BASE/instructions/agents" "## Sepia memory (always-on)"
+      replace_section "$f" "$BASE/instructions/agents"
     fi
   done
 fi
@@ -185,7 +234,7 @@ PY
 fi
 
 echo ""
-echo "Done. Installed (scope: $SCOPE):"
+echo "Done. Installed (scope: $SCOPE, docs version: $SERVED_VERSION):"
 echo "  • Skill:        SKILL.md → .agents/.cursor/.claude/.codex/.opencode (user + project)"
 if [ "$SCOPE" != "repo" ]; then
   echo "  • VS Code:      ~/.config/Code/User/prompts/sepia.instructions.md (global, one-and-done)"

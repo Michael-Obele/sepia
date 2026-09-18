@@ -11,6 +11,12 @@
 #      loads skill bodies only on demand.
 #
 # Idempotent: re-running overwrites in place, never duplicates.
+#
+# KEEP IN SYNC with scripts/remote-install.sh (`replace_section`) — that is the
+# copy served at /install for `curl | bash`. Both must replace the
+# <!-- sepia:start --> … <!-- sepia:end --> block IN PLACE: an installer that
+# skips already-present blocks leaves stale instructions on every machine that
+# ran an older version.
 set -euo pipefail
 
 SRC="$(cd "$(dirname "$0")/../skills/sepia" && pwd)"
