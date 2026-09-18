@@ -8,7 +8,7 @@
 		{ tool: 'manage_entity', ops: 6 },
 		{ tool: 'manage_namespace', ops: 4 },
 		{ tool: 'manage_relation', ops: 3 },
-		{ tool: 'consolidate', ops: 1 },
+		{ tool: 'prune_memories', ops: 1 },
 		{ tool: 'search', ops: 1 },
 		{ tool: 'traverse_graph', ops: 1 }
 	];

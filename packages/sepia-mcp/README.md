@@ -3,7 +3,7 @@
 A self-contained MCP server for [Sepia](https://sepia.fly.dev) — your personal
 knowledge-graph memory server. It exposes the **same 7 tools** as the Sepia
 server (`manage_namespace`, `manage_entity`, `manage_relation`, `manage_memory`,
-`search`, `traverse_graph`, `consolidate`), but every call is proxied to the
+`search`, `traverse_graph`, `prune_memories`), but every call is proxied to the
 Sepia REST API. No database, no migrations — just a lightweight MCP wrapper.
 
 ## Install

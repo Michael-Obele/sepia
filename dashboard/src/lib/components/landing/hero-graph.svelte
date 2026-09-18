@@ -53,7 +53,7 @@
 		{ id: 'recall', label: 'zero-reminder recall', type: 'concept', importance: 0.7 },
 		{ id: 'fly', label: 'Bun server', type: 'tool', importance: 0.6 },
 		{ id: 'neon', label: 'Postgres', type: 'tool', importance: 0.6 },
-		{ id: 'consolidate', label: 'consolidate', type: 'concept', importance: 0.6 },
+		{ id: 'prune_memories', label: 'prune_memories', type: 'concept', importance: 0.6 },
 		{ id: 'netlify', label: 'SvelteKit dashboard', type: 'tool', importance: 0.5 },
 		{ id: 'deploy', label: 'deploy: self-hosted', type: 'concept', importance: 0.5 }
 	];
@@ -67,7 +67,7 @@
 		{ id: 'l6', source: 'michael', target: 'sepia', label: 'owns', weight: 0.9 },
 		{ id: 'l7', source: 'mcp', target: 'claude', label: 'connects', weight: 0.9 },
 		{ id: 'l8', source: 'sepia', target: 'recall', label: 'provides', weight: 0.7 },
-		{ id: 'l9', source: 'sepia', target: 'consolidate', label: 'runs', weight: 0.6 },
+		{ id: 'l9', source: 'sepia', target: 'prune_memories', label: 'runs', weight: 0.6 },
 		{ id: 'l10', source: 'claude', target: 'apikey', label: 'uses', weight: 0.8 },
 		{ id: 'l11', source: 'michael', target: 'claude', label: 'uses', weight: 0.8 },
 		{ id: 'l12', source: 'sepia', target: 'mcp', label: 'exposes', weight: 0.9 },

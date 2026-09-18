@@ -340,9 +340,6 @@ export const TraverseInput = v.object({
   ),
 });
 
-/** Consolidation sweep input. */
-export const ConsolidateInput = v.object({});
-
 /**
  * ── Tool-level schemas (the `action` enum pattern) ─────────────────────────
  * Each `manage_*` tool covers several actions through an action union,
@@ -587,7 +584,20 @@ export const SearchToolInput = SearchInput;
 
 export const TraverseToolInput = TraverseInput;
 
-export const ConsolidateToolInput = v.object({});
+/**
+ * `prune_memories` input — the destructive maintenance sweep. `confirm` is a
+ * deliberate speed bump: the old zero-arg `consolidate` schema was trivial to
+ * call, and weak models reached for it as a default "save memory" action.
+ * Renamed + gated 2026-09-18 after that was observed in VS Code.
+ */
+export const PruneMemoriesToolInput = v.object({
+  confirm: v.pipe(
+    v.literal(true),
+    v.description(
+      "Must be true. Acknowledges that this archives stale memories and permanently deletes rows archived more than 30 days ago. Set it only after the user explicitly asked for the sweep.",
+    ),
+  ),
+});
 
 /** All tool names, exported for tests and the smoke script. */
 export const TOOL_NAMES = [
@@ -597,5 +607,5 @@ export const TOOL_NAMES = [
   "manage_memory",
   "search",
   "traverse_graph",
-  "consolidate",
+  "prune_memories",
 ] as const;

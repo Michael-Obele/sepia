@@ -88,9 +88,10 @@ const sections: Record<string, string[]> = {
     `- \`depth\`? (1-${TRAVERSE_DEPTH_MAX}, default 1) — number of hops`,
     "- Returns nodes + edges within N hops of the start entity.",
   ],
-  consolidate: [
-    "- No input args.",
-    "- Idempotent maintenance sweep: decay-scoring, dedup (trimmed case-insensitive exact content match → keep highest importance, archive the rest), purge archived. Pure SQL, no LLM calls.",
+  prune_memories: [
+    "- `confirm` (**required**, literal `true`) — a deliberate speed bump acknowledging that the sweep deletes data.",
+    "- Destructive maintenance sweep, and **never a way to save memory**: archives stale (importance < 0.3, untouched 90 days), de-duplicates identical content (trimmed case-insensitive match → keep highest importance, archive the rest), purges rows archived > 30 days. Pure SQL, no LLM calls.",
+    "- Call it ONLY when the user explicitly asks to prune or clean up — never proactively. Conversation digests are exempt from stale archiving.",
   ],
 };
 

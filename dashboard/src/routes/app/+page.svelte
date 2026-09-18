@@ -30,7 +30,7 @@
 	import {
 		getStatsData,
 		searchAll,
-		runConsolidate,
+		runPruneMemories,
 		getNamespaces,
 		removeMemory
 	} from '$lib/remote/index.js';
@@ -99,9 +99,9 @@
 		searching = false;
 	}
 
-	async function consolidate() {
-		const res = await runConsolidate();
-		toast.success('Consolidation complete', {
+	async function pruneMemories() {
+		const res = await runPruneMemories();
+		toast.success('Memories pruned', {
 			description: `${res.archived_stale} stale, ${res.archived_duplicates} duplicates archived, ${res.purged} purged`
 		});
 		stats?.refresh();
@@ -311,8 +311,8 @@
 		<Button variant="outline" onclick={() => goto('/app/entities?new=1')}>
 			<Plus class="size-4" /> New entity
 		</Button>
-		<Button variant="outline" onclick={consolidate}>
-			<RefreshCw class="size-4" /> Run consolidate
+		<Button variant="outline" onclick={pruneMemories}>
+			<RefreshCw class="size-4" /> Prune memories
 		</Button>
 		{#if recentHidden.current}
 			<Button variant="ghost" onclick={() => (recentHidden.current = false)}>

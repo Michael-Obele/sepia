@@ -51,6 +51,7 @@ AFTER you answer (every turn where you learned something):
 2. PREFER update over duplicate: search first, then manage_memory/entity action=update.
 3. SCORE importance 0-1: 0.9+ identity/core preference, 0.6-0.8 active project fact/decision, 0.3-0.5 observation/person, ≤0.2 transient (will decay).
 4. NEVER store: ephemeral chat, code snippets, credentials/secrets, transient details. Sepia is not a vault — refuse secrets.
+5. NEVER call "prune_memories" to save anything — it is NOT a write tool. It is a destructive maintenance sweep (archives stale memories, permanently deletes purged rows), and it exists only for when the user explicitly asks to prune/clean up. Persisting is manage_memory.
 
 Rule of thumb: If the user sent a message with any substantive content, you should have called search before replying and considered a manage_memory/manage_entity write after replying. Two Sepia calls per turn is normal and expected.
 
@@ -109,6 +110,7 @@ AFTER you answer (every turn where you learned something): persist durable facts
 "Save to memory" / "remember this" → ALWAYS write to Sepia (manage_memory), NOT editor memory. Editor memory is ephemeral; Sepia (personal namespace) is durable. Treat it as an explicit instruction to call manage_memory create immediately.
 
 NEVER store: ephemeral chat, code snippets, credentials, secrets.
+NEVER call "prune_memories" — it is a destructive maintenance sweep, NOT a way to save; only on explicit user request.
 
 When the user says "save this conversation" / "hand off to another AI": manage_memory action=ingest with a conversation digest (title, status active|paused|done, decisions/preferences/instructions/observations verbatim).
 
@@ -120,7 +122,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * `bun run scripts/stamp-docs-version.ts` to stamp it into every file.
  * Served at /version so installed copies can be checked for staleness.
  */
-export const DOCS_VERSION = "1.2.0";
+export const DOCS_VERSION = "1.3.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [

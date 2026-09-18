@@ -7,7 +7,7 @@ import {
   STALE_IMPORTANCE,
 } from "../../types.ts";
 
-export interface ConsolidateResult {
+export interface PruneMemoriesResult {
   archived_stale: number;
   archived_duplicates: number;
   purged: number;
@@ -15,7 +15,9 @@ export interface ConsolidateResult {
 
 /**
  * Idempotent maintenance sweep — pure SQL, no LLM calls. Scoped to the
- * owner's namespaces.
+ * owner's namespaces. Exposed to models as the `prune_memories` MCP tool —
+ * named for what it does to memories, because the old `consolidate` name read
+ * like the primary "save memory" action and got called by default.
  * 1. Archive stale (importance < 0.3, untouched 90d). Conversation digests
  *    (metadata.kind = "conversation") are NEVER archived by the sweep — they
  *    are handoff entry points and must survive until the user deletes them.
@@ -23,10 +25,10 @@ export interface ConsolidateResult {
  *    importance, tie: oldest).
  * 3. Purge archived rows older than 30d.
  */
-export async function consolidate(
+export async function pruneMemories(
   db: Db,
   ownerId: string,
-): Promise<ConsolidateResult> {
+): Promise<PruneMemoriesResult> {
   const stale = await db.execute(sql`
     UPDATE ${memories} SET archived = true, updated_at = now()
     WHERE NOT archived

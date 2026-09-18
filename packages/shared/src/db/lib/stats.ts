@@ -24,7 +24,7 @@ export interface Stats {
     access_count: number;
     importance: number;
   }>;
-  /** Memories that would be archived by the next consolidate sweep. */
+  /** Memories that would be archived by the next prune_memories sweep. */
   decay_candidates: number;
   /** Most recently updated memories (for the home feed). */
   recent_memories: Array<{

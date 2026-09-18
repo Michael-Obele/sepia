@@ -25,7 +25,7 @@ import {
   listRelations,
   search,
   traverseGraph,
-  consolidate,
+  pruneMemories,
   getStats,
   getUsage,
   type UserRow,
@@ -428,7 +428,7 @@ export async function handleApi(
         );
     }
 
-    // ── Search / graph / consolidate / stats ──────────────────────────────
+    // ── Search / graph / maintenance / stats ──────────────────────────────
     if (path === "/api/search" && method === "GET") {
       const input = validate(SearchInput, {
         q: url.searchParams.get("q") ?? "",
@@ -451,8 +451,13 @@ export async function handleApi(
         cors,
       );
     }
-    if (path === "/api/consolidate" && method === "POST") {
-      return json({ result: await consolidate(sql, ownerId) }, 200, cors);
+    // `/api/consolidate` is the pre-1.3.0 name — kept as an alias so
+    // already-published sepia-mcp versions keep working.
+    if (
+      (path === "/api/prune-memories" || path === "/api/consolidate") &&
+      method === "POST"
+    ) {
+      return json({ result: await pruneMemories(sql, ownerId) }, 200, cors);
     }
     if (path === "/api/stats" && method === "GET") {
       return json({ stats: await getStats(sql, ownerId) }, 200, cors);

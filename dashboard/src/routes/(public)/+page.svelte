@@ -66,7 +66,7 @@
 		{
 			icon: RefreshCw,
 			title: 'Self-maintaining',
-			desc: 'Decay scoring, deduplication, and purge — pure SQL, no LLM calls. The consolidate tool keeps your graph clean.',
+			desc: 'Decay scoring, deduplication, and purge — pure SQL, no LLM calls. The prune_memories tool keeps your graph clean.',
 			color: 'text-yellow-500'
 		},
 		{
@@ -458,7 +458,7 @@
 					focused search, traversal, and maintenance. All pure SQL, no LLM calls.
 				</p>
 				<div class="mt-6 flex flex-wrap gap-2">
-					{#each ['manage_entity', 'manage_memory', 'manage_namespace', 'manage_relation', 'search', 'traverse_graph', 'consolidate'] as tool (tool)}
+					{#each ['manage_entity', 'manage_memory', 'manage_namespace', 'manage_relation', 'search', 'traverse_graph', 'prune_memories'] as tool (tool)}
 						<Badge variant="outline" class="font-mono">{tool}</Badge>
 					{/each}
 				</div>

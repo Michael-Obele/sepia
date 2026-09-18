@@ -25,7 +25,7 @@ import { registerRelationTools } from "./tools/relation.ts";
 import { registerMemoryTools } from "./tools/memory.ts";
 import { registerSearchTools } from "./tools/search.ts";
 import { registerTraverseTools } from "./tools/traverse.ts";
-import { registerConsolidateTools } from "./tools/consolidate.ts";
+import { registerPruneMemoriesTools } from "./tools/prune.ts";
 
 export interface SepiaMcpOptions {
   baseUrl?: string;
@@ -71,7 +71,7 @@ export function createSepiaServer(opts: SepiaMcpOptions = {}) {
   registerMemoryTools(server, client);
   registerSearchTools(server, client);
   registerTraverseTools(server, client);
-  registerConsolidateTools(server, client);
+  registerPruneMemoriesTools(server, client);
 
   return { server, client };
 }

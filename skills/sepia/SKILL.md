@@ -118,6 +118,20 @@ When a conversation is finished, update its digest `metadata.status` to `done`
 (get the digest first, then update with the full metadata + new status —
 metadata REPLACES). When resuming a paused one, set it back to `active`.
 
+## Maintenance — almost never
+
+`prune_memories` is the only destructive tool: it archives stale memories
+(importance < 0.3, untouched 90 days), de-duplicates identical content, and
+permanently deletes rows archived more than 30 days ago. It requires
+`confirm: true`.
+
+- **Never call it to save, remember, or persist anything** — that is
+  `manage_memory`. This is the tool that *deletes* memories.
+- **Never call it proactively** or to "tidy up". Only when the user explicitly
+  asks to prune or clean up.
+- Conversation digests (`metadata.kind = "conversation"`) are exempt from stale
+  archiving.
+
 ## Examples
 
 - User says "we went with Bun for the server because cold start matters"
@@ -133,7 +147,7 @@ metadata REPLACES). When resuming a paused one, set it back to `active`.
 - **Duplicate write**: always search before create; if unsure, update the
   existing item and mention the merge in your reply.
 - **Conflicting facts**: create the new memory with importance equal to the old
-  one, note the conflict in your reply, and let `consolidate` handle decay.
+  one, note the conflict in your reply, and let `prune_memories` handle decay.
 - **Sensitive data**: refuse to store credentials/secrets; tell the user the
   memory server is not a vault.
 - **Wrong namespace**: if the user is clearly working in `work` context but no

@@ -11,7 +11,7 @@ export * from "./db/lib/conversations.ts";
 export * from "./db/lib/namespaces.ts";
 export * from "./db/lib/search.ts";
 export * from "./db/lib/graph.ts";
-export * from "./db/lib/consolidate.ts";
+export * from "./db/lib/prune.ts";
 export * from "./db/lib/stats.ts";
 export * from "./db/lib/plans.ts";
 export * from "./db/lib/users.ts";

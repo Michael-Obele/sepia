@@ -351,10 +351,22 @@ if (hasDb) {
       "0 memories at importance ≥ 0.5",
     );
 
-    const cons = (await callTool("consolidate", {})) as {
+    // `prune_memories` is destructive, so `confirm: true` is mandatory —
+    // a call without it must be rejected.
+    let confirmRejected = false;
+    try {
+      await callTool("prune_memories", {});
+    } catch {
+      confirmRejected = true;
+    }
+    check("prune_memories rejects a missing confirm", confirmRejected);
+
+    const pruned = (await callTool("prune_memories", {
+      confirm: true,
+    })) as {
       archived_stale: number;
     };
-    check("consolidate runs", typeof cons.archived_stale === "number");
+    check("prune_memories runs", typeof pruned.archived_stale === "number");
 
     // ── Conversation migration: manage_memory action=ingest ────────────────
     const ingest = (await callTool("manage_memory", {

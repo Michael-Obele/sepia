@@ -1,6 +1,6 @@
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
 
-<!-- sepia-docs-version: 1.2.0 -->
+<!-- sepia-docs-version: 1.3.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (any `AGENTS.md`-aware agent: Codex, OpenCode, Copilot, Cursor, Zed). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
@@ -22,6 +22,7 @@ You are connected to the user's personal Sepia memory server (sepia) over MCP (a
 2. Prefer update over duplicate — search first, then `action=update`.
 3. **Importance 0-1:** 0.9+ identity/core pref, 0.6-0.8 project fact/decision, 0.3-0.5 observation, ≤0.2 transient.
 4. **Never store:** ephemeral chat, code snippets, credentials/secrets.
+5. **Never call `prune_memories`** unless the user explicitly asks — it is a destructive maintenance sweep (archives stale, purges archived), NOT a way to save. Saving is `manage_memory`.
 
 > Rule of thumb: If the user sent a message with any substantive content, you should have called `search` before replying and considered a `manage_memory`/`manage_entity` write after replying. Two Sepia calls per turn is normal and expected.
 

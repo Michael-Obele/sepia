@@ -12,7 +12,7 @@ import { registerRelationTools } from "./tools/relation.ts";
 import { registerMemoryTools } from "./tools/memory.ts";
 import { registerSearchTools } from "./tools/search.ts";
 import { registerTraverseTools } from "./tools/traverse.ts";
-import { registerConsolidateTools } from "./tools/consolidate.ts";
+import { registerPruneMemoriesTools } from "./tools/prune.ts";
 import { API_RATE_LIMIT, MCP_RATE_LIMIT, rateLimit } from "./rate-limit.ts";
 
 // Per-request custom context: the authenticated user. Set by the fetch
@@ -64,7 +64,7 @@ registerRelationTools(server);
 registerMemoryTools(server);
 registerSearchTools(server);
 registerTraverseTools(server);
-registerConsolidateTools(server);
+registerPruneMemoriesTools(server);
 
 // Streamable HTTP transport mounted at /mcp inside this Bun.serve process.
 const transport = new HttpTransport(server, { path: "/mcp" });

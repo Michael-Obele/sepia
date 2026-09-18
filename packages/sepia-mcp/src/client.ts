@@ -230,7 +230,7 @@ export class SepiaClient {
     return this.request<{ deleted: unknown }>("DELETE", `/api/relations/${id}`);
   }
 
-  // ── Search / graph / consolidate ────────────────────────────────────────
+  // ── Search / graph / maintenance ────────────────────────────────────────
   search(params: {
     q: string;
     namespace?: string;
@@ -254,7 +254,7 @@ export class SepiaClient {
     if (depth !== undefined) qs.set("depth", String(depth));
     return this.request<unknown>("GET", `/api/graph?${qs.toString()}`);
   }
-  consolidate() {
-    return this.request<{ result: unknown }>("POST", "/api/consolidate");
+  pruneMemories() {
+    return this.request<{ result: unknown }>("POST", "/api/prune-memories");
   }
 }

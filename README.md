@@ -16,7 +16,7 @@ If you're re-explaining preferences every chat or paying SaaS per memory, you're
 | What hurts with alternatives                            | What Sepia gives you                                                               | Outcome                              |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
 | **Local JSONL** — no remote, no search across sessions  | **Remote knowledge graph** — entities, relations, memories with importance scoring | Recall from any editor or web AI     |
-| **17-tool SaaS** + RBAC, audit trails, per-seat pricing | **7 tools, not 17** — `action` enums, pure-SQL `consolidate`, no team bloat        | Small LLM surface, $0/mo self-hosted |
+| **17-tool SaaS** + RBAC, audit trails, per-seat pricing | **7 tools, not 17** — `action` enums, pure-SQL `prune_memories`, no team bloat  | Small LLM surface, $0/mo self-hosted |
 | **No memory contract** — you re-prompt every session    | **Instructions + always-on files + Skill** — auto-injected usage contract          | Remember without being asked         |
 | **No dashboard** — raw JSONL or vendor UI               | **SvelteKit dashboard** — search, graph, CRUD, conversations                       | Browse the same data agents write    |
 
@@ -26,7 +26,7 @@ If you're re-explaining preferences every chat or paying SaaS per memory, you're
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 🧠 **Knowledge graph**        | Entities (nodes), weighted relations (edges), memories (facts/observations) with importance scoring, in isolated namespaces                                                                                                                                                                    |
 | 🔎 **Search + traversal**     | Unified keyword search across everything; BFS graph traversal from any entity                                                                                                                                                                                                                  |
-| 🧹 **`consolidate`**          | Idempotent maintenance sweep: decay-scoring, dedup, purge — pure SQL, no LLM calls                                                                                                                                                                                                             |
+| 🧹 **`prune_memories`**       | Destructive maintenance sweep: decay-scoring, dedup, purge — pure SQL, no LLM calls. Requires `confirm: true` — **never a way to save memory**                                                                                                                                                                                                             |
 | 📋 **Server instructions**    | A usage contract sent in the MCP `initialize` handshake; supporting clients (Claude Code, Codex, Copilot, Goose) inject it into the system prompt — zero-reminder usage                                                                                                                        |
 | ⚡ **Always-on instructions** | `skills/sepia/always-on/` — VS Code `*.instructions.md` (`applyTo: '**/*'`), Cursor `.mdc` (`alwaysApply: true`), `~/.claude/CLAUDE.md`, `AGENTS.md`; injected into **every** session, covering clients that ignore `instructions` (Cursor)                                                    |
 | 🛠️ **Bundled Agent Skill**    | `skills/sepia/SKILL.md` (agentskills.io standard) — works in Zed, Cursor, Claude Code, Codex, OpenCode; the on-demand extended guide (tool-by-tool detail)                                                                                                                                     |
@@ -97,7 +97,7 @@ flowchart LR
 | 4   | `manage_memory`    | create, get, update, delete, query, batch_update, ingest | Facts/observations/preferences with importance scoring; conversation digests |
 | 5   | `search`           | —                                                        | Unified keyword + metadata search across all data                            |
 | 6   | `traverse_graph`   | —                                                        | BFS walk of the knowledge graph from an entity                               |
-| 7   | `consolidate`      | —                                                        | Decay sweep + dedup + purge (idempotent maintenance)                         |
+| 7   | `prune_memories`   | confirm: true                                            | Decay sweep + dedup + purge (destructive maintenance, never a save)          |
 
 **Why 7 instead of 17:** FlarelyLegal's 17 tools split entity search, memory queries, conversations, and admin into separate tools. By using `action` enums inside `manage_*` tools, the LLM surface stays clean while covering all capabilities — including conversation migration (`manage_memory` action=ingest) and bulk updates (`batch_update`). No RBAC, no audit trails — those are team features a personal server doesn't need. Semantic/vector search is a deliberate future upgrade; `search` ships keyword + metadata for v1.
 
@@ -348,4 +348,4 @@ Restart your editor to pick it up. Claude Code users can also invoke the skill o
 - All traffic TLS (`force_https = true`); secrets live in `fly secrets`, never in the image
 - The memory contract forbids storing credentials/secrets — the server is a memory, not a vault
 - OAuth consent screen (Phase 2) lists scopes (`memory:read`, `memory:write`)
-- `consolidate` purges archived rows; retention rules can be added (e.g. importance < 0.2 and unaccessed 90 days → archive)
+- `prune_memories` purges archived rows; retention rules can be added (e.g. importance < 0.2 and unaccessed 90 days → archive)

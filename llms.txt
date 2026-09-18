@@ -13,7 +13,7 @@ Key concepts:
 - **Memories** — knowledge fragments. Four types: `fact` (verified/decided), `observation` (what you saw happen), `preference` (user's stated or observed choice), `instruction` (how to behave). Each has content (≤4000 chars), importance (0-1), optional entity links (0-3), metadata, and tags.
 - **Namespaces** — isolated containers (default `personal`). Create more only when the user asks for separation.
 - **Tags** — short lowercase hyphenated topical labels (e.g. `auth`, `user-experience`) on both entities and memories. Search and query filter by tags (ALL match). GIN-indexed.
-- **Consolidation** — an idempotent maintenance sweep: archives stale memories (importance < 0.3, untouched 90 days), de-duplicates exact content, purges archived rows older than 30 days. Conversation digests are exempt from stale archiving.
+- **Memory pruning** — `prune_memories` is an idempotent maintenance sweep: archives stale memories (importance < 0.3, untouched 90 days), de-duplicates exact content, purges archived rows older than 30 days. Conversation digests are exempt from stale archiving. It is **not a write tool** — never call it to save or remember anything.
 
 ## The 7 MCP tools
 
@@ -25,7 +25,7 @@ All tools are registered on the MCP server at `/mcp`. Every `manage_*` tool uses
 4. **`manage_memory`** — actions: `create` | `get` | `update` | `delete` | `query` | `batch_update` | **`ingest`**. Memories are knowledge fragments; `query` filters by type/namespace/importance_min/archived/tags, ordered importance DESC then updated_at DESC; `batch_update` mass-edits with a `where` filter (type, namespace, tags, importance_min, q).
 5. **`search`** — unified keyword search over `memories.content`, `entities.name`, `entities.summary`. Case-insensitive substring matching, ranked: exact word match > substring, then importance, then recency. Multi-word queries are AND-of-words. Empty `q` returns recent items (honors namespace + tags filters — so `q=""` + `tags=["conversation"]` lists all conversation digests). Returns merged, de-duplicated hits with `kind` (memory|entity), id, snippet, score.
 6. **`traverse_graph`** — BFS walk from a start entity (depth 1-3), returns nodes + edges in the neighborhood.
-7. **`consolidate`** — no args. Runs the maintenance sweep; returns counts of archived/purged rows.
+7. **`prune_memories`** — requires `confirm: true`. The destructive maintenance sweep; **never call it to save or remember anything** (that is `manage_memory`) and never call it proactively — only when the user explicitly asks. Returns counts of archived/purged rows.
 
 ## Conversation migration (handoff digests) — `manage_memory` action=ingest
 
@@ -48,7 +48,7 @@ Rules the distilling agent must follow:
 
 - **MCP endpoint**: `https://sepia.fly.dev/mcp` (Streamable HTTP). Auth: OAuth 2.1 (accounts) or a per-user API key (`Authorization: Bearer <api-key>`). Self-hosted instances may use the legacy `MCP_BEARER_TOKEN`.
 - **Accounts**: hosted Sepia is multi-tenant — sign up at the dashboard, create API keys there, and use them as bearer tokens for local editors. OAuth 2.1 covers web AIs (ChatGPT, Grok, Gemini, Claude web).
-- **REST API**: `/api/*` — thin JSON wrapper over the same business logic (namespaces, entities, memories, relations, search, graph, consolidate, stats, conversations). Auth: same bearer token.
+- **REST API**: `/api/*` — thin JSON wrapper over the same business logic (namespaces, entities, memories, relations, search, graph, prune-memories, stats, conversations). Auth: same bearer token. (`/api/consolidate` still works as an alias for `/api/prune-memories`.)
 - **Agent Skill**: installable via `npx skills add https://sepia.fly.dev/skill` — the full usage contract with examples.
 - **Always-on instructions**: `/instructions/vscode`, `/instructions/cursor`, `/instructions/claude`, `/instructions/agents`, `/instructions/opencode`, `/instructions/zed` — injected into every session by the editor's instruction system.
 - **Remote installer**: `curl -fsSL https://sepia.fly.dev/install | bash`.
@@ -61,4 +61,4 @@ Rules the distilling agent must follow:
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
 
-Docs version: 1.2.0
+Docs version: 1.3.0
