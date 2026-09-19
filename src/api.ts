@@ -24,6 +24,7 @@ import {
   deleteRelation,
   listRelations,
   search,
+  summarizeSearch,
   traverseGraph,
   pruneMemories,
   getStats,
@@ -311,11 +312,8 @@ export async function handleApi(
       const memories = await queryMemories(sql, ownerId, {
         type:
           (typeParam as
-            | "fact"
-            | "observation"
-            | "preference"
-            | "instruction"
-            | null) ?? undefined,
+            "fact" | "observation" | "preference" | "instruction" | null) ??
+          undefined,
         namespace: url.searchParams.get("namespace") ?? undefined,
         importance_min: url.searchParams.has("importance_min")
           ? numParam(url.searchParams.get("importance_min"), 0)
@@ -438,7 +436,15 @@ export async function handleApi(
         limit: numParam(url.searchParams.get("limit"), 10),
       });
       const results = await search(sql, ownerId, input);
-      return json({ count: results.length, results }, 200, cors);
+      return json(
+        {
+          count: results.length,
+          ...summarizeSearch(input.q, results),
+          results,
+        },
+        200,
+        cors,
+      );
     }
     if (path === "/api/graph" && method === "GET") {
       const root = url.searchParams.get("root");

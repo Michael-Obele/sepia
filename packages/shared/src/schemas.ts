@@ -288,7 +288,7 @@ export const SearchInput = v.object({
     v.string(),
     v.maxLength(200),
     v.description(
-      "Search query (required; empty returns recent items). Multi-word = AND-of-words; exact phrases rank first",
+      "Search query (required; empty returns recent items). Multi-word = best-effort: rows matching MORE of your words rank first, so a result set is never emptied by one absent word. Verbatim phrases rank highest. Check `partial` in the result (+ each hit's `matched_terms`) before concluding nothing exists.",
     ),
   ),
   namespace: v.optional(

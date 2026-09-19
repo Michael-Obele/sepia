@@ -296,16 +296,44 @@ if (hasDb) {
       `${searchRes.hits.length} hits`,
     );
 
-    // Regression: multi-word queries must match ANY word order (AND-of-words),
-    // not just the verbatim phrase. "starts cold" is reversed vs the content.
+    // Regression: multi-word queries must match ANY word order, not just the
+    // verbatim phrase. "starts cold" is reversed vs the content.
     const searchRes2 = (await callTool("search", {
       q: "starts cold",
       namespace: ns,
     })) as { hits: unknown[] };
     check(
-      "search AND-of-words (reversed order)",
+      "search matches word order-independently",
       searchRes2.hits.length > 0,
       `${searchRes2.hits.length} hits`,
+    );
+
+    // Regression (the reported bug): a multi-word query used to return 0 hits
+    // whenever ANY word was absent, so agents concluded "no memories exist".
+    // "deploy pipeline" appear nowhere in this namespace — the memory covering
+    // "cold"/"starts" must still come back, flagged as a partial match.
+    const partialSearch = (await callTool("search", {
+      q: "cold starts deploy pipeline",
+      namespace: ns,
+    })) as {
+      hits: Array<{ matched_terms?: number }>;
+      terms?: string[];
+      partial?: boolean;
+    };
+    check(
+      "search never returns 0 for one absent word",
+      partialSearch.hits.length > 0,
+      `${partialSearch.hits.length} hits`,
+    );
+    check(
+      "search flags partial coverage",
+      partialSearch.partial === true,
+      `partial=${partialSearch.partial} terms=${partialSearch.terms?.length}`,
+    );
+    check(
+      "search hits report matched_terms",
+      partialSearch.hits[0]?.matched_terms === 2,
+      `matched_terms=${partialSearch.hits[0]?.matched_terms}`,
     );
 
     // Tag search: filter by tag across memories + entities.

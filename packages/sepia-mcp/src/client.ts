@@ -244,10 +244,12 @@ export class SepiaClient {
     if (params.tags !== undefined && params.tags.length)
       qs.set("tags", params.tags.join(","));
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
-    return this.request<{ count: number; results: unknown[] }>(
-      "GET",
-      `/api/search?${qs.toString()}`,
-    );
+    return this.request<{
+      count: number;
+      terms?: string[];
+      partial?: boolean;
+      results: unknown[];
+    }>("GET", `/api/search?${qs.toString()}`);
   }
   traverseGraph(startId: string, depth?: number) {
     const qs = new URLSearchParams({ root: startId });
