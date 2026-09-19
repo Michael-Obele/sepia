@@ -2,7 +2,14 @@ import type { Db } from "../client.ts";
 import { SEARCH_LIMIT_MAX } from "../../types.ts";
 import { and, desc, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { entities, memories, namespaces } from "../schema.ts";
-import { resolveNamespaceId } from "./util.ts";
+import {
+  escapeLike,
+  escapeRegExp,
+  matchPlan,
+  matchesAnyTerm,
+  resolveNamespaceId,
+  textArray,
+} from "./util.ts";
 
 export interface SearchOptions {
   q: string;
@@ -23,43 +30,96 @@ export interface SearchHit {
   updated_at: string;
   namespace: string;
   snippet: string;
+  /**
+   * Relevance score: `coverage_weight x matched_terms + 10 x whole_word_terms +
+   * 5 x phrase`, where `coverage_weight = 20 x query_terms + 100`. The weight
+   * scales with the query so COVERAGE ALWAYS DOMINATES: a row matching `k+1`
+   * terms can never be outranked by another row's word/phrase bonuses (with a
+   * fixed weight, 10 whole-word matches could beat one extra term). That is what
+   * makes `matched_terms` on the first hit the query's true maximum coverage.
+   */
   score: number;
-}
-
-const WORD_RE = /[a-z0-9]+/gi;
-
-/** 2 points per exact whole-word match, 1 per substring match, +2 if the full phrase matches verbatim. */
-function matchScore(text: string, words: string[], phrase: string): number {
-  const lower = text.toLowerCase();
-  let score = 0;
-  for (const word of words) {
-    if (lower.includes(word)) score += 1;
-    const re = new RegExp(`(^|[^a-z0-9])${escapeRegExp(word)}([^a-z0-9]|$)`);
-    if (re.test(lower)) score += 1;
-  }
-  if (phrase && lower.includes(phrase)) score += 2;
-  return score;
-}
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function snippet(text: string, max = 200): string {
-  const trimmed = text.trim().replace(/\s+/g, " ");
-  return trimmed.length > max ? `${trimmed.slice(0, max - 1)}…` : trimmed;
+  /**
+   * How many of the query's terms this row matched. Equal to
+   * `summarizeSearch(q, hits).terms.length` for a full match; lower means a
+   * partial (best-effort) match. `0` on the empty-query (recent items) path.
+   */
+  matched_terms: number;
 }
 
 /**
- * Unified search over memories.content, entities.name, entities.summary.
- * Case-insensitive substring matching in SQL, then ranked in JS:
- * exact word match > substring match, then importance DESC, then
- * updated_at DESC. Empty `q` returns recent items.
+ * Result-set summary for callers that hand hits to a model: the normalized
+ * terms the query ranked on, and whether the results are a best-effort
+ * (partial) match — i.e. no single row covered the whole query.
  *
- * Multi-word queries require EVERY word to appear (AND, any order) — the
- * old single-phrase ILIKE returned 0 for natural queries like
- * "bun runtime preference". Exact-phrase matches still rank first via the
- * phrase bonus in matchScore.
+ * `partial: true` means "ranked suggestions, not an exhaustive answer". A
+ * `count` of 0 with terms present means genuinely nothing matched.
+ */
+export function summarizeSearch(
+  q: string,
+  hits: SearchHit[],
+): { terms: string[]; partial: boolean } {
+  const { terms } = matchPlan(q);
+  return {
+    terms,
+    // Every hit, not just the best-ranked one: the score's whole-word and phrase
+    // bonuses can lift a lower-coverage row above a full-coverage one, so
+    // `hits[0]` is not provably the max-coverage row.
+    partial:
+      hits.length > 0 && hits.every((h) => h.matched_terms < terms.length),
+  };
+}
+
+/** Does `text` contain any of `terms` as a substring? */
+function containsAny(text: string, terms: string[]): boolean {
+  const lower = text.toLowerCase();
+  return terms.some((term) => lower.includes(term));
+}
+
+/**
+ * Snippet window centred on the first matching term, so a reader (or a model)
+ * can see WHY the row matched instead of 200 chars of unrelated preamble.
+ * Falls back to the head of the text when no term matches in the visible part.
+ */
+function snippet(text: string, terms: string[], max = 200): string {
+  const flat = text.trim().replace(/\s+/g, " ");
+  if (flat.length <= max) return flat;
+  const lower = flat.toLowerCase();
+  let at = -1;
+  for (const term of terms) {
+    const i = lower.indexOf(term);
+    if (i !== -1 && (at === -1 || i < at)) at = i;
+  }
+  if (at === -1) return `${flat.slice(0, max - 1)}…`;
+  // Centre the window on the match, reserving room for the ellipses so the
+  // result never exceeds `max`; a side without an ellipsis gets the slack back.
+  const width = max - 2;
+  let start = Math.max(
+    0,
+    Math.min(at - Math.floor(width / 2), flat.length - width),
+  );
+  let end = start + width;
+  if (start === 0) end = Math.min(flat.length, end + 1);
+  else if (end >= flat.length) start = Math.max(0, start - 1);
+  return `${start > 0 ? "…" : ""}${flat.slice(start, end)}${end < flat.length ? "…" : ""}`;
+}
+
+/**
+ * Unified search over memories.content, entities.name, entities.summary, and
+ * memory metadata (minus `transcript`).
+ *
+ * RANKING — results are relevance-ranked, never filtered to zero by an absent
+ * word. A row matching *some* of the query's terms is still returned, ordered
+ * below rows matching more of them: coverage dominates the score (the weight is
+ * derived from the term count, so it cannot be beaten by the word/phrase
+ * bonuses), whole-word matches beat substrings (`10 x`), and a verbatim phrase
+ * adds 5. Importance and recency break ties.
+ *
+ * Scoring runs in SQL so the `LIMIT` applies to the *ranked* set — ranking in
+ * JS after an `ORDER BY updated_at DESC` window silently dropped the best match
+ * whenever more than `4 x limit` rows matched.
+ *
+ * Empty `q` returns recent items (namespace, tags and type still apply).
  */
 export async function search(
   db: Db,
@@ -72,7 +132,7 @@ export async function search(
     // Recent-items path: still honor namespace + tags filters so tag-only
     // searches work (e.g. q="" + tags=["user-experience"]).
     const memConditions = [
-      eq(memories.archived, false),
+      sql`${memories.archived} IS NOT TRUE`,
       eq(namespaces.ownerId, ownerId),
     ];
     const entConditions: SQL[] = [eq(namespaces.ownerId, ownerId)];
@@ -80,6 +140,10 @@ export async function search(
       const nsId = await resolveNamespaceId(db, ownerId, opts.namespace);
       memConditions.push(eq(memories.namespaceId, nsId));
       entConditions.push(eq(entities.namespaceId, nsId));
+    }
+    if (opts.type !== undefined) {
+      memConditions.push(eq(memories.type, opts.type));
+      entConditions.push(eq(entities.type, opts.type));
     }
     if (opts.tags !== undefined && opts.tags.length) {
       const tagArray = sql`ARRAY[${sql.join(
@@ -120,8 +184,9 @@ export async function search(
         importance: Number(m.importance),
         updated_at: String(m.updatedAt),
         namespace: String(m.namespace),
-        snippet: snippet(String(m.content)),
+        snippet: snippet(String(m.content), []),
         score: 0,
+        matched_terms: 0,
       })),
       ...entitiesRows.map((e) => ({
         kind: "entity" as const,
@@ -131,8 +196,9 @@ export async function search(
         importance: Number(e.importance),
         updated_at: String(e.updatedAt),
         namespace: String(e.namespace),
-        snippet: snippet(String(e.summary ?? e.name)),
+        snippet: snippet(String(e.summary ?? e.name), []),
         score: 0,
+        matched_terms: 0,
       })),
     ];
     hits.sort((a, b) =>
@@ -141,32 +207,39 @@ export async function search(
     return hits.slice(0, limit);
   }
 
-  const words = (opts.q.match(WORD_RE) ?? []).map((w) => w.toLowerCase());
-  // Escape LIKE metacharacters so input matches literally.
-  const like = `%${opts.q.replace(/[%_\\]/g, "\\$&")}%`;
-  // AND-of-words filter: every word must appear, any order. Words come from
-  // WORD_RE so they are alphanumeric-only — no LIKE metacharacters to escape.
-  // Falls back to the phrase filter when the query has no words (e.g. "!!!").
-  const wordArray = words.length
-    ? sql`ARRAY[${sql.join(
-        words.map((w) => sql`${`%${w}%`}`),
-        sql`, `,
-      )}]::text[]`
-    : null;
-  // Searchable text for a memory = content + metadata (JSONB cast to text).
-  // Conversation digests store their human-readable `title`, `conversation_id`
-  // and `source_ai` in metadata, so a digest is only findable by name if we
-  // index metadata too — content alone misses digests whose title isn't
-  // duplicated verbatim in the summary.
-  const memText = sql`(m.content || ' ' || COALESCE(m.metadata::text, ''))`;
-  const memWordFilter = wordArray
-    ? sql`AND ${memText} ILIKE ALL (${wordArray})`
-    : sql`AND ${memText} ILIKE ${like} ESCAPE '\\'`;
-  const entWordFilter = wordArray
-    ? sql`(e.name ILIKE ALL (${wordArray}) OR e.summary ILIKE ALL (${wordArray}))`
-    : sql`(e.name ILIKE ${like} ESCAPE '\\' OR e.summary ILIKE ${like} ESCAPE '\\')`;
-  // Normalized phrase for the exact-match ranking bonus.
-  const phrase = opts.q.trim().toLowerCase().replace(/\s+/g, " ");
+  // Terms + LIKE patterns for the query. A punctuation-only query ("!!!") has
+  // no word terms and falls back to matching the literal, so a non-empty query
+  // always yields at least one term (and coverage stays meaningful).
+  const { terms, patterns } = matchPlan(opts.q);
+  const wordRegexes = terms.map((t) => `\\y${escapeRegExp(t)}\\y`);
+  // Normalized phrase for the verbatim-match bonus.
+  const phrase = `%${escapeLike(opts.q.trim().toLowerCase().replace(/\s+/g, " "))}%`;
+
+  const likeArray = textArray(patterns);
+  const regexArray = textArray(wordRegexes);
+  // Coverage weight: strictly greater than the largest bonus any single row can
+  // accumulate (10 per whole-word match + 5 for the phrase), for any term count.
+  const coverageWeight = 20 * terms.length + 100;
+
+  // The only metadata worth matching: a digest's human-readable `title`, its
+  // `conversation_id` (documented for resuming), and `source_ai`. Named fields
+  // rather than `metadata::text` on purpose — the whole-JSON form also matched
+  // KEY names (so every digest hit for "conversation_id" or "kind") and swept in
+  // the verbatim `transcript`, which is fidelity-only and deliberately out of
+  // search: a 100k-char transcript would match nearly any query.
+  const memMeta = sql`(COALESCE(m.metadata->>'title', '') || ' ' || COALESCE(m.metadata->>'conversation_id', '') || ' ' || COALESCE(m.metadata->>'source_ai', ''))`;
+  const memHaystack = sql`(m.content || ' ' || ${memMeta})`;
+  const entHaystack = sql`(e.name || ' ' || COALESCE(e.summary, ''))`;
+  // Candidate prefilters, one per indexed column — a bare ILIKE can be served by
+  // the pg_trgm GIN indexes, an ILIKE over the concatenated haystack cannot.
+  // NB: an OR against an UNINDEXED expression costs the planner the index for
+  // the whole predicate, which is why this metadata expression carries its own
+  // trgm index (`memories_metadata_trgm` in schema.ts).
+  const memAny = sql`(${matchesAnyTerm(sql`m.content`, patterns)} OR ${matchesAnyTerm(memMeta, patterns)})`;
+  // `e.summary` is deliberately NOT wrapped in COALESCE: the wrapper would be a
+  // different expression than the one idx_entities_summary_trgm indexes, so the
+  // index could not serve it (a NULL mismatch is harmless inside an OR).
+  const entAny = sql`(${matchesAnyTerm(sql`e.name`, patterns)} OR ${matchesAnyTerm(sql`e.summary`, patterns)})`;
 
   // Each UNION branch has a different alias (m vs e) — build predicates
   // per-branch (a shared one referencing both aliases is invalid SQL).
@@ -188,23 +261,37 @@ export async function search(
     memWhere.push(sql`m.tags @> ${tagArray}`);
     entWhere.push(sql`e.tags @> ${tagArray}`);
   }
-  const memWhereSql = memWhere.length
-    ? sql`AND ${sql.join(memWhere, sql` AND `)}`
-    : sql``;
-  const entWhereSql = entWhere.length
-    ? sql`AND ${sql.join(entWhere, sql` AND `)}`
-    : sql``;
+  const memWhereSql = sql`AND ${sql.join(memWhere, sql` AND `)}`;
+  const entWhereSql = sql`AND ${sql.join(entWhere, sql` AND `)}`;
 
   const res = await db.execute(sql`
-    SELECT 'memory' AS kind, m.id, m.content AS text, COALESCE(m.metadata::text, '') AS meta, m.type, m.importance, m.updated_at, n.name AS namespace
-      FROM ${memories} m JOIN ${namespaces} n ON n.id = m.namespace_id
-      WHERE NOT m.archived ${memWordFilter} ${memWhereSql}
-    UNION ALL
-    SELECT 'entity' AS kind, e.id, e.name AS text, '' AS meta, e.type, e.importance, e.updated_at, n.name AS namespace
-      FROM ${entities} e JOIN ${namespaces} n ON n.id = e.namespace_id
-      WHERE ${entWordFilter} ${entWhereSql}
-    ORDER BY updated_at DESC
-    LIMIT ${limit * 4}
+    SELECT src.kind, src.id, src.name, src.content, src.type, src.importance,
+           src.updated_at, src.namespace, src.haystack,
+           COALESCE(sc.matched, 0) AS matched,
+           COALESCE(sc.matched, 0) * ${coverageWeight}
+             + COALESCE(sc.whole, 0) * 10
+             + (CASE WHEN src.haystack ILIKE ${phrase} ESCAPE '\\' THEN 5 ELSE 0 END) AS score
+      FROM (
+        SELECT 'memory' AS kind, m.id, NULL::text AS name, m.content AS content,
+               m.type, m.importance, m.updated_at, n.name AS namespace,
+               ${memHaystack} AS haystack
+          FROM ${memories} m JOIN ${namespaces} n ON n.id = m.namespace_id
+         WHERE m.archived IS NOT TRUE AND ${memAny} ${memWhereSql}
+        UNION ALL
+        SELECT 'entity' AS kind, e.id, e.name, NULL::text AS content,
+               e.type, e.importance, e.updated_at, n.name AS namespace,
+               ${entHaystack} AS haystack
+          FROM ${entities} e JOIN ${namespaces} n ON n.id = e.namespace_id
+         WHERE ${entAny} ${entWhereSql}
+      ) AS src
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS matched,
+               COUNT(*) FILTER (WHERE src.haystack ~* w.rx) AS whole
+          FROM unnest(${likeArray}, ${regexArray}) AS w(pat, rx)
+         WHERE src.haystack ILIKE w.pat
+      ) AS sc ON TRUE
+     ORDER BY score DESC, src.importance DESC NULLS LAST, src.updated_at DESC
+     LIMIT ${limit}
   `);
   const rows = res.rows as Array<Record<string, unknown>>;
 
@@ -215,31 +302,41 @@ export async function search(
     const key = `${kind}:${String(row.id)}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const text = String(row.text);
-    const meta = String(row.meta ?? "");
-    // Score against content + metadata so a digest ranks when its title
-    // (metadata.title) or conversation_id matches, even if the summary text
-    // doesn't contain those exact words.
-    const score = matchScore(`${text} ${meta}`, words, phrase);
+    const haystack = String(row.haystack ?? "");
+    const name =
+      row.name === null || row.name === undefined
+        ? undefined
+        : String(row.name);
+    const content =
+      row.content === null || row.content === undefined
+        ? undefined
+        : String(row.content);
     hits.push({
       kind,
       id: String(row.id),
-      name: kind === "entity" ? text : undefined,
-      content: kind === "memory" ? text : undefined,
+      name,
+      content,
       type: String(row.type),
       importance: Number(row.importance),
       updated_at: String(row.updated_at),
       namespace: String(row.namespace),
-      snippet: snippet(text),
-      score,
+      // Memories snippet their content so the match reads in context. When the
+      // match exists only in metadata (a digest title, say) fall back to the
+      // full haystack, so the reason for the match is never invisible.
+      snippet:
+        kind === "memory" && content && containsAny(content, terms)
+          ? snippet(content, terms)
+          : snippet(haystack, terms),
+      score: Number(row.score),
+      matched_terms: Number(row.matched),
     });
   }
 
-  hits.sort(
-    (a, b) =>
-      b.score - a.score ||
-      b.importance - a.importance ||
-      String(b.updated_at).localeCompare(String(a.updated_at)),
-  );
-  return hits.slice(0, limit);
+  // A typo'd namespace must not look like "no memories exist" — that false
+  // zero is exactly the failure this search exists to prevent. Only checked
+  // when the result set is empty, so the happy path pays no extra round trip.
+  if (hits.length === 0 && opts.namespace !== undefined) {
+    await resolveNamespaceId(db, ownerId, opts.namespace);
+  }
+  return hits;
 }
