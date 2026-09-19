@@ -138,30 +138,27 @@ export const accounts = pgTable(
   ],
 );
 
-export const verifications = pgTable(
-  "verifications",
-  {
-    id: uuid().primaryKey().notNull(),
-    identifier: text().notNull(),
-    value: text().notNull(),
-    expiresAt: timestamp("expires_at", {
-      withTimezone: true,
-      mode: "date",
-    }).notNull(),
-    createdAt: timestamp("created_at", {
-      withTimezone: true,
-      mode: "date",
-    })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", {
-      withTimezone: true,
-      mode: "date",
-    })
-      .notNull()
-      .defaultNow(),
-  },
-);
+export const verifications = pgTable("verifications", {
+  id: uuid().primaryKey().notNull(),
+  identifier: text().notNull(),
+  value: text().notNull(),
+  expiresAt: timestamp("expires_at", {
+    withTimezone: true,
+    mode: "date",
+  }).notNull(),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    mode: "date",
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    mode: "date",
+  })
+    .notNull()
+    .defaultNow(),
+});
 
 /**
  * API keys (Better Auth apiKey plugin) — per-user keys for local editors
@@ -425,6 +422,16 @@ export const memories = pgTable(
       "gin",
       table.content.op("gin_trgm_ops"),
     ),
+    // New: trigram index for the DIGEST-METADATA branch of the search prefilter.
+    // A GIN trigram index can only serve a predicate whose expression matches the
+    // indexed one, and an OR against an unindexed expression costs the planner the
+    // index for the WHOLE predicate — without this, every search seq-scanned.
+    // MUST stay identical to `memMeta` in db/lib/search.ts (verified by EXPLAIN,
+    // since nothing else would catch the drift).
+    index("idx_memories_metadata_trgm").using(
+      "gin",
+      sql`(COALESCE(${table.metadata}->>'title', '') || ' ' || COALESCE(${table.metadata}->>'conversation_id', '') || ' ' || COALESCE(${table.metadata}->>'source_ai', '')) gin_trgm_ops`,
+    ),
     // New: GIN index for tag containment queries (tags @> ARRAY[...]).
     index("idx_memories_tags").using("gin", table.tags),
     // New: partial index for the queryMemories hot path (importance DESC, updated_at DESC).
@@ -450,7 +457,10 @@ export const oauthClients = pgTable(
     clientId: text("client_id").notNull(),
     clientSecret: text("client_secret"),
     name: text().notNull(),
-    redirectUris: jsonb("redirect_uris").$type<string[]>().notNull().default([]),
+    redirectUris: jsonb("redirect_uris")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     tokenEndpointAuthMethod: text("token_endpoint_auth_method").default("none"),
     // The account that authorized this client — an "AI connection".
     // Nullable: dynamic client registration is unauthenticated; the owner

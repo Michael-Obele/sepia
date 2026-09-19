@@ -1,0 +1,1 @@
+CREATE INDEX "idx_memories_metadata_trgm" ON "memories" USING gin ((COALESCE("metadata"->>'title', '') || ' ' || COALESCE("metadata"->>'conversation_id', '') || ' ' || COALESCE("metadata"->>'source_ai', '')) gin_trgm_ops);
