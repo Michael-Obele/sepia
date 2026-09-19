@@ -17,7 +17,7 @@ import {
   relations,
 } from "../schema.ts";
 import { normalizeEntityType, normalizeTags } from "../../types.ts";
-import { resolveNamespaceId } from "./util.ts";
+import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
 
 export interface EntityCreate {
   name: string;
@@ -101,9 +101,7 @@ export async function getEntity(db: Db, ownerId: string, id: string) {
     })
     .from(entities)
     .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
-    .where(
-      and(eq(entities.id, id), eq(namespaces.ownerId, ownerId)),
-    )
+    .where(and(eq(entities.id, id), eq(namespaces.ownerId, ownerId)))
     .limit(1);
   const entity = entityRows[0];
   if (!entity) throw new MemoryError("not_found", `entity '${id}' not found`);
@@ -183,9 +181,7 @@ export async function updateEntity(
       .select({ tags: entities.tags })
       .from(entities)
       .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
-      .where(
-        and(eq(entities.id, id), eq(namespaces.ownerId, ownerId)),
-      )
+      .where(and(eq(entities.id, id), eq(namespaces.ownerId, ownerId)))
       .limit(1);
     currentTags = cur[0]?.tags ?? [];
   }
@@ -198,9 +194,7 @@ export async function updateEntity(
   const rows = await db
     .update(entities)
     .set({ ...sets, ...normalized, updatedAt: sql`now()` })
-    .where(
-      and(eq(entities.id, id), inArray(entities.namespaceId, owned)),
-    )
+    .where(and(eq(entities.id, id), inArray(entities.namespaceId, owned)))
     .returning();
   const row = rows[0];
   if (!row) throw new MemoryError("not_found", `entity '${id}' not found`);
@@ -233,7 +227,11 @@ export async function findEntities(
 ) {
   const conditions = [eq(namespaces.ownerId, ownerId)];
   if (query !== undefined) {
-    conditions.push(ilike(entities.name, `%${query}%`));
+    // Read path: match every term in any order, against the name or the summary,
+    // so a multi-word lookup like "Smoke Project" no longer needs adjacency.
+    conditions.push(
+      sql`(${matchesAllTerms(sql`${entities.name}`, query)} OR ${matchesAllTerms(sql`${entities.summary}`, query)})`,
+    );
   }
   if (type !== undefined) {
     conditions.push(eq(entities.type, type));
@@ -277,7 +275,9 @@ export async function batchUpdateEntities(
     conditions.push(eq(entities.type, where.type));
   }
   if (where.query !== undefined) {
-    conditions.push(ilike(entities.name, `%${where.query}%`));
+    // Destructive filter: phrase-strict by design, but wildcards escaped — an
+    // unescaped `where:{"query":"%"}` matched every entity.
+    conditions.push(ilike(entities.name, `%${escapeLike(where.query)}%`));
   }
   if (where.namespace !== undefined) {
     const nsId = await resolveNamespaceId(db, ownerId, where.namespace);
@@ -331,7 +331,12 @@ export async function batchUpdateEntities(
       ...(tagExpr ? { tags: tagExpr } : {}),
       updatedAt: sql`now()`,
     })
-    .where(inArray(entities.id, ids.map((r) => r.id)))
+    .where(
+      inArray(
+        entities.id,
+        ids.map((r) => r.id),
+      ),
+    )
     .returning({ id: entities.id });
   return { count: res.length };
 }

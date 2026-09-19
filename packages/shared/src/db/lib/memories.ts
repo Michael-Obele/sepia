@@ -18,7 +18,7 @@ import {
   namespaces,
 } from "../schema.ts";
 import { normalizeTags } from "../../types.ts";
-import { resolveNamespaceId } from "./util.ts";
+import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
 import { assertMemoryQuota } from "./plans.ts";
 
 export interface MemoryCreate {
@@ -265,7 +265,9 @@ export async function queryMemories(
     conditions.push(gte(memories.importance, filters.importance_min));
   }
   if (filters.q !== undefined && filters.q.trim() !== "") {
-    conditions.push(ilike(memories.content, `%${filters.q.trim()}%`));
+    // Order-independent all-term match: the old single-phrase substring required
+    // the words to be adjacent, so `q="Jev Bun"` returned nothing.
+    conditions.push(matchesAllTerms(sql`${memories.content}`, filters.q));
   }
   if (filters.tags !== undefined && filters.tags.length) {
     const tagArray = sql`ARRAY[${sql.join(
@@ -327,7 +329,10 @@ export async function batchUpdateMemories(
     conditions.push(gte(memories.importance, where.importance_min));
   }
   if (where.q !== undefined) {
-    conditions.push(ilike(memories.content, `%${where.q}%`));
+    // Destructive filter: deliberately kept phrase-strict (an all-term match
+    // would widen the blast radius of a mass edit), but the wildcards MUST be
+    // escaped — an unescaped `q="%"` matched every row in the namespace.
+    conditions.push(ilike(memories.content, `%${escapeLike(where.q)}%`));
   }
   if (conditions.length === 1) {
     throw new MemoryError(
