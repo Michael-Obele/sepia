@@ -51,8 +51,8 @@ Actions: `create` | `get` | `update` | `delete` | `query` | `batch_update` | `in
 - `type`? (string) — memory type (fact|observation|preference|instruction) OR entity type (person|project|tool|concept|repo)
 - `tags`? (string[]) — match memories/entities carrying ALL of these tags
 - `limit`? (1-25, default 10)
-- Multi-word `q` = AND-of-words (every word must appear, any order); exact-phrase matches rank first.
-- Returns merged, de-duplicated list with `kind` (memory|entity), id, snippet, score. Rank: exact word match > substring match, then importance DESC, then updated_at DESC. Empty `q` → recent items.
+- Matching is best-effort: a row matching ANY word is a candidate, and rows matching MORE words rank first — so a result set is never emptied by one absent word. Verbatim phrase > whole-word match > substring, then importance DESC, then updated_at DESC. Empty `q` → recent items.
+- Returns `{ count, terms, partial, hits }`. `partial: true` means no single hit covered the whole query — check it (and each hit's `matched_terms`) before concluding nothing exists. Hits add `kind` (memory|entity), id, snippet (centred on the match), score.
 
 ## traverse_graph
 

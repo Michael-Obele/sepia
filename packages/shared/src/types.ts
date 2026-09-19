@@ -41,6 +41,7 @@ MANDATORY WORKFLOW — do this on ALMOST EVERY turn:
 
 BEFORE you answer (every turn except trivial chitchat):
 1. Call "search" with 2-5 keywords from the user's current message + task (e.g. query="auth rate limiting"). If sparse, also call "traverse_graph" from the top entity.
+   Search is best-effort: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits or partial: true, retry with ONE distinctive keyword or a looser filter BEFORE concluding nothing exists.
 2. Weave hits into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
 AFTER you answer (every turn where you learned something):
@@ -103,7 +104,7 @@ FAILURE MODE: if you answer without searching, you are guessing. Search first.`;
  */
 export const MEMORY_CONTRACT_QUICK = `You are connected to a memory server (Sepia) over MCP. Use it on ALMOST EVERY turn.
 
-BEFORE you answer (every turn except trivial chitchat): call "search" with 2-5 keywords about the task. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
+BEFORE you answer (every turn except trivial chitchat): call "search" with 2-5 keywords about the task. Search is best-effort (rows matching more of your words rank first) — if it returns 0 hits or partial: true, retry with ONE distinctive keyword before concluding nothing exists. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
 AFTER you answer (every turn where you learned something): persist durable facts immediately — manage_entity find → create, manage_memory create (type: fact | observation | preference | instruction; importance 0-1), manage_relation to link the graph.
 
@@ -122,7 +123,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * `bun run scripts/stamp-docs-version.ts` to stamp it into every file.
  * Served at /version so installed copies can be checked for staleness.
  */
-export const DOCS_VERSION = "1.3.0";
+export const DOCS_VERSION = "1.4.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [
