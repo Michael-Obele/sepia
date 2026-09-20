@@ -7,6 +7,23 @@
 export const DEFAULT_NAMESPACE = "personal";
 
 /**
+ * The API key's leading identity string — what makes a sepia credential
+ * recognisable on sight, in a log, or to a secret scanner (`sepia_Ab3xk…`).
+ *
+ * Same convention as `ghp_` (GitHub), `sk_live_` (Stripe) and `sk-ant-`
+ * (Anthropic): a fixed, greppable brand prefix followed by high-entropy
+ * randomness. Read by the auth server (as the plugin's `defaultPrefix`), by
+ * key generation, and by the dashboard — keys minted by any path must be
+ * indistinguishable.
+ *
+ * Defined here rather than in `db/lib/users.ts` because the dashboard renders
+ * it in a component. This module imports nothing, which is what makes
+ * `@sepia/shared/types` safe to pull into a browser bundle. The barrel entry
+ * point is not — see the note in `index.ts`.
+ */
+export const API_KEY_PREFIX = "sepia_";
+
+/**
  * The memory usage contract — the "remember without being asked" rules.
  * Sent to the model via the MCP `instructions` field in the `initialize`
  * handshake (supporting clients inject it into the system prompt), carried

@@ -1,3 +1,18 @@
+/**
+ * The SERVER barrel. Everything reachable from here — `db/client.ts`, the
+ * Drizzle schema, `db/lib/*` — assumes Postgres and Node builtins, so none of
+ * it belongs in a browser bundle.
+ *
+ * Browser code (dashboard components) must import from `@sepia/shared/types`
+ * instead. That subpath resolves to `types.ts`, which imports nothing at all,
+ * so it is safe client-side.
+ *
+ * Getting this wrong is quiet: importing the barrel from a `.svelte` file
+ * ships the whole database layer to the browser and then throws at runtime the
+ * first time a re-exported module touches a Node builtin — `node:crypto` in
+ * `db/lib/telemetry.ts` is how this was found. `browser-safety.test.ts` guards
+ * the rule.
+ */
 export * from "./types.ts";
 export * from "./schemas.ts";
 export * from "./db/schema.ts";

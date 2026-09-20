@@ -7,7 +7,7 @@
 	import { Slider } from '$lib/components/ui/slider/index.js';
 	import { toast } from 'svelte-sonner';
 	import { addEntity, updateEntityData } from '$lib/remote/index.js';
-	import { ENTITY_TYPES } from '@sepia/shared';
+	import { ENTITY_TYPES } from '@sepia/shared/types';
 
 	let {
 		open = $bindable(false),

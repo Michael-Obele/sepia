@@ -1,5 +1,5 @@
 import * as v from 'valibot';
-import { MEMORY_TYPES, ENTITY_TYPES } from '@sepia/shared';
+import { MEMORY_TYPES, ENTITY_TYPES } from '@sepia/shared/types';
 import { CONVERSATION_STATUSES } from '$lib/format.js';
 import type { SearchParamsOptions } from 'runed/kit';
 

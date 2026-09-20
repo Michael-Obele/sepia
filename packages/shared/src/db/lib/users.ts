@@ -1,6 +1,7 @@
 import type { Db } from "../client.ts";
 import { and, desc, eq, gt, ne } from "drizzle-orm";
 import { apikey, sessions, users } from "../schema.ts";
+import { API_KEY_PREFIX } from "../../types.ts";
 
 /**
  * Account helpers shared by the MCP server and the dashboard. Both resolve
@@ -127,17 +128,6 @@ export async function getUserByApiKey(db: Db, key: string) {
   }
   return row.user;
 }
-
-/**
- * The key's leading identity string — what makes a sepia credential
- * recognisable on sight, in a log, or to a secret scanner (`sepia_Ab3xk…`).
- *
- * Same convention as `ghp_` (GitHub), `sk_live_` (Stripe) and `sk-ant-`
- * (Anthropic): a fixed, greppable brand prefix followed by high-entropy
- * randomness. Exported so the auth server can pass it as the plugin's
- * `defaultPrefix` — keys minted by either path must be indistinguishable.
- */
-export const API_KEY_PREFIX = "sepia_";
 
 /** Better Auth's key generator uses letters only, 64 characters. */
 const API_KEY_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";

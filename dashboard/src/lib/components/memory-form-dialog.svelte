@@ -9,7 +9,7 @@
 	import { Search, X } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { addMemory, updateMemoryData, getEntities } from '$lib/remote/index.js';
-	import { MEMORY_TYPES } from '@sepia/shared';
+	import { MEMORY_TYPES } from '@sepia/shared/types';
 
 	let {
 		open = $bindable(false),

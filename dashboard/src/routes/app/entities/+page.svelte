@@ -12,7 +12,7 @@
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { page } from '$app/state';
 	import { Trash2 } from '@lucide/svelte';
-	import { ENTITY_TYPES } from '@sepia/shared';
+	import { ENTITY_TYPES } from '@sepia/shared/types';
 	import { useSearchParams } from 'runed/kit';
 	import { entitiesSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
 	import { onMount } from 'svelte';

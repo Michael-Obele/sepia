@@ -21,7 +21,7 @@
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { page } from '$app/state';
-	import { MEMORY_TYPES } from '@sepia/shared';
+	import { MEMORY_TYPES } from '@sepia/shared/types';
 	import { useSearchParams } from 'runed/kit';
 	import { memoriesSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
 	import { onMount } from 'svelte';

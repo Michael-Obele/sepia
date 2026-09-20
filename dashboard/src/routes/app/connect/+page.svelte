@@ -40,7 +40,7 @@
 		createApiKey as createApiKeyRemote,
 		deleteApiKey as deleteApiKeyRemote
 	} from '$lib/remote/index.js';
-	import { API_KEY_PREFIX, MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared';
+	import { API_KEY_PREFIX, MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared/types';
 	import { IsMounted, PersistedState } from 'runed';
 	import { toast } from 'svelte-sonner';
 

@@ -171,8 +171,8 @@
 				<TriangleAlert class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
 				<p class="text-xs text-muted-foreground">
 					<strong class="font-medium text-foreground">Never recorded, at either tier:</strong>
-					memory content, entity names, your conversations with an AI, or credentials. This is
-					enforced where the row is written, not by policy — a lower tier writes a
+					memory content, entity names, your conversations with an AI, or credentials. This is enforced
+					where the row is written, not by policy — a lower tier writes a
 					<code class="font-mono text-[11px]">null</code> into those columns.
 				</p>
 			</div>
@@ -222,7 +222,7 @@
 							<div class="flex flex-wrap gap-2">
 								<Button
 									size="sm"
-									variant={s.tier === 'signals' ? 'default' : 'outline'}
+									variant={s.tier === 'signals' ? 'default' : 'ghost'}
 									disabled={saving}
 									onclick={() => setTier('signals')}>Counters only</Button
 								>
