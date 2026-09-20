@@ -31,7 +31,7 @@ import { and, inArray, like, lt } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { db } from "../client.ts";
 import { memories, namespaces, users } from "../schema.ts";
-import { BRIEFING_ITEM_CHARS, CORE_IMPORTANCE } from "../../types.ts";
+import { BRIEFING_CHARS_DEFAULT, BRIEFING_ITEM_CHARS, CORE_IMPORTANCE } from "../../types.ts";
 import { getBriefing } from "./memories.ts";
 
 const hasDb = Boolean(process.env.DATABASE_URL);
@@ -228,7 +228,10 @@ describe.skipIf(!hasDb)("briefing", () => {
 
   // ── Ordering: core first, then priority ─────────────────────────────────
   test("core rules come first, then the rest by importance", async () => {
-    const b = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
+    const b = await getBriefing(conn, ownerId, {
+      namespace: NS_MAIN,
+      detail: "all",
+    });
     expect(b.memories.map((m) => m.id)).toEqual([
       id("HIGH_UNTAGGED"),
       id("ALWAYS_LOW"),
@@ -243,6 +246,50 @@ describe.skipIf(!hasDb)("briefing", () => {
     expect(b.omitted).toBe(0);
   });
 
+  // ── The default scope: core only, tail counted but not returned ─────────
+  test("defaults to core: the tail is not returned, but is counted", async () => {
+    const b = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
+    expect(b.detail).toBe("core");
+    expect(b.memories.map((m) => m.id)).toEqual([
+      id("HIGH_UNTAGGED"),
+      id("ALWAYS_LOW"),
+      id("FACT_ALWAYS"),
+    ]);
+    expect(b.count).toBe(3);
+    expect(b.core_count).toBe(3);
+    expect(b.other_standing).toBe(3);
+    // Nothing was left out of what was ASKED for, so the flag stays quiet. If `truncated`
+    // were always true the caller would habituate to it and it would stop being read.
+    expect(b.truncated).toBe(false);
+    expect(b.omitted).toBe(0);
+    expect(b.max_chars).toBeUndefined();
+  });
+
+  test("core mode ignores max_chars: core is never dropped for budget", async () => {
+    const tiny = await getBriefing(conn, ownerId, {
+      namespace: NS_MAIN,
+      detail: "core",
+      max_chars: 1000,
+    });
+    const dflt = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
+    expect(tiny.memories).toEqual(dflt.memories);
+    expect(tiny.max_chars).toBeUndefined();
+    expect(tiny.other_standing).toBe(3);
+  });
+
+  test("all mode adds the tail, and reports the budget it used", async () => {
+    const b = await getBriefing(conn, ownerId, {
+      namespace: NS_MAIN,
+      detail: "all",
+    });
+    expect(b.detail).toBe("all");
+    expect(b.count).toBe(6);
+    expect(b.core_count).toBe(3);
+    expect(b.other_standing).toBe(3);
+    expect(b.truncated).toBe(false);
+    expect(b.max_chars).toBe(BRIEFING_CHARS_DEFAULT);
+  });
+
   test("importance >= CORE_IMPORTANCE is core with no tag (zero-migration path)", async () => {
     const b = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
     const high = b.memories.find((m) => m.id === id("HIGH_UNTAGGED"));
@@ -252,7 +299,10 @@ describe.skipIf(!hasDb)("briefing", () => {
   });
 
   test("the always tag promotes a low-importance rule above untagged ones", async () => {
-    const b = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
+    const b = await getBriefing(conn, ownerId, {
+      namespace: NS_MAIN,
+      detail: "all",
+    });
     const order = b.memories.map((m) => m.id);
     expect(order.indexOf(id("ALWAYS_LOW"))).toBeLessThan(
       order.indexOf(id("MID")),
@@ -280,7 +330,10 @@ describe.skipIf(!hasDb)("briefing", () => {
 
   // ── Compaction ─────────────────────────────────────────────────────────
   test("long rules are compacted, and stay reachable by id", async () => {
-    const b = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
+    const b = await getBriefing(conn, ownerId, {
+      namespace: NS_MAIN,
+      detail: "all",
+    });
     const long = b.memories.find((m) => m.id === id("LONG"));
     expect(long?.content.length).toBe(BRIEFING_ITEM_CHARS);
     expect(long?.content.endsWith("…")).toBe(true);
@@ -292,6 +345,7 @@ describe.skipIf(!hasDb)("briefing", () => {
   test("exceeding the budget reports it exactly, and drops the lowest priority first", async () => {
     const b = await getBriefing(conn, ownerId, {
       namespace: NS_BUDGET,
+      detail: "all",
       max_chars: 1000,
     });
     expect(b.count + b.omitted).toBe(5);
@@ -307,6 +361,7 @@ describe.skipIf(!hasDb)("briefing", () => {
   test("a budget that fits reports no truncation", async () => {
     const b = await getBriefing(conn, ownerId, {
       namespace: NS_BUDGET,
+      detail: "all",
       max_chars: 40_000,
     });
     expect(b.count).toBe(5);
@@ -317,6 +372,7 @@ describe.skipIf(!hasDb)("briefing", () => {
   test("core is never dropped for budget, even when it overflows", async () => {
     const b = await getBriefing(conn, ownerId, {
       namespace: NS_CORE,
+      detail: "all",
       max_chars: 1000,
     });
     // 3 x 400 compacted chars = 1200 > the 1000 budget, yet all three survive.

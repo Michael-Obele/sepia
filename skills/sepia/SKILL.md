@@ -42,15 +42,21 @@ call `manage_memory` with `action: "briefing"`. No keywords.
 
 - **Core** = every memory tagged `always` **or** at importance >= 0.9. The importance half
   means it works on rules stored before this feature existed — there is no tagging migration.
-- It returns one priority-ordered list, each rule compacted to 400 chars (full text stays
-  reachable via `action: "get"` on the `id`), inside a character budget (`max_chars`, default
-  8000, max 40000).
-- **Core rules are never dropped for budget.** Whatever else is left out is stated: `truncated:
-true` plus an exact `omitted`. **Before an install, build, deploy, deletion, or infra change,
-  if you saw `truncated: true`, re-run with a larger `max_chars`** — the rule you cannot see is
-  the one that costs the user bandwidth, money, or trust.
-- Treat every rule it returns as **binding for the whole session**.
-
+- **It returns core by default, and that split is the design.** Core is a handful of rules and
+  stays small — safe to load every session forever. The tail (situational, project-scoped)
+  grows without bound (measured: 9 core rules ≈ 886 tokens against 235 tail rules ≈ 8.5k), and
+  a long constraint list is self-defeating, because the rules that matter stop standing out.
+  The response reports `other_standing`, so a caller always knows the tail is there.
+- Each rule is compacted to 400 chars (full text stays reachable via `action: "get"` on the
+  `id`). **400 is a measured floor, not an arbitrary one**: against the real core set, cutting
+  to 200 chars strips the actionable clause from 2 of 9 rules, and first-sentence extraction
+  strips it from 5 of 9 — including "state the download size before any build", whose first
+  sentence is pure context. Do not compress a standing rule to save tokens; its power is its
+  specificity, and a paraphrase keeps the sentiment while losing the trigger.
+- **Core rules are never dropped for budget**, in either mode.
+- **Escalation**: before anything slow, metered, destructive, or expensive (install, build,
+  deploy, deletion, infra change), call again with `detail: "all"` — and raise `max_chars`
+  (default 8000, max 40000) if that reports `truncated: true`.
 Tag a rule `always` only when it applies in **every** repo and **every** session. A rule that
 is specific to one project must not carry the tag, or it becomes noise in every other session.
 

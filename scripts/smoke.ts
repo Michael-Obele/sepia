@@ -319,31 +319,57 @@ if (hasDb) {
           namespace: briefNs,
         },
       });
+      // NOT core (0.5, untagged): the tail. Proves the default scope excludes it and
+      // `detail: "all"` picks it up.
+      await callTool("manage_memory", {
+        action: "create",
+        memory: {
+          content: "Smoke situational rule that should only appear at detail=all",
+          type: "instruction",
+          importance: 0.5,
+          namespace: briefNs,
+        },
+      });
       const briefing = (await callTool("manage_memory", {
         action: "briefing",
         namespace: briefNs,
       })) as {
+        detail: string;
         count: number;
         core_count: number;
+        other_standing: number;
         truncated: boolean;
         omitted: number;
-        max_chars: number;
+        max_chars?: number;
         memories: Array<{ id: string; content: string; core: boolean }>;
       };
       check(
         "briefing returns the documented shape",
         typeof briefing.count === "number" &&
           typeof briefing.core_count === "number" &&
+          typeof briefing.other_standing === "number" &&
           typeof briefing.truncated === "boolean" &&
           typeof briefing.omitted === "number" &&
-          typeof briefing.max_chars === "number" &&
           Array.isArray(briefing.memories),
         `count=${briefing.count} core=${briefing.core_count}`,
+      );
+      check(
+        "briefing defaults to core, and is quiet about it",
+        briefing.detail === "core" &&
+          briefing.max_chars === undefined &&
+          briefing.truncated === false &&
+          briefing.omitted === 0,
+        `detail=${briefing.detail} truncated=${briefing.truncated} omitted=${briefing.omitted}`,
       );
       check(
         "briefing covers standing rules only (the fact is excluded)",
         briefing.count === 1 && briefing.core_count === 1,
         `count=${briefing.count} core=${briefing.core_count}`,
+      );
+      check(
+        "briefing reports the tail it did NOT return",
+        briefing.other_standing === 1,
+        `other_standing=${briefing.other_standing}`,
       );
       check(
         "briefing surfaces an `always` rule at low importance as core",
@@ -358,6 +384,28 @@ if (hasDb) {
         `truncated=${briefing.truncated} omitted=${briefing.omitted}`,
       );
 
+      // Escalation path: the tail is one flag away.
+      const briefAll = (await callTool("manage_memory", {
+        action: "briefing",
+        namespace: briefNs,
+        detail: "all",
+      })) as {
+        detail: string;
+        count: number;
+        core_count: number;
+        max_chars?: number;
+        memories: Array<{ content: string }>;
+      };
+      check(
+        "briefing detail=all adds the tail (and only then a budget)",
+        briefAll.detail === "all" &&
+          briefAll.count === 2 &&
+          briefAll.core_count === 1 &&
+          typeof briefAll.max_chars === "number" &&
+          briefAll.memories.some((m) => m.content.includes("situational")),
+        `count=${briefAll.count} core=${briefAll.core_count} max_chars=${briefAll.max_chars}`,
+      );
+
       // REST route-order regression: `/api/memories/briefing` must be matched BEFORE the
       // `/:id` route, which would otherwise swallow "briefing" and 422 on uuidParam.
       const briefRest = await fetch(
@@ -369,6 +417,17 @@ if (hasDb) {
         "REST briefing route resolves (not the /:id matcher)",
         briefRest.status === 200 && briefRestJson.core_count === 1,
         `status ${briefRest.status}, core=${briefRestJson.core_count}`,
+      );
+
+      // The new `detail` param is validated, not silently coerced.
+      const briefBad = await fetch(
+        `${BASE.replace(/\/mcp$/, "")}/api/memories/briefing?detail=everything`,
+        { headers: token ? { authorization: `Bearer ${token}` } : {} },
+      );
+      check(
+        "REST briefing rejects an unknown detail value",
+        briefBad.status === 422,
+        `status ${briefBad.status}`,
       );
     } finally {
       try {

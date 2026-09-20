@@ -2,6 +2,8 @@ import * as v from "valibot";
 import {
   BRIEFING_CHARS_DEFAULT,
   BRIEFING_CHARS_MAX,
+  BRIEFING_DETAIL_DEFAULT,
+  BRIEFING_DETAILS,
   DEFAULT_IMPORTANCE,
   DEFAULT_NAMESPACE,
   IMPORTANCE_MAX,
@@ -557,9 +559,24 @@ export const MemoryToolInput = v.object({
     20,
   ),
   /**
-   * briefing: total character budget. This is the "load ALL my standing rules" call, so it
-   * must never quietly return a subset: when the budget is exhausted the result says
-   * `truncated: true` with an exact `omitted` count, and the caller can re-run with more.
+   * briefing: which slice of the standing rules to return. `core` (the default) is the stable
+   * guarantee — the rules that must be in context before any work. `all` adds the growing tail
+   * of situational rules and is the right call immediately BEFORE something slow, metered,
+   * destructive, or expensive.
+   */
+  detail: v.optional(
+    v.pipe(
+      v.picklist([...BRIEFING_DETAILS]),
+      v.description(
+        'briefing: "core" (default) = the never-dropped standing rules; "all" = also return the tail of situational rules (max_chars applies only then).',
+      ),
+    ),
+    BRIEFING_DETAIL_DEFAULT,
+  ),
+  /**
+   * briefing: total character budget. Applies to `detail: "all"` only — core rules are never
+   * dropped for budget. When the budget is exhausted the result says `truncated: true` with an
+   * exact `omitted` count, so it can never quietly return a subset.
    */
   max_chars: v.optional(
     v.pipe(
@@ -567,7 +584,7 @@ export const MemoryToolInput = v.object({
       v.minValue(1000),
       v.maxValue(BRIEFING_CHARS_MAX),
       v.description(
-        `briefing: total character budget (default ${BRIEFING_CHARS_DEFAULT}, max ${BRIEFING_CHARS_MAX}). Raise it before installs, builds, deploys or deletions if the result was truncated.`,
+        `briefing (detail="all" only): total character budget (default ${BRIEFING_CHARS_DEFAULT}, max ${BRIEFING_CHARS_MAX}). If truncated: true, raise it or fetch the ids.`,
       ),
     ),
     BRIEFING_CHARS_DEFAULT,

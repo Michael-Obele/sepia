@@ -82,6 +82,7 @@ export function registerMemoryTools(server: McpServer<any, any>) {
             action: "briefing",
             ...(await getBriefing(sql, user.id, {
               namespace: args.namespace,
+              detail: args.detail,
               max_chars: args.max_chars,
             })),
           };

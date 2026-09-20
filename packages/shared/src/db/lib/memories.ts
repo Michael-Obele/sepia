@@ -22,11 +22,13 @@ import {
   ALWAYS_TAG,
   BRIEFING_CHARS_DEFAULT,
   BRIEFING_CHARS_MAX,
+  BRIEFING_DETAIL_DEFAULT,
   BRIEFING_FETCH_MAX,
   BRIEFING_ITEM_CHARS,
   BRIEFING_TYPES,
   CORE_IMPORTANCE,
   normalizeTags,
+  type BriefingDetail,
 } from "../../types.ts";
 import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
 import { assertMemoryQuota } from "./plans.ts";
@@ -314,7 +316,7 @@ export interface BriefingItem {
 }
 
 /**
- * The session-start briefing: every standing rule in priority order, compacted to fit a
+ * The session-start briefing: the standing rules, in priority order, compacted to fit a
  * character budget.
  *
  * This exists because a standing constraint CANNOT be found by relevance search — relevance
@@ -322,20 +324,42 @@ export interface BriefingItem {
  * only helps if it is in context *before* you know it is relevant, so this is the one read
  * that must happen unconditionally at the start of a session rather than on a keyword.
  *
- * Two behaviours are deliberate:
- * - **Core rules are never dropped for budget.** They are the reason the call exists; if the
- *   budget cannot hold them, the result overshoots rather than silently thinning the rules
- *   that matter. Ordering puts core first, so the fill loop cannot cut into them.
+ * It returns `core` by default, and that split is the whole design:
+ * - **Core is the guarantee.** Stable in size (single digits), so it can be loaded every
+ *   session forever. Core rules are never dropped for budget; if the budget cannot hold them
+ *   the result overshoots rather than silently thinning the rules that matter.
+ * - **The tail is opt-in.** It holds situational and project-scoped rules and grows without
+ *   bound — measured 2026-09-20: 235 rows ≈ 8.5k tokens against 9 core rows ≈ 886 tokens.
+ *   Anything that loads the tail by default degrades as the user keeps using it, so the
+ *   caller asks for it explicitly (`detail: "all"`) when it is about to do something slow,
+ *   metered, destructive, or expensive.
  * - **Truncation is reported, never implied.** `truncated` + an exact `omitted` count come
- *   from a COUNT over the same filter, so "what you did not see" is knowable. Silent
+ *   from a COUNT over the same filter, so "what you did not see" is always knowable. Silent
  *   truncation is the failure mode this whole path was built to remove.
+ *
+ * Deliberately NOT built: server-side summarization. A constraint's power is its specificity
+ * and actionability — the two things summarization removes. Measured on the real core set,
+ * first-sentence extraction drops the operative clause from 5 of 9 rules, including "state the
+ * download size before any build" (whose first sentence is pure context). See the plan doc.
  */
 export interface Briefing {
+  /** Which slice was requested — `core` unless the caller escalated. */
+  detail: BriefingDetail;
+  /** Standing rules returned. */
   count: number;
+  /** Of those, how many are core. */
   core_count: number;
+  /**
+   * Standing rules that exist beyond core. The tail is where situational rules live; it is
+   * NOT returned by default, and this number is how a caller knows it is there.
+   */
+  other_standing: number;
+  /** `true` when even the requested slice was incomplete (all-mode budget, or a huge core). */
   truncated: boolean;
+  /** How many of the requested slice were left out. Exact (COUNT), never inferred. */
   omitted: number;
-  max_chars: number;
+  /** The budget in effect — only meaningful (and only present) for `detail: "all"`. */
+  max_chars?: number;
   memories: BriefingItem[];
 }
 
@@ -348,38 +372,51 @@ function compactContent(content: string, max = BRIEFING_ITEM_CHARS): string {
 /**
  * Read the standing rules: `instruction`/`preference` memories, plus any row explicitly
  * tagged `always` regardless of type (the tag is user intent and outranks the type filter).
+ *
+ * Returns core only unless `detail: "all"` is passed. See `Briefing` for why.
  */
 export async function getBriefing(
   db: Db,
   ownerId: string,
-  opts: { namespace?: string; max_chars?: number } = {},
+  opts: {
+    namespace?: string;
+    max_chars?: number;
+    detail?: BriefingDetail;
+  } = {},
 ): Promise<Briefing> {
+  const detail: BriefingDetail = opts.detail ?? BRIEFING_DETAIL_DEFAULT;
   const maxChars = Math.min(
     Math.max(opts.max_chars ?? BRIEFING_CHARS_DEFAULT, 1000),
     BRIEFING_CHARS_MAX,
   );
-  const coreExpr = sql<boolean>`(${memories.tags} @> ARRAY[${ALWAYS_TAG}]::text[] OR ${memories.importance} >= ${CORE_IMPORTANCE})`;
+  const alwaysExpr = sql`${memories.tags} @> ARRAY[${ALWAYS_TAG}]::text[]`;
+  const coreExpr = sql<boolean>`(${alwaysExpr} OR ${memories.importance} >= ${CORE_IMPORTANCE})`;
   const conditions = [
     eq(memories.archived, false),
     eq(namespaces.ownerId, ownerId),
-    or(
-      inArray(memories.type, [...BRIEFING_TYPES]),
-      sql`${memories.tags} @> ARRAY[${ALWAYS_TAG}]::text[]`,
-    ),
+    or(inArray(memories.type, [...BRIEFING_TYPES]), alwaysExpr),
   ];
   if (opts.namespace !== undefined) {
     const nsId = await resolveNamespaceId(db, ownerId, opts.namespace);
     conditions.push(eq(memories.namespaceId, nsId));
   }
   const where = and(...conditions);
+  // A bare boolean SQL expression is a valid condition, so core can be filtered in SQL
+  // rather than by loading the tail and discarding it.
+  const coreWhere = and(...conditions, coreExpr);
 
-  // Exact, not inferred from a capped window: `omitted` has to be trustworthy.
+  // Both counts in one round trip, and exact rather than inferred from a capped window:
+  // `omitted` has to be trustworthy, and `other_standing` is what makes the tail discoverable.
   const totals = await db
-    .select({ total: sql<number>`COUNT(*)::int` })
+    .select({
+      total: sql<number>`COUNT(*)::int`,
+      core: sql<number>`(COUNT(*) FILTER (WHERE ${coreExpr}))::int`,
+    })
     .from(memories)
     .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
     .where(where);
   const total = totals[0]?.total ?? 0;
+  const totalCore = totals[0]?.core ?? 0;
 
   const rows = await db
     .select({
@@ -392,7 +429,7 @@ export async function getBriefing(
     })
     .from(memories)
     .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
-    .where(where)
+    .where(detail === "core" ? coreWhere : where)
     .orderBy(
       desc(coreExpr),
       desc(memories.importance),
@@ -405,9 +442,9 @@ export async function getBriefing(
   for (const row of rows) {
     const core = row.core === true;
     const content = compactContent(row.content);
-    // Non-core fills what is left, in priority order, stopping at the first rule that does
-    // not fit. Core rows are always first (see the ORDER BY), so this never cuts them.
-    if (!core && used + content.length > maxChars) break;
+    // Only `all` mode fills a budget, and it stops at the first rule that does not fit.
+    // Core rows are ordered first, so this can never cut into them.
+    if (detail === "all" && !core && used + content.length > maxChars) break;
     included.push({
       id: row.id,
       type: row.type,
@@ -419,13 +456,18 @@ export async function getBriefing(
     used += content.length;
   }
 
-  const omitted = Math.max(total - included.length, 0);
+  // Measured against the REQUESTED slice, so `truncated` means "this answer is short of what
+  // you asked for" rather than a permanent nag about the tail the caller chose not to load.
+  const requested = detail === "core" ? totalCore : total;
+  const omitted = Math.max(requested - included.length, 0);
   return {
+    detail,
     count: included.length,
     core_count: included.filter((m) => m.core).length,
+    other_standing: Math.max(total - totalCore, 0),
     truncated: omitted > 0,
     omitted,
-    max_chars: maxChars,
+    ...(detail === "all" ? { max_chars: maxChars } : {}),
     memories: included,
   };
 }

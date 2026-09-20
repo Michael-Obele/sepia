@@ -32,6 +32,7 @@ import {
   getUsage,
   type UserRow,
   BRIEFING_CHARS_DEFAULT,
+  BRIEFING_DETAILS,
   // Valibot schemas (single source of truth for input validation)
   NamespaceInput,
   EntityInput,
@@ -360,8 +361,20 @@ export async function handleApi(
     // Standing-rules briefing. MUST stay above the `/:id` match below — that regex would
     // otherwise swallow "briefing" and fail uuidParam.
     if (path === "/api/memories/briefing" && method === "GET") {
+      const detailParam = url.searchParams.get("detail") ?? undefined;
+      if (
+        detailParam !== undefined &&
+        !(BRIEFING_DETAILS as readonly string[]).includes(detailParam)
+      ) {
+        return error(
+          "invalid_input",
+          'detail must be "core" or "all"',
+          422,
+        );
+      }
       const briefing = await getBriefing(sql, ownerId, {
         namespace: url.searchParams.get("namespace") ?? undefined,
+        detail: detailParam as (typeof BRIEFING_DETAILS)[number] | undefined,
         max_chars: url.searchParams.has("max_chars")
           ? numParam(url.searchParams.get("max_chars"), BRIEFING_CHARS_DEFAULT)
           : undefined,

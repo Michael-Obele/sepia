@@ -64,6 +64,7 @@ export function registerMemoryTools(
             action: "briefing",
             ...(await client.getBriefing({
               namespace: args.namespace,
+              detail: args.detail,
               max_chars: args.max_chars,
             })),
           };

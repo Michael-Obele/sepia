@@ -169,20 +169,25 @@ export class SepiaClient {
   }
   /**
    * The session-start standing-rules briefing. Path is `/briefing`, not an id — the server
-   * keeps this route above its `/:id` matcher.
+   * keeps this route above its `/:id` matcher. Returns `core` only unless `detail: "all"`.
    */
-  getBriefing(params: { namespace?: string; max_chars?: number } = {}) {
+  getBriefing(
+    params: { namespace?: string; detail?: string; max_chars?: number } = {},
+  ) {
     const qs = new URLSearchParams();
     if (params.namespace !== undefined) qs.set("namespace", params.namespace);
+    if (params.detail !== undefined) qs.set("detail", params.detail);
     if (params.max_chars !== undefined)
       qs.set("max_chars", String(params.max_chars));
     const suffix = qs.size ? `?${qs.toString()}` : "";
     return this.request<{
+      detail: string;
       count: number;
       core_count: number;
+      other_standing: number;
       truncated: boolean;
       omitted: number;
-      max_chars: number;
+      max_chars?: number;
       memories: unknown[];
     }>("GET", `/api/memories/briefing${suffix}`);
   }

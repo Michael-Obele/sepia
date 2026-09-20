@@ -6,7 +6,7 @@ description: "Sepia memory — MANDATORY recall before work, persist after. Alwa
 
 # Sepia memory (always-on) — VS Code / Copilot
 
-<!-- sepia-docs-version: 1.5.0 -->
+<!-- sepia-docs-version: 1.6.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (`servers.sepia` in `.vscode/mcp.json`: `type: "http"`, `url: "https://sepia.fly.dev/mcp"`, `headers.Authorization`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
@@ -16,7 +16,7 @@ You are connected to the user's personal Sepia memory server (sepia) over MCP (`
 
 **FIRST — once per session, before your first substantive action:**
 
-0. Call `manage_memory` with `action: "briefing"` — the user's **standing rules** (everything tagged `always`, plus every instruction/preference at importance >= 0.9). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. If it says `truncated: true`, re-run with a bigger `max_chars` before any install, build, deploy, deletion, or infra change — the rule you cannot see is the one that costs bandwidth, money, or trust.
+0. Call `manage_memory` with `action: "briefing"` — the user's **core standing rules** (everything tagged `always`, plus every instruction/preference at importance >= 0.9). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. It also reports `other_standing` — the situational rules it did NOT return. **Before anything slow, metered, destructive, or expensive** (an install, build, deploy, deletion, or infra change), call it again with `detail: "all"`: the rule that bites in those moments is exactly the one a default load leaves out.
 
 **BEFORE you answer (every turn except trivial chitchat):**
 

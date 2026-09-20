@@ -39,15 +39,26 @@ work**. It takes no keywords.
 
 - **Core** = every memory tagged `always` **or** at importance >= 0.9. The importance half means
   it works for rules stored before this feature existed — there is no tagging migration.
-- Returns one priority-ordered list; each rule is compacted to 400 chars (the full text stays
-  reachable with `action: "get"` on its `id`), within a character budget (`max_chars`, default
-  8000, max 40000).
-- Returns `{ count, core_count, truncated, omitted, max_chars, memories }`.
-- **Core rules are never dropped for budget**, and `truncated` + an exact `omitted` state what
-  was left out — so "what you did not see" is always knowable. Re-run with a bigger `max_chars`
-  before an install, build, deploy, deletion, or infra change (anything slow, metered,
-  destructive, or expensive).
-- Tag a rule `always` only when it applies in **every** repo and **every** session.
+- **It returns core by default** (`detail: "core"`), and that split is the design. Core is a
+  handful of rules and stays small, so it is safe to load every session forever. The tail
+  (situational and project-scoped rules) grows without bound — measured 2026-09-20: 9 core rules
+  ≈ 886 tokens against 235 tail rules ≈ 8.5k tokens — so loading it by default gets steadily
+  more expensive and less useful. A long constraint list is also self-defeating: the rules that
+  matter stop standing out. `detail: "all"` returns the tail, and is the right call immediately
+  before anything slow, metered, destructive, or expensive.
+- Each rule is compacted to 400 chars (the full text stays reachable with `action: "get"` on its
+  `id`), within a character budget (`max_chars`, default 8000, max 40000 — `detail: "all"` only).
+- Returns `{ detail, count, core_count, other_standing, truncated, omitted, max_chars?, memories }`.
+- **Core rules are never dropped for budget**, and `truncated` + an exact `omitted` state what was
+  left out **of what you asked for** — so "what you did not see" is always knowable.
+  `other_standing` is the tail you chose not to load.
+- **Deliberately not built: server-side summarization.** A constraint's power is its specificity
+  and actionability — the two things summarization removes. Measured on the real core set,
+  first-sentence extraction drops the operative clause from 5 of 9 rules, including "state the
+  download size before any build". Fetch a rule by `id` instead of paraphrasing it.
+- Tag a rule `always` only when it applies in **every** repo and **every** session. A TODO is not
+  a rule: file work-to-do as an observation, not as an `instruction`/`preference`, or it pollutes
+  the standing-rule set.
 
 The write side matters just as much: when the user states a constraint, corrects you, or objects
 to how you just worked, that is a **durable rule** — store it in the same turn (`instruction` for
@@ -88,4 +99,4 @@ Rules the distilling agent must follow:
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
 
-Docs version: 1.5.0
+Docs version: 1.6.0

@@ -43,6 +43,10 @@ know you need — you cannot keyword-search for a rule whose existence you have 
 So they are loaded unconditionally, once per session, BEFORE any work starts.
 - core = every memory tagged "always", plus every instruction/preference at importance >= 0.9
 - read them with manage_memory action=briefing (one call, no keywords)
+- briefing returns CORE by DEFAULT. The tail (situational and project-scoped rules) is opt-in
+  via detail="all". Core is a handful of rules and stays small; the tail grows without bound,
+  so loading it every session gets steadily more expensive and less useful — and a long
+  constraint list is self-defeating, because the rules that matter stop standing out
 - a rule tagged "always" applies in EVERY repo and EVERY session; a rule that is specific to
   one project must NOT be tagged "always"
 
@@ -50,9 +54,12 @@ MANDATORY WORKFLOW — do this on ALMOST EVERY turn:
 
 FIRST — once per session, before your first substantive action (NOT keyword-driven):
 0. Call manage_memory action=briefing, and treat what it returns as BINDING for the whole
-   session. These are the user's standing rules. If it reports truncated: true, the rules you
-   have NOT seen can still bite — re-run it with a bigger max_chars BEFORE starting an
-   install, build, deploy, deletion, or infra change.
+   session. It returns the user's CORE standing rules — the ones that must hold before you
+   know anything about the task. The response also reports other_standing: the situational
+   rules it did NOT return. BEFORE anything slow, metered, destructive, or expensive (an
+   install, build, deploy, deletion, or infra change), call it again with detail="all" and
+   read the rest — the rule that bites in those moments is exactly the one a default load
+   leaves out.
 
 THEN — before you answer (every turn except trivial chitchat):
 1. Call "search" with 2-5 keywords from the user's current message + task (e.g. query="auth rate limiting"). If sparse, also call "traverse_graph" from the top entity.
@@ -70,6 +77,9 @@ AFTER you answer (every turn where you learned something):
    importance >= 0.8. Tag it "always" when it applies everywhere. Never file a user constraint
    as transient. Storing it a turn later is too late — the rule exists precisely for the turn
    in which you did not yet know you needed it.
+   A TODO is NOT a rule: work to do belongs in an observation or a project-scoped fact, never
+   in instruction/preference — those are the types the briefing loads, so filing todos as
+   instructions dilutes the rules that actually matter.
 3. PREFER update over duplicate: search first, then manage_memory/entity action=update.
 4. SCORE importance 0-1: 0.9+ identity/core preference, 0.6-0.8 active project fact/decision, 0.3-0.5 observation/person, ≤0.2 transient (will decay).
 5. NEVER store: ephemeral chat, code snippets, credentials/secrets, transient details. Sepia is not a vault — refuse secrets.
@@ -127,7 +137,7 @@ their bandwidth, their money, or their trust. Briefing first, then search.`;
  */
 export const MEMORY_CONTRACT_QUICK = `You are connected to a memory server (Sepia) over MCP. Use it on ALMOST EVERY turn.
 
-FIRST, once per session and before any real work: call "manage_memory" with action=briefing. That returns your standing rules — everything tagged "always" plus every instruction/preference at importance >= 0.9. Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. If the result says truncated: true, re-run with a bigger max_chars before any install, build, deploy or deletion.
+FIRST, once per session and before any real work: call "manage_memory" with action=briefing. That returns your CORE standing rules — everything tagged "always" plus every instruction/preference at importance >= 0.9. Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. It also reports other_standing: the situational rules it did not return. Before anything slow, metered, destructive or expensive (install, build, deploy, deletion, infra), call it again with detail="all".
 
 BEFORE you answer (every turn except trivial chitchat): call "search" with 2-5 keywords about the task. Search is best-effort (rows matching more of your words rank first) — if it returns 0 hits or partial: true, retry with ONE distinctive keyword before concluding nothing exists. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
@@ -148,7 +158,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * `bun run scripts/stamp-docs-version.ts` to stamp it into every file.
  * Served at /version so installed copies can be checked for staleness.
  */
-export const DOCS_VERSION = "1.5.0";
+export const DOCS_VERSION = "1.6.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [
@@ -240,9 +250,27 @@ export const ALWAYS_TAG = "always";
 export const CORE_IMPORTANCE = 0.9;
 /** Memory types the briefing covers. An `always`-tagged row of any type is included too. */
 export const BRIEFING_TYPES = ["instruction", "preference"] as const;
+/**
+ * Which slice of the standing rules a briefing returns.
+ *
+ * `core` (the default) is the guarantee: the rules that must be in context BEFORE any work,
+ * because relevance search cannot find a constraint you have not guessed at. `all` adds the
+ * tail — situational and project-scoped rules — and is meant to be requested explicitly,
+ * immediately before something slow, metered, destructive, or expensive.
+ *
+ * The split is not about saving tokens for its own sake: core is STABLE (single digits) while
+ * the tail grows without bound, so anything that loads the tail by default gets worse over
+ * time. Measured 2026-09-20: core 9 rules ≈ 886 tokens, tail 235 rules ≈ 8.5k tokens.
+ */
+export const BRIEFING_DETAILS = ["core", "all"] as const;
+export type BriefingDetail = (typeof BRIEFING_DETAILS)[number];
+export const BRIEFING_DETAIL_DEFAULT: BriefingDetail = "core";
 /** Per-item compaction. Full text stays reachable via `manage_memory action=get` on the id. */
 export const BRIEFING_ITEM_CHARS = 400;
-/** Default total character budget (~2k tokens); `max_chars` raises it up to the max. */
+/**
+ * Default total character budget. Only applies to `detail: "all"` — core rules are never
+ * dropped for budget, so the core briefing ignores it entirely.
+ */
 export const BRIEFING_CHARS_DEFAULT = 8000;
 export const BRIEFING_CHARS_MAX = 40000;
 /** Hard cap on rows fetched while budgeting, so `omitted` stays bounded work. */
