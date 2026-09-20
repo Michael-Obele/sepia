@@ -1,6 +1,6 @@
 // Remote functions barrel — re-exported individually (not `export *`) for
-// better documentation and discovery. Each function takes the auth token as
-// its first argument and validates it server-side before touching the DB.
+// better documentation and discovery. Each resolves the signed-in user itself
+// via `requireAuth()` and scopes every query to that user's id.
 
 export { getStatsData } from './stats.remote';
 export { getNamespaces, addNamespace, removeNamespace } from './namespaces.remote';
@@ -29,3 +29,10 @@ export { getMe } from './account.remote';
 export { signIn, signUp, signOut, signOutOtherSessions } from './auth.remote';
 export { listApiKeys, createApiKey, deleteApiKey } from './api-keys.remote';
 export { listConnections, disconnectConnection } from './connections.remote';
+export {
+	getTelemetry,
+	getTelemetryReport,
+	getTelemetryEvents,
+	updateTelemetryTier,
+	eraseTelemetry
+} from './telemetry.remote';

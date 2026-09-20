@@ -11,6 +11,7 @@
 		Settings,
 		LogOut,
 		UserRound,
+		Activity,
 		BrainCircuit
 	} from '@lucide/svelte';
 	import { signOut } from '$lib/remote/index.js';
@@ -24,7 +25,8 @@
 		{ href: '/app/graph', label: 'Graph', icon: Network },
 		{ href: '/app/connect', label: 'Connect an AI', icon: Plug },
 		{ href: '/app/settings', label: 'Settings', icon: Settings },
-		{ href: '/app/account', label: 'Account', icon: UserRound }
+		{ href: '/app/account', label: 'Account', icon: UserRound },
+		{ href: '/app/telemetry', label: 'Telemetry', icon: Activity }
 	];
 
 	function isActive(href: string) {

@@ -331,7 +331,7 @@
 			><Download class="size-4 text-brand" /> Export everything</span
 		>
 		<span class="flex items-center gap-2"
-			><ShieldCheck class="size-4 text-emerald-400" /> Private — no telemetry</span
+			><ShieldCheck class="size-4 text-emerald-400" /> Private — no third-party analytics</span
 		>
 		<span class="flex items-center gap-2"
 			><RefreshCw class="size-4 text-amber-400" /> Cancel anytime</span

@@ -244,7 +244,7 @@
 			Open source on GitHub
 		</a>
 		<span class="flex items-center gap-2">
-			<ShieldCheck class="size-4 text-emerald-400" /> No telemetry
+			<ShieldCheck class="size-4 text-emerald-400" /> No third-party analytics
 		</span>
 		<span class="flex items-center gap-2">
 			<Server class="size-4 text-brand" /> Self-hosted — your data stays yours
