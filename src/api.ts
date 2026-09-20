@@ -366,11 +366,7 @@ export async function handleApi(
         detailParam !== undefined &&
         !(BRIEFING_DETAILS as readonly string[]).includes(detailParam)
       ) {
-        return error(
-          "invalid_input",
-          'detail must be "core" or "all"',
-          422,
-        );
+        return error("invalid_input", 'detail must be "core" or "all"', 422);
       }
       const briefing = await getBriefing(sql, ownerId, {
         namespace: url.searchParams.get("namespace") ?? undefined,

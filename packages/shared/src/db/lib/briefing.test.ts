@@ -31,7 +31,11 @@ import { and, inArray, like, lt } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { db } from "../client.ts";
 import { memories, namespaces, users } from "../schema.ts";
-import { BRIEFING_CHARS_DEFAULT, BRIEFING_ITEM_CHARS, CORE_IMPORTANCE } from "../../types.ts";
+import {
+  BRIEFING_CHARS_DEFAULT,
+  BRIEFING_ITEM_CHARS,
+  CORE_IMPORTANCE,
+} from "../../types.ts";
 import { getBriefing } from "./memories.ts";
 
 const hasDb = Boolean(process.env.DATABASE_URL);

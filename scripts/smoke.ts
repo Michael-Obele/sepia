@@ -324,7 +324,8 @@ if (hasDb) {
       await callTool("manage_memory", {
         action: "create",
         memory: {
-          content: "Smoke situational rule that should only appear at detail=all",
+          content:
+            "Smoke situational rule that should only appear at detail=all",
           type: "instruction",
           importance: 0.5,
           namespace: briefNs,

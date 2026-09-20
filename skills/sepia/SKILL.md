@@ -57,8 +57,8 @@ call `manage_memory` with `action: "briefing"`. No keywords.
 - **Escalation**: before anything slow, metered, destructive, or expensive (install, build,
   deploy, deletion, infra change), call again with `detail: "all"` — and raise `max_chars`
   (default 8000, max 40000) if that reports `truncated: true`.
-Tag a rule `always` only when it applies in **every** repo and **every** session. A rule that
-is specific to one project must not carry the tag, or it becomes noise in every other session.
+  Tag a rule `always` only when it applies in **every** repo and **every** session. A rule that
+  is specific to one project must not carry the tag, or it becomes noise in every other session.
 
 ## When to recall (READ) — ALMOST EVERY MESSAGE
 
