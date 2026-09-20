@@ -289,71 +289,94 @@ if (hasDb) {
     // ── Standing rules: the session-start briefing ──────────────────────────
     // A standing constraint cannot be found by keyword search (relevance is measured
     // against a task that has not been scoped yet), so `briefing` is the one read that
-    // must happen unconditionally. Prove it reaches the MCP surface with the documented
-    // contract, and that it filters by type: the namespace already holds a `fact`, which
-    // is knowledge, not a rule.
-    await callTool("manage_memory", {
-      action: "create",
-      memory: {
-        content:
-          "Smoke standing rule: state the download size before any build or install",
-        type: "instruction",
-        importance: 0.95,
-        namespace: ns,
-        tags: ["always"],
-      },
-    });
-    const briefing = (await callTool("manage_memory", {
-      action: "briefing",
-      namespace: ns,
-    })) as {
-      count: number;
-      core_count: number;
-      truncated: boolean;
-      omitted: number;
-      max_chars: number;
-      memories: Array<{ id: string; content: string; core: boolean }>;
-    };
-    check(
-      "briefing returns the documented shape",
-      typeof briefing.count === "number" &&
-        typeof briefing.core_count === "number" &&
-        typeof briefing.truncated === "boolean" &&
-        typeof briefing.omitted === "number" &&
-        typeof briefing.max_chars === "number" &&
-        Array.isArray(briefing.memories),
-      `count=${briefing.count} core=${briefing.core_count}`,
-    );
-    check(
-      "briefing covers standing rules only (the fact is excluded)",
-      briefing.count === 1 && briefing.core_count === 1,
-      `count=${briefing.count} core=${briefing.core_count}`,
-    );
-    check(
-      "briefing surfaces the rule as core, compacted but identifiable",
-      briefing.memories[0]?.core === true &&
-        briefing.memories[0]?.content.includes("download size") &&
-        typeof briefing.memories[0]?.id === "string",
-      briefing.memories[0]?.core.toString(),
-    );
-    check(
-      "briefing reports no truncation when everything fits",
-      briefing.truncated === false && briefing.omitted === 0,
-      `truncated=${briefing.truncated} omitted=${briefing.omitted}`,
-    );
+    // must happen unconditionally. It gets its OWN throwaway namespace: seeding it into
+    // the CRUD namespace would perturb that scenario's importance counts (and vice versa),
+    // which is exactly the coupling that made an earlier version of this check fail.
+    const briefNs = `smoke-brief-${Date.now()}`;
+    await callTool("manage_namespace", { action: "create", name: briefNs });
+    try {
+      // Tagged `always` at importance 0.2 — core via the TAG, not via importance. That is
+      // the leg of the predicate that exists for global rules sitting below 0.9.
+      await callTool("manage_memory", {
+        action: "create",
+        memory: {
+          content:
+            "Smoke standing rule: state the download size before any build or install",
+          type: "instruction",
+          importance: 0.2,
+          namespace: briefNs,
+          tags: ["always"],
+        },
+      });
+      // Higher importance than the rule, but a fact and untagged: the briefing covers
+      // behaviour, not knowledge, so this must NOT appear.
+      await callTool("manage_memory", {
+        action: "create",
+        memory: {
+          content: "Smoke high-importance fact that is not a standing rule",
+          type: "fact",
+          importance: 0.99,
+          namespace: briefNs,
+        },
+      });
+      const briefing = (await callTool("manage_memory", {
+        action: "briefing",
+        namespace: briefNs,
+      })) as {
+        count: number;
+        core_count: number;
+        truncated: boolean;
+        omitted: number;
+        max_chars: number;
+        memories: Array<{ id: string; content: string; core: boolean }>;
+      };
+      check(
+        "briefing returns the documented shape",
+        typeof briefing.count === "number" &&
+          typeof briefing.core_count === "number" &&
+          typeof briefing.truncated === "boolean" &&
+          typeof briefing.omitted === "number" &&
+          typeof briefing.max_chars === "number" &&
+          Array.isArray(briefing.memories),
+        `count=${briefing.count} core=${briefing.core_count}`,
+      );
+      check(
+        "briefing covers standing rules only (the fact is excluded)",
+        briefing.count === 1 && briefing.core_count === 1,
+        `count=${briefing.count} core=${briefing.core_count}`,
+      );
+      check(
+        "briefing surfaces an `always` rule at low importance as core",
+        briefing.memories[0]?.core === true &&
+          briefing.memories[0]?.content.includes("download size") &&
+          typeof briefing.memories[0]?.id === "string",
+        `core=${briefing.memories[0]?.core}`,
+      );
+      check(
+        "briefing reports no truncation when everything fits",
+        briefing.truncated === false && briefing.omitted === 0,
+        `truncated=${briefing.truncated} omitted=${briefing.omitted}`,
+      );
 
-    // REST route-order regression: `/api/memories/briefing` must be matched BEFORE the
-    // `/:id` route, which would otherwise swallow "briefing" and 422 on uuidParam.
-    const briefRest = await fetch(
-      `${BASE.replace(/\/mcp$/, "")}/api/memories/briefing?namespace=${encodeURIComponent(ns)}`,
-      { headers: token ? { authorization: `Bearer ${token}` } : {} },
-    );
-    const briefRestJson = (await briefRest.json()) as { core_count?: number };
-    check(
-      "REST briefing route resolves (not the /:id matcher)",
-      briefRest.status === 200 && briefRestJson.core_count === 1,
-      `status ${briefRest.status}, core=${briefRestJson.core_count}`,
-    );
+      // REST route-order regression: `/api/memories/briefing` must be matched BEFORE the
+      // `/:id` route, which would otherwise swallow "briefing" and 422 on uuidParam.
+      const briefRest = await fetch(
+        `${BASE.replace(/\/mcp$/, "")}/api/memories/briefing?namespace=${encodeURIComponent(briefNs)}`,
+        { headers: token ? { authorization: `Bearer ${token}` } : {} },
+      );
+      const briefRestJson = (await briefRest.json()) as { core_count?: number };
+      check(
+        "REST briefing route resolves (not the /:id matcher)",
+        briefRest.status === 200 && briefRestJson.core_count === 1,
+        `status ${briefRest.status}, core=${briefRestJson.core_count}`,
+      );
+    } finally {
+      try {
+        await callTool("manage_namespace", { action: "delete", name: briefNs });
+      } catch {
+        /* best-effort cleanup so re-runs stay green */
+      }
+    }
 
     const searchRes = (await callTool("search", {
       q: "cold starts",
@@ -457,7 +480,7 @@ if (hasDb) {
     check(
       "memory update (importance + unlink)",
       requery.memories.length === 0,
-      "0 memories at importance ≥ 0.5",
+      `${requery.memories.length} at importance ≥ 0.5 (expected 0)`,
     );
 
     // `prune_memories` is destructive, so `confirm: true` is mandatory —
