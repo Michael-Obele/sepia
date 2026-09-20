@@ -30,14 +30,40 @@ preferences/instructions with importance scores).
   (e.g. `user-experience`, `auth`, `performance`) — add 1-4 per write when the
   topic is recurring. Search and query can filter by tags.
 
+## Standing rules — read FIRST, once per session
+
+Some memories are **standing rules**: how the user wants you to behave, everywhere. They are
+the rules you do not yet know you need — and that is exactly why keyword search cannot find
+them. Relevance is measured against a task you have not scoped yet, so a rule whose existence
+you have not guessed is unsearchable by construction.
+
+So this one read is **unconditional**. Before your first substantive action in a session,
+call `manage_memory` with `action: "briefing"`. No keywords.
+
+- **Core** = every memory tagged `always` **or** at importance >= 0.9. The importance half
+  means it works on rules stored before this feature existed — there is no tagging migration.
+- It returns one priority-ordered list, each rule compacted to 400 chars (full text stays
+  reachable via `action: "get"` on the `id`), inside a character budget (`max_chars`, default
+  8000, max 40000).
+- **Core rules are never dropped for budget.** Whatever else is left out is stated: `truncated:
+  true` plus an exact `omitted`. **Before an install, build, deploy, deletion, or infra change,
+  if you saw `truncated: true`, re-run with a larger `max_chars`** — the rule you cannot see is
+  the one that costs the user bandwidth, money, or trust.
+- Treat every rule it returns as **binding for the whole session**.
+
+Tag a rule `always` only when it applies in **every** repo and **every** session. A rule that
+is specific to one project must not carry the tag, or it becomes noise in every other session.
+
 ## When to recall (READ) — ALMOST EVERY MESSAGE
 
 Default to `search` on every turn — only skip for trivial chitchat ("hi", "thanks", "bye") with zero durable content. If in doubt, search.
 
-1. **Before you answer** (every turn except trivial chitchat), call `search` with 2-5 keywords from the user's current message + task (e.g. `search` query="rate limiting" namespace="personal").
-2. If results are sparse, also `traverse_graph` from the most relevant entity to pull its neighborhood.
-3. Weave recalled facts into your answer naturally. Cite what came from memory when it matters ("From your memory: ...").
-4. Search is **best-effort**: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits, or the result says `partial: true`, retry with ONE distinctive keyword (or drop filters) BEFORE concluding nothing exists — then say so. Never fabricate memories.
+1. **First, once per session**: the standing-rules briefing above — deliberately *not*
+   keyword-driven, because that is the whole point of it.
+2. **Before you answer** (every turn except trivial chitchat), call `search` with 2-5 keywords from the user's current message + task (e.g. `search` query="rate limiting" namespace="personal").
+3. If results are sparse, also `traverse_graph` from the most relevant entity to pull its neighborhood.
+4. Weave recalled facts into your answer naturally. Cite what came from memory when it matters ("From your memory: ...").
+5. Search is **best-effort**: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits, or the result says `partial: true`, retry with ONE distinctive keyword (or drop filters) BEFORE concluding nothing exists — then say so. Never fabricate memories.
 
 > Two Sepia calls per turn is normal and expected: `search` before you answer, persist after you answer.
 
@@ -50,6 +76,13 @@ Persist in the same turn after your response when you learned something durable 
 - Project facts ("mcp-showcase deploys via Vercel")
 - People and roles, tools and stacks, conventions and constraints
 - User corrections ("actually we use pnpm, not npm")
+
+**A constraint is always worth storing — including a complaint.** When the user states a
+preference, corrects you, or objects to how you just worked, that is a durable rule, not
+chatter: store it in the **same turn**, as `instruction` (how to behave) or `preference` (a
+choice), at importance >= 0.8. Tag it `always` when it applies in every repo and every session
+— that is what makes it load at the start of the next one. Storing it a turn later is too
+late; the rule exists precisely for the turn in which you did not yet know you needed it.
 
 Do **not** store: ephemeral chat content, code snippets, credentials, secrets, or anything transient.
 

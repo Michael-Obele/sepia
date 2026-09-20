@@ -167,6 +167,25 @@ export class SepiaClient {
       `/api/memories${suffix}`,
     );
   }
+  /**
+   * The session-start standing-rules briefing. Path is `/briefing`, not an id — the server
+   * keeps this route above its `/:id` matcher.
+   */
+  getBriefing(params: { namespace?: string; max_chars?: number } = {}) {
+    const qs = new URLSearchParams();
+    if (params.namespace !== undefined) qs.set("namespace", params.namespace);
+    if (params.max_chars !== undefined)
+      qs.set("max_chars", String(params.max_chars));
+    const suffix = qs.size ? `?${qs.toString()}` : "";
+    return this.request<{
+      count: number;
+      core_count: number;
+      truncated: boolean;
+      omitted: number;
+      max_chars: number;
+      memories: unknown[];
+    }>("GET", `/api/memories/briefing${suffix}`);
+  }
   createMemory(memory: unknown) {
     return this.request<{ memory: unknown }>("POST", "/api/memories", memory);
   }

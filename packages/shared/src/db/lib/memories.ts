@@ -9,6 +9,7 @@ import {
   gte,
   ilike,
   inArray,
+  or,
   sql,
 } from "drizzle-orm";
 import {
@@ -17,7 +18,16 @@ import {
   memoryEntityLinks,
   namespaces,
 } from "../schema.ts";
-import { normalizeTags } from "../../types.ts";
+import {
+  ALWAYS_TAG,
+  BRIEFING_CHARS_DEFAULT,
+  BRIEFING_CHARS_MAX,
+  BRIEFING_FETCH_MAX,
+  BRIEFING_ITEM_CHARS,
+  BRIEFING_TYPES,
+  CORE_IMPORTANCE,
+  normalizeTags,
+} from "../../types.ts";
 import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
 import { assertMemoryQuota } from "./plans.ts";
 
@@ -289,6 +299,131 @@ export async function queryMemories(
     .orderBy(desc(memories.importance), desc(memories.updatedAt))
     .limit(limit)
     .offset(offset);
+}
+
+/** One standing rule as returned by `getBriefing` — compacted, but still identifiable. */
+export interface BriefingItem {
+  id: string;
+  /** Nullable in the schema; the filter admits any type when the row carries ALWAYS_TAG. */
+  type: string | null;
+  content: string;
+  importance: number | null;
+  tags: string[] | null;
+  /** Core rules are the guarantee: tagged `always`, or importance >= CORE_IMPORTANCE. */
+  core: boolean;
+}
+
+/**
+ * The session-start briefing: every standing rule in priority order, compacted to fit a
+ * character budget.
+ *
+ * This exists because a standing constraint CANNOT be found by relevance search — relevance
+ * is measured against a task that has not been scoped yet. "Warn before large downloads"
+ * only helps if it is in context *before* you know it is relevant, so this is the one read
+ * that must happen unconditionally at the start of a session rather than on a keyword.
+ *
+ * Two behaviours are deliberate:
+ * - **Core rules are never dropped for budget.** They are the reason the call exists; if the
+ *   budget cannot hold them, the result overshoots rather than silently thinning the rules
+ *   that matter. Ordering puts core first, so the fill loop cannot cut into them.
+ * - **Truncation is reported, never implied.** `truncated` + an exact `omitted` count come
+ *   from a COUNT over the same filter, so "what you did not see" is knowable. Silent
+ *   truncation is the failure mode this whole path was built to remove.
+ */
+export interface Briefing {
+  count: number;
+  core_count: number;
+  truncated: boolean;
+  omitted: number;
+  max_chars: number;
+  memories: BriefingItem[];
+}
+
+/** Flatten whitespace and cap length — same shape as `snippet()` in search.ts. */
+function compactContent(content: string, max = BRIEFING_ITEM_CHARS): string {
+  const flat = content.trim().replace(/\s+/g, " ");
+  return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
+}
+
+/**
+ * Read the standing rules: `instruction`/`preference` memories, plus any row explicitly
+ * tagged `always` regardless of type (the tag is user intent and outranks the type filter).
+ */
+export async function getBriefing(
+  db: Db,
+  ownerId: string,
+  opts: { namespace?: string; max_chars?: number } = {},
+): Promise<Briefing> {
+  const maxChars = Math.min(
+    Math.max(opts.max_chars ?? BRIEFING_CHARS_DEFAULT, 1000),
+    BRIEFING_CHARS_MAX,
+  );
+  const coreExpr = sql<boolean>`(${memories.tags} @> ARRAY[${ALWAYS_TAG}]::text[] OR ${memories.importance} >= ${CORE_IMPORTANCE})`;
+  const conditions = [
+    eq(memories.archived, false),
+    eq(namespaces.ownerId, ownerId),
+    or(
+      inArray(memories.type, [...BRIEFING_TYPES]),
+      sql`${memories.tags} @> ARRAY[${ALWAYS_TAG}]::text[]`,
+    ),
+  ];
+  if (opts.namespace !== undefined) {
+    const nsId = await resolveNamespaceId(db, ownerId, opts.namespace);
+    conditions.push(eq(memories.namespaceId, nsId));
+  }
+  const where = and(...conditions);
+
+  // Exact, not inferred from a capped window: `omitted` has to be trustworthy.
+  const totals = await db
+    .select({ total: sql<number>`COUNT(*)::int` })
+    .from(memories)
+    .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
+    .where(where);
+  const total = totals[0]?.total ?? 0;
+
+  const rows = await db
+    .select({
+      id: memories.id,
+      type: memories.type,
+      content: memories.content,
+      importance: memories.importance,
+      tags: memories.tags,
+      core: coreExpr,
+    })
+    .from(memories)
+    .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
+    .where(where)
+    .orderBy(desc(coreExpr), desc(memories.importance), desc(memories.updatedAt))
+    .limit(BRIEFING_FETCH_MAX);
+
+  let used = 0;
+  const included: BriefingItem[] = [];
+  for (const row of rows) {
+    const core = row.core === true;
+    const content = compactContent(row.content);
+    // Non-core fills what is left, in priority order, stopping at the first rule that does
+    // not fit. Core rows are always first (see the ORDER BY), so this never cuts them.
+    if (!core && used + content.length > maxChars) break;
+    included.push({
+      id: row.id,
+      type: row.type,
+      content,
+      importance: row.importance,
+      tags: row.tags,
+      core,
+    });
+    used += content.length;
+  }
+
+  const omitted = Math.max(total - included.length, 0);
+  return {
+    count: included.length,
+    core_count: included.filter((m) => m.core).length,
+    truncated: omitted > 0,
+    omitted,
+    max_chars: maxChars,
+    memories: included,
+  };
 }
 
 export interface MemoryWhere {

@@ -6,6 +6,7 @@ import {
   batchUpdateMemories,
   createMemory,
   deleteMemory,
+  getBriefing,
   getMemory,
   ingestConversation,
   queryMemories,
@@ -75,6 +76,15 @@ export function registerMemoryTools(server: McpServer<any, any>) {
             limit: args.limit,
           });
           return { action: "query", count: memories.length, memories };
+        }
+        case "briefing": {
+          return {
+            action: "briefing",
+            ...(await getBriefing(sql, user.id, {
+              namespace: args.namespace,
+              max_chars: args.max_chars,
+            })),
+          };
         }
         case "batch_update": {
           if (!args.where)

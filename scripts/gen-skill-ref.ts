@@ -11,6 +11,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   TOOL_NAMES,
+  ALWAYS_TAG,
+  BRIEFING_CHARS_DEFAULT,
+  BRIEFING_CHARS_MAX,
+  BRIEFING_ITEM_CHARS,
+  CORE_IMPORTANCE,
   DEFAULT_NAMESPACE,
   MEMORY_TYPES,
   IMPORTANCE_MIN,
@@ -64,13 +69,14 @@ const sections: Record<string, string[]> = {
     "- `list`: by entity_id (in + out) or by namespace",
   ],
   manage_memory: [
-    "Actions: `create` | `get` | `update` | `delete` | `query` | `batch_update` | `ingest`",
+    "Actions: `create` | `get` | `update` | `delete` | `query` | **`briefing`** | `batch_update` | `ingest`",
     "",
     `- \`create\`: memory { content (1-4000), type? (${MEMORY_TYPES.join("|")}, default fact), importance? (0-1, default 0.5), namespace? (default "${DEFAULT_NAMESPACE}"), entity_ids? (uuid[], max ${MAX_ENTITY_LINKS}), metadata? ({}), tags? (string[], max 10) }`,
     "- `get`: id (uuid) — includes entity links",
     "- `update`: id (uuid) + update { any subset of content/type/importance/metadata/tags; entity_ids REPLACES the link set, tags REPLACES the tag set }",
     "- `delete`: id (uuid)",
     `- \`query\`: filters type? / namespace? (default "${DEFAULT_NAMESPACE}") / importance_min? (0-1) / archived? (default false) / tags? (match ALL); order importance DESC, updated_at DESC; limit default 20, max ${QUERY_LIMIT_MAX}`,
+    `- \`briefing\`: **the session-start read — call it once, before any work.** No other args. Returns the standing rules: everything tagged \`${ALWAYS_TAG}\` plus every instruction/preference at importance >= ${CORE_IMPORTANCE}, in one priority-ordered list, each rule compacted to ${BRIEFING_ITEM_CHARS} chars (full text stays reachable via \`get\` on the id). \`max_chars\`? (default ${BRIEFING_CHARS_DEFAULT}, max ${BRIEFING_CHARS_MAX}) is the total budget. Returns \`{ count, core_count, truncated, omitted, max_chars, memories }\`. Core rules are NEVER dropped for budget, and \`truncated\` + \`omitted\` state exactly what was left out — re-run with a bigger \`max_chars\` before an install, build, deploy, deletion, or infra change. A standing constraint cannot be found by keyword search, which is why this read is unconditional.`,
     "- `batch_update`: where { type? / namespace? / tags? / importance_min? / q? } (at least one) + update { any subset } + batch_limit? (default 100, max 500) — updates ALL matching memories, returns count",
     "- `ingest`: conversation { summary (1-4000), conversation_id (1-200), title? (1-200, human-readable name — how conversations are told apart when resuming), status? (active|paused|done, default active), decisions? / preferences? / instructions? / observations? / open_questions? (string[], each ≤4000), entities? [{name, type, summary?}], source? {ai, ref?}, transcript? (≤100k, optional — only if the raw log exists), namespace?, tags? } — atomically saves a distilled conversation: digest memory (tag `conversation`, importance 0.85, metadata.kind=conversation + title/status, protected from consolidation) + constituent memories (decisions→fact, preferences→preference, instructions→instruction, observations→observation, open_questions→observation tagged `open-question`, all with metadata.conversation_id) + entities (find-or-create). One digest per major topic, same conversation_id groups them. Use when the user says 'save this conversation' or switches AIs mid-task. Resume: prefer status=active; mark done by updating digest metadata.status (metadata REPLACES — get first).",
   ],

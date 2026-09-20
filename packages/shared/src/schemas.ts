@@ -1,5 +1,7 @@
 import * as v from "valibot";
 import {
+  BRIEFING_CHARS_DEFAULT,
+  BRIEFING_CHARS_MAX,
   DEFAULT_IMPORTANCE,
   DEFAULT_NAMESPACE,
   IMPORTANCE_MAX,
@@ -480,11 +482,12 @@ export const MemoryToolInput = v.object({
       v.literal("update"),
       v.literal("delete"),
       v.literal("query"),
+      v.literal("briefing"),
       v.literal("batch_update"),
       v.literal("ingest"),
     ]),
     v.description(
-      "create (memory) | get (id) | update (id + update) | delete (id) | query (filters) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)",
+      "briefing (call ONCE at the start of a session — takes no other args) | create (memory) | get (id) | update (id + update) | delete (id) | query (filters) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)",
     ),
   ),
   id: v.optional(v.pipe(uuidSchema, v.description("Memory UUID"))),
@@ -552,6 +555,22 @@ export const MemoryToolInput = v.object({
       v.description("query: max results (default 20, max 50)"),
     ),
     20,
+  ),
+  /**
+   * briefing: total character budget. This is the "load ALL my standing rules" call, so it
+   * must never quietly return a subset: when the budget is exhausted the result says
+   * `truncated: true` with an exact `omitted` count, and the caller can re-run with more.
+   */
+  max_chars: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(1000),
+      v.maxValue(BRIEFING_CHARS_MAX),
+      v.description(
+        `briefing: total character budget (default ${BRIEFING_CHARS_DEFAULT}, max ${BRIEFING_CHARS_MAX}). Raise it before installs, builds, deploys or deletions if the result was truncated.`,
+      ),
+    ),
+    BRIEFING_CHARS_DEFAULT,
   ),
   /** batch_update: update all memories matching these filters (at least one required) */
   where: v.optional(

@@ -17,6 +17,7 @@ import {
   updateMemory,
   deleteMemory,
   queryMemories,
+  getBriefing,
   batchUpdateMemories,
   ingestConversation,
   getConversation,
@@ -30,6 +31,7 @@ import {
   getStats,
   getUsage,
   type UserRow,
+  BRIEFING_CHARS_DEFAULT,
   // Valibot schemas (single source of truth for input validation)
   NamespaceInput,
   EntityInput,
@@ -351,6 +353,17 @@ export async function handleApi(
         200,
         cors,
       );
+    }
+    // Standing-rules briefing. MUST stay above the `/:id` match below — that regex would
+    // otherwise swallow "briefing" and fail uuidParam.
+    if (path === "/api/memories/briefing" && method === "GET") {
+      const briefing = await getBriefing(sql, ownerId, {
+        namespace: url.searchParams.get("namespace") ?? undefined,
+        max_chars: url.searchParams.has("max_chars")
+          ? numParam(url.searchParams.get("max_chars"), BRIEFING_CHARS_DEFAULT)
+          : undefined,
+      });
+      return json(briefing, 200, cors);
     }
     const memoryMatch = path.match(/^\/api\/memories\/([^/]+)$/);
     if (memoryMatch) {

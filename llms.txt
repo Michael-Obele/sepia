@@ -22,10 +22,37 @@ All tools are registered on the MCP server at `/mcp`. Every `manage_*` tool uses
 1. **`manage_namespace`** — actions: `create` | `list` | `get` | `delete`. Namespaces isolate knowledge (e.g. `work` vs `personal`).
 2. **`manage_entity`** — actions: `create` | `get` | `update` | `delete` | `find` | `batch_update`. Entities are graph nodes; `find` matches by name (exact or substring); `batch_update` mass-edits rows matching a `where` filter (type, namespace, query) with a `batch_limit` (max 500).
 3. **`manage_relation`** — actions: `create` | `delete` | `list`. Typed, weighted edges; `list` by entity (in + out) or namespace.
-4. **`manage_memory`** — actions: `create` | `get` | `update` | `delete` | `query` | `batch_update` | **`ingest`**. Memories are knowledge fragments; `query` filters by type/namespace/importance_min/archived/tags, ordered importance DESC then updated_at DESC; `batch_update` mass-edits with a `where` filter (type, namespace, tags, importance_min, q).
+4. **`manage_memory`** — actions: `create` | `get` | `update` | `delete` | `query` | **`briefing`** | `batch_update` | **`ingest`**. Memories are knowledge fragments; `query` filters by type/namespace/importance_min/archived/tags, ordered importance DESC then updated_at DESC; `batch_update` mass-edits with a `where` filter (type, namespace, tags, importance_min, q).
 5. **`search`** — unified keyword search over `memories.content`, `entities.name`, `entities.summary`, and a conversation digest's `title` / `conversation_id` / `source_ai` values (the `transcript` and JSON key names are deliberately not searched). Matching is case-insensitive and best-effort: a row matching ANY query word is a candidate, and rows matching MORE words rank first — so a result set is never emptied by one absent word. Verbatim phrase > whole-word match > substring, then importance, then recency. Empty `q` returns recent items (honors namespace + type + tags filters — so `q=""` + `tags=["conversation"]` lists all conversation digests). Returns `{ count, terms, partial, hits }`: `partial: true` means no single hit covered the whole query (ranked suggestions, not an exhaustive answer). Each hit carries `matched_terms` so coverage is judgeable, plus `kind` (memory|entity), id, snippet (centred on the match), score.
 6. **`traverse_graph`** — BFS walk from a start entity (depth 1-3), returns nodes + edges in the neighborhood.
 7. **`prune_memories`** — requires `confirm: true`. The destructive maintenance sweep; **never call it to save or remember anything** (that is `manage_memory`) and never call it proactively — only when the user explicitly asks. Returns counts of archived/purged rows.
+
+## Standing rules — the session-start briefing (`manage_memory` action=briefing)
+
+Some memories are **standing rules**: how the user wants you to behave, everywhere. They are the
+rules an agent does not yet know it needs — which is precisely why keyword search cannot find
+them. Relevance is measured against a task that has not been scoped yet, so a rule whose
+existence has not been guessed is unsearchable by construction.
+
+So `briefing` is the one read that must happen **unconditionally, once per session, before any
+work**. It takes no keywords.
+
+- **Core** = every memory tagged `always` **or** at importance >= 0.9. The importance half means
+  it works for rules stored before this feature existed — there is no tagging migration.
+- Returns one priority-ordered list; each rule is compacted to 400 chars (the full text stays
+  reachable with `action: "get"` on its `id`), within a character budget (`max_chars`, default
+  8000, max 40000).
+- Returns `{ count, core_count, truncated, omitted, max_chars, memories }`.
+- **Core rules are never dropped for budget**, and `truncated` + an exact `omitted` state what
+  was left out — so "what you did not see" is always knowable. Re-run with a bigger `max_chars`
+  before an install, build, deploy, deletion, or infra change (anything slow, metered,
+  destructive, or expensive).
+- Tag a rule `always` only when it applies in **every** repo and **every** session.
+
+The write side matters just as much: when the user states a constraint, corrects you, or objects
+to how you just worked, that is a **durable rule** — store it in the same turn (`instruction` for
+behaviour, `preference` for a choice) at importance >= 0.8. A rule stored a turn later arrives
+too late.
 
 ## Conversation migration (handoff digests) — `manage_memory` action=ingest
 
@@ -61,4 +88,4 @@ Rules the distilling agent must follow:
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
 
-Docs version: 1.4.0
+Docs version: 1.5.0

@@ -1,12 +1,16 @@
 ## Sepia memory (always-on) — Claude Code
 
-<!-- sepia-docs-version: 1.4.0 -->
+<!-- sepia-docs-version: 1.5.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (`sepia` at `https://sepia.fly.dev/mcp`, `Authorization: Bearer TOKEN` via `claude mcp add --transport http`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
 > **MANDATORY for Claude Code — ALMOST EVERY MESSAGE:** You have the MCP `instructions` field PLUS this file in `~/.claude/CLAUDE.md`. Both say the same thing — `search` BEFORE you answer and persist AFTER you answer on every turn. Do not wait to be invoked via `/sepia`. Only skip for trivial chitchat ("hi", "thanks", "bye"). If in doubt, call Sepia. Skipping memory = hallucinating.
 
 ### Workflow — do this on ALMOST EVERY turn
+
+**FIRST — once per session, before your first substantive action:**
+
+0. Call `manage_memory` with `action: "briefing"` — the user's **standing rules** (everything tagged `always`, plus every instruction/preference at importance >= 0.9). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. If it says `truncated: true`, re-run with a bigger `max_chars` before any install, build, deploy, deletion, or infra change — the rule you cannot see is the one that costs bandwidth, money, or trust.
 
 **BEFORE you answer (every turn except trivial chitchat):**
 
@@ -19,10 +23,11 @@ You are connected to the user's personal Sepia memory server (sepia) over MCP (`
    - `manage_entity` find → create (with `summary`) if missing
    - `manage_memory` create (`content`, `type`, `importance`, `entity_ids` 1-3)
    - `manage_relation` to link graph (`project —uses→ tool`)
-2. Prefer update over duplicate — search first, then `action=update`.
-3. **Importance 0-1:** 0.9+ identity/core pref, 0.6-0.8 project fact/decision, 0.3-0.5 observation, ≤0.2 transient.
-4. **Never store:** ephemeral chat, code snippets, credentials/secrets.
-5. **Never call `prune_memories`** unless the user explicitly asks — it is a destructive maintenance sweep (archives stale, purges archived), NOT a way to save. Saving is `manage_memory`.
+2. **A constraint is always worth storing — including a complaint.** A stated preference, a correction, or an objection to how you just worked is a durable rule: store it in the **same turn**, `instruction` for behaviour / `preference` for a choice, importance >= 0.8, tagged `always` when it applies everywhere. Storing it a turn later is too late.
+3. Prefer update over duplicate — search first, then `action=update`.
+4. **Importance 0-1:** 0.9+ identity/core pref, 0.6-0.8 project fact/decision, 0.3-0.5 observation, ≤0.2 transient.
+5. **Never store:** ephemeral chat, code snippets, credentials/secrets.
+6. **Never call `prune_memories`** unless the user explicitly asks — it is a destructive maintenance sweep (archives stale, purges archived), NOT a way to save. Saving is `manage_memory`.
 
 > Rule of thumb: If the user sent a message with any substantive content, you should have called `search` before replying and considered a `manage_memory`/`manage_entity` write after replying. Two Sepia calls per turn is normal and expected.
 

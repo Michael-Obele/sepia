@@ -59,6 +59,15 @@ export function registerMemoryTools(
           });
           return { action: "query", count, memories };
         }
+        case "briefing": {
+          return {
+            action: "briefing",
+            ...(await client.getBriefing({
+              namespace: args.namespace,
+              max_chars: args.max_chars,
+            })),
+          };
+        }
         case "batch_update": {
           if (!args.where)
             throw new Error("action=batch_update requires where");
