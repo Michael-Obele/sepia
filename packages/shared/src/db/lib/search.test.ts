@@ -665,6 +665,49 @@ describe.skipIf(!hasDb)("search", () => {
     expect(partial.partial).toBe(true);
   });
 
+  // ── BM25 engine: a different ranking model, not a different contract ──
+  test("bm25: matches tokens, keeps PREFIX recall, and still excludes archived", async () => {
+    await addMemory({
+      key: "BM_LIVE",
+      content: "quuxly ziggurat deployment notes",
+    });
+    await addMemory({
+      key: "BM_GONE",
+      content: "quuxly ziggurat archived copy",
+      archived: true,
+    });
+
+    // A FRAGMENT must still find the longer word. This is the property that let
+    // the trigram index go away entirely, so it is the one worth a test.
+    const prefix = await run("quuxl", { engine: "bm25" });
+    expect(prefix.map((h) => h.id)).toContain(ids.get("BM_LIVE"));
+    expect(prefix.map((h) => h.id)).not.toContain(ids.get("BM_GONE"));
+
+    // Whole words match, best-first, with scores pointing the SAME way as the
+    // coverage engine (higher = better) so callers need not know the engine.
+    const full = await run("ziggurat deployment", { engine: "bm25" });
+    expect(full[0]?.id).toBe(ids.get("BM_LIVE"));
+    for (let i = 1; i < full.length; i++) {
+      expect(full[i - 1]!.score).toBeGreaterThanOrEqual(full[i]!.score);
+    }
+  });
+
+  test("bm25: min_terms still filters, and a tokenised miss falls back to substring", async () => {
+    const strict = await run("quuxly ziggurat deployment", {
+      engine: "bm25",
+      min_terms: 3,
+    });
+    expect(strict.map((h) => h.id)).toContain(ids.get("BM_LIVE"));
+    expect(strict.every((h) => h.matched_terms >= 3)).toBe(true);
+
+    // An INFIX is the accepted loss of token search: "yzzyx" cannot match the
+    // lexeme "xyzzyx" because it does not start with it. The fallback is what
+    // makes that loss safe — with no BM25 candidates the substring path answers.
+    await addMemory({ key: "BM_INFIX", content: "the xyzzyx token" });
+    const fallback = await run("yzzyx", { engine: "bm25" });
+    expect(fallback.map((h) => h.id)).toContain(ids.get("BM_INFIX"));
+  });
+
   // ── Text handling ────────────────────────────────────────────────────
   test("query matching is case- and whitespace-insensitive", async () => {
     const hits = await run("   JeV   bUn   ");

@@ -4,6 +4,7 @@ import {
   BRIEFING_CHARS_MAX,
   BRIEFING_DETAIL_DEFAULT,
   BRIEFING_DETAILS,
+  SEARCH_ENGINES,
   DEFAULT_IMPORTANCE,
   DEFAULT_NAMESPACE,
   IMPORTANCE_MAX,
@@ -339,6 +340,20 @@ export const SearchInput = v.object({
       v.maxValue(50),
       v.description(
         "Drop hits covering fewer than this many query terms (precision dial; absent = best-effort recall). Too high returns 0 with `terms` present — that is the filter, not a missing memory.",
+      ),
+    ),
+  ),
+  /**
+   * Ranking engine override. Normally left unset: the server decides via
+   * `SEARCH_ENGINE` so a change of ranking model is measured across real traffic
+   * rather than chosen per call. Exposed for testing and for forcing the other
+   * engine when comparing results.
+   */
+  engine: v.optional(
+    v.pipe(
+      v.picklist([...SEARCH_ENGINES]),
+      v.description(
+        'Ranking engine: "coverage" (substring, coverage-first) or "bm25" (tokenised, BM25-ranked). Omit to use the server default.',
       ),
     ),
   ),

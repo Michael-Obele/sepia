@@ -4,6 +4,7 @@ import { SearchToolInput } from "@sepia/shared";
 import { db } from "../db.ts";
 import {
   recordTelemetrySafe,
+  resolveSearchEngine,
   search,
   summarizeSearch,
 } from "@sepia/shared";
@@ -30,7 +31,9 @@ export function registerSearchTools(server: McpServer<any, any>) {
         ownerId: user.id,
         sessionHash: telemetrySession(server.ctx),
         tool: "search",
-        engine: "coverage",
+        // The engine ACTUALLY used, not the one requested: the server default can
+        // differ per call, and the A/B compares these values.
+        engine: resolveSearchEngine(args),
         terms: summary.terms,
         bestMatchedTerms: summary.best_matched_terms,
         hitCount: hits.length,

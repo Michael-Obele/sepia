@@ -1,5 +1,5 @@
 import type { Db } from "../client.ts";
-import { SEARCH_LIMIT_MAX } from "../../types.ts";
+import { SEARCH_LIMIT_MAX, type SearchEngine } from "../../types.ts";
 import { and, desc, eq, getTableColumns, sql, type SQL } from "drizzle-orm";
 import { entities, memories, namespaces } from "../schema.ts";
 import {
@@ -10,6 +10,28 @@ import {
   resolveNamespaceId,
   textArray,
 } from "./util.ts";
+
+/**
+ * Which ranking engine to use.
+ * `coverage` — the original substring match with coverage-first arithmetic.
+ * `bm25` — the ranked path over the generated `content_tsv` / `haystack_tsv`
+ *          columns, matching prefix-aware (so `migr` still finds `migration`
+ *          and `svelte` still finds `SvelteKit`) and ordering by BM25.
+ *
+ * Resolution: the explicit option, then `SEARCH_ENGINE`, then `coverage`. The
+ * default is deliberately NOT bm25 — it is a different ranking model rather than
+ * a tweak, so it is measured against real traffic first (telemetry records the
+ * engine per search) instead of being switched on and hoped for.
+ */
+export function resolveSearchEngine(
+  opts: {
+    engine?: SearchEngine;
+  } = {},
+): SearchEngine {
+  return (opts.engine ?? process.env.SEARCH_ENGINE) === "bm25"
+    ? "bm25"
+    : "coverage";
+}
 
 export interface SearchOptions {
   q: string;
@@ -24,6 +46,8 @@ export interface SearchOptions {
    * BEFORE the LIMIT, so a narrowed search still returns a full page.
    */
   min_terms?: number;
+  /** which ranking engine to use; default from `SEARCH_ENGINE`, else coverage */
+  engine?: SearchEngine;
 }
 
 export interface SearchHit {
@@ -276,6 +300,125 @@ export async function search(
   // fills the page from the surviving rows rather than truncating it.
   const minTerms = opts.min_terms ?? null;
 
+  /**
+   * Shared row → hit mapping, so both engines return an identical shape.
+   *
+   * `score` is ALWAYS "higher is better", whichever engine ran. The BM25 path
+   * negates its score to preserve that: a caller (or a model reading the JSON)
+   * should never have to know which engine produced a number to compare two of
+   * them.
+   */
+  const toHits = (rows: Array<Record<string, unknown>>): SearchHit[] => {
+    const hits: SearchHit[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const kind = row.kind as "memory" | "entity";
+      const key = `${kind}:${String(row.id)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const haystack = String(row.haystack ?? "");
+      const name =
+        row.name === null || row.name === undefined
+          ? undefined
+          : String(row.name);
+      const content =
+        row.content === null || row.content === undefined
+          ? undefined
+          : String(row.content);
+      hits.push({
+        kind,
+        id: String(row.id),
+        name,
+        content,
+        type: String(row.type),
+        importance: Number(row.importance),
+        updated_at: String(row.updated_at),
+        namespace: String(row.namespace),
+        // Memories snippet their content so the match reads in context. When the
+        // match exists only in metadata (a digest title, say) fall back to the
+        // full haystack, so the reason for the match is never invisible.
+        snippet:
+          kind === "memory" && content && containsAny(content, terms)
+            ? snippet(content, terms)
+            : snippet(haystack, terms),
+        score: Number(row.score),
+        matched_terms: Number(row.matched),
+      });
+    }
+    return hits;
+  };
+
+  /**
+   * Shared tail. A typo'd namespace must not look like "no memories exist" —
+   * that false zero is exactly the failure this search exists to prevent. Only
+   * checked when the result set is empty, so the happy path pays nothing.
+   */
+  const finish = async (hits: SearchHit[]): Promise<SearchHit[]> => {
+    if (hits.length === 0 && opts.namespace !== undefined) {
+      await resolveNamespaceId(db, ownerId, opts.namespace);
+    }
+    return hits;
+  };
+
+  // ── BM25 engine ───────────────────────────────────────────────────────
+  // Two guards before taking this path:
+  //   • `terms` must be all word-like. A punctuation-only query ("!!!") falls
+  //     back to the literal so `terms` is never empty; feeding that literal to
+  //     `to_tsquery` would be a syntax error, and the substring path already
+  //     handles it correctly.
+  //   • `to_tsquery` takes ONE term per lexeme here, joined with `|`. Never a
+  //     space-separated multi-term string: `@@ websearch_to_tsquery('a b')` ANDs
+  //     the words, which returns 0 candidates the moment one word is absent —
+  //     the exact false-zero bug this project fixed once already.
+  const wordTerms = terms.filter((t) => /^[\p{L}\p{N}]+$/u.test(t));
+  if (
+    resolveSearchEngine(opts) === "bm25" &&
+    terms.length > 0 &&
+    wordTerms.length === terms.length
+  ) {
+    // `term:*` matches any lexeme STARTING WITH the term, which is what keeps
+    // prefix and compound-word recall alive without a trigram index.
+    const prefixTerms = wordTerms.map((t) => `${t}:*`);
+    const prefixOr = prefixTerms.join(" | ");
+    const prefixArray = textArray(prefixTerms);
+    const bm = await db.execute(sql`
+      WITH src AS (
+        SELECT 'memory' AS kind, m.id, NULL::text AS name, m.content AS content,
+               m.type, m.importance, m.updated_at, n.name AS namespace,
+               ${memHaystack} AS haystack,
+               m.content_tsv AS tsv,
+               m.content_tsv <@> to_bm25query(to_tsvector('english', ${opts.q}), 'memories_content_bm25') AS bm
+          FROM ${memories} m JOIN ${namespaces} n ON n.id = m.namespace_id
+         WHERE m.archived IS NOT TRUE
+           AND m.content_tsv @@ to_tsquery('english', ${prefixOr})
+           ${memWhereSql}
+        UNION ALL
+        SELECT 'entity', e.id, e.name, NULL::text, e.type, e.importance,
+               e.updated_at, n.name, ${entHaystack},
+               e.haystack_tsv,
+               e.haystack_tsv <@> to_bm25query(to_tsvector('english', ${opts.q}), 'entities_haystack_bm25')
+          FROM ${entities} e JOIN ${namespaces} n ON n.id = e.namespace_id
+         WHERE e.haystack_tsv @@ to_tsquery('english', ${prefixOr})
+           ${entWhereSql}
+      )
+      SELECT src.*, (- src.bm) AS score,
+             (SELECT COUNT(*) FROM unnest(${prefixArray}) AS t(term)
+               WHERE src.tsv @@ to_tsquery('english', t.term)) AS matched
+        FROM src
+       WHERE ${minTerms}::int IS NULL
+          OR (SELECT COUNT(*) FROM unnest(${prefixArray}) AS t(term)
+                WHERE src.tsv @@ to_tsquery('english', t.term)) >= ${minTerms}::int
+       ORDER BY score DESC NULLS LAST, src.importance DESC NULLS LAST,
+                src.updated_at DESC
+       LIMIT ${limit}
+    `);
+    const bmHits = toHits(bm.rows as Array<Record<string, unknown>>);
+    // Safety net: a ranked miss falls through to the substring path instead of
+    // answering "nothing", so changing the engine can never lose recall outright
+    // — it only changes the order. Costs a second query ONLY when BM25 is empty.
+    if (bmHits.length) return finish(bmHits);
+  }
+
   const res = await db.execute(sql`
     SELECT src.kind, src.id, src.name, src.content, src.type, src.importance,
            src.updated_at, src.namespace, src.haystack,
@@ -306,50 +449,5 @@ export async function search(
      ORDER BY score DESC, src.importance DESC NULLS LAST, src.updated_at DESC
      LIMIT ${limit}
   `);
-  const rows = res.rows as Array<Record<string, unknown>>;
-
-  const hits: SearchHit[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    const kind = row.kind as "memory" | "entity";
-    const key = `${kind}:${String(row.id)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const haystack = String(row.haystack ?? "");
-    const name =
-      row.name === null || row.name === undefined
-        ? undefined
-        : String(row.name);
-    const content =
-      row.content === null || row.content === undefined
-        ? undefined
-        : String(row.content);
-    hits.push({
-      kind,
-      id: String(row.id),
-      name,
-      content,
-      type: String(row.type),
-      importance: Number(row.importance),
-      updated_at: String(row.updated_at),
-      namespace: String(row.namespace),
-      // Memories snippet their content so the match reads in context. When the
-      // match exists only in metadata (a digest title, say) fall back to the
-      // full haystack, so the reason for the match is never invisible.
-      snippet:
-        kind === "memory" && content && containsAny(content, terms)
-          ? snippet(content, terms)
-          : snippet(haystack, terms),
-      score: Number(row.score),
-      matched_terms: Number(row.matched),
-    });
-  }
-
-  // A typo'd namespace must not look like "no memories exist" — that false
-  // zero is exactly the failure this search exists to prevent. Only checked
-  // when the result set is empty, so the happy path pays no extra round trip.
-  if (hits.length === 0 && opts.namespace !== undefined) {
-    await resolveNamespaceId(db, ownerId, opts.namespace);
-  }
-  return hits;
+  return finish(toHits(res.rows as Array<Record<string, unknown>>));
 }

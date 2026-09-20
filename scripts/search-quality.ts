@@ -69,23 +69,33 @@ if (action === "recall") {
       "  ⚠ watch for over-matching where the english stemmer shortens first (effing → eff:*).",
   );
 } else if (action === "rank") {
-  const q = process.argv[3] ?? "gap analysis roadmap curation memory";
+  // Exercises the REAL code path for both engines, so this measures what ships
+  // rather than a re-implementation of it.
+  const queries = process.argv.slice(3).length
+    ? process.argv.slice(3)
+    : [
+        "gap analysis roadmap curation memory",
+        "download size before install",
+        "migr",
+        "svelte runes",
+      ];
   const id = await owner();
-  const terms = (q.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(" | ");
-  const base = await search(conn, id, { q, namespace: "personal", limit: 3 });
-  const bm = (await sql`
-    SELECT left(content, 90) AS head,
-           content_tsv <@> to_bm25query(to_tsvector('english', ${q}), 'memories_content_bm25') AS bm
-      FROM memories WHERE archived IS NOT TRUE
-     ORDER BY bm ASC LIMIT 3
-  `) as Array<{ head: string; bm: number }>;
-
-  console.log(`query: ${JSON.stringify(q)}\n`);
-  console.log("  current (trigram + coverage):");
-  for (const h of base) console.log(`     ${short(h.content ?? "")}`);
-  console.log("  BM25 (lakebase_bm25, b=0):");
-  for (const h of bm) console.log(`     ${h.bm.toFixed(2).padStart(8)}  ${short(h.head)}`);
-  console.log(`\n  coverage terms used by the current path: ${terms || "(none)"}`);
+  for (const q of queries) {
+    const [cov, bm] = await Promise.all([
+      search(conn, id, { q, namespace: "personal", limit: 3 }),
+      search(conn, id, { q, namespace: "personal", limit: 3, engine: "bm25" }),
+    ]);
+    console.log(`\n──── ${JSON.stringify(q)}`);
+    console.log(`  coverage: ${cov.length} hits`);
+    for (const h of cov)
+      console.log(`     ${String(h.score).padStart(6)}  ${short(h.content ?? h.name ?? "")}`);
+    console.log(`  bm25    : ${bm.length} hits`);
+    for (const h of bm)
+      console.log(`     ${String(h.score).padStart(6)}  ${short(h.content ?? h.name ?? "")}`);
+    console.log(
+      `  top hit: ${cov[0] && cov[0].id === bm[0]?.id ? "SAME" : "DIFFERENT"}`,
+    );
+  }
 } else {
   console.log(`unknown action: ${action} (use recall | rank)`);
   process.exitCode = 1;

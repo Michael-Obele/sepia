@@ -158,7 +158,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * `bun run scripts/stamp-docs-version.ts` to stamp it into every file.
  * Served at /version so installed copies can be checked for staleness.
  */
-export const DOCS_VERSION = "1.7.0";
+export const DOCS_VERSION = "1.8.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [
@@ -248,6 +248,10 @@ export const TRAVERSE_DEPTH_MAX = 3;
  */
 export const ALWAYS_TAG = "always";
 export const CORE_IMPORTANCE = 0.9;
+/** Which ranking engine `search` uses. `coverage` is the default (see search.ts). */
+export const SEARCH_ENGINES = ["coverage", "bm25"] as const;
+export type SearchEngine = (typeof SEARCH_ENGINES)[number];
+
 /** Memory types the briefing covers. An `always`-tagged row of any type is included too. */
 export const BRIEFING_TYPES = ["instruction", "preference"] as const;
 /**

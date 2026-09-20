@@ -5,7 +5,7 @@ alwaysApply: true
 ---
 
 # Sepia memory (always-on) — Cursor
-<!-- sepia-docs-version: 1.7.0 -->
+<!-- sepia-docs-version: 1.8.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (`mcpServers.sepia` in `.cursor/mcp.json` or `~/.cursor/mcp.json`: `type: "http"`, `url: "https://sepia.fly.dev/mcp"`, `headers.Authorization`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
