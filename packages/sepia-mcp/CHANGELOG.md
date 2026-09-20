@@ -1,5 +1,11 @@
 # sepia-mcp
 
+## 0.6.1
+
+### Patch Changes
+
+- Auto-bump: sepia-mcp (or @sepia/shared) changed
+
 ## 0.6.0
 
 ### Minor Changes
