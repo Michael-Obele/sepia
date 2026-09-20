@@ -8,12 +8,12 @@
     }
   ],
   "servers": {
-    "rem": {
-      "type": "http",
-      "url": "http://localhost:9630/mcp",
-      "headers": {
-        "Authorization": "Bearer ${input:memory-token}"
-      }
-    }
+    // "rem": {
+    //   "type": "http",
+    //   "url": "http://localhost:9630/mcp",
+    //   "headers": {
+    //     "Authorization": "Bearer ${input:memory-token}"
+    //   }
+    // }
   }
 }

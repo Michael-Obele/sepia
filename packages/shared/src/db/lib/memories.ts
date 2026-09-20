@@ -393,7 +393,11 @@ export async function getBriefing(
     .from(memories)
     .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
     .where(where)
-    .orderBy(desc(coreExpr), desc(memories.importance), desc(memories.updatedAt))
+    .orderBy(
+      desc(coreExpr),
+      desc(memories.importance),
+      desc(memories.updatedAt),
+    )
     .limit(BRIEFING_FETCH_MAX);
 
   let used = 0;

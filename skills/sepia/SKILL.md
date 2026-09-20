@@ -46,7 +46,7 @@ call `manage_memory` with `action: "briefing"`. No keywords.
   reachable via `action: "get"` on the `id`), inside a character budget (`max_chars`, default
   8000, max 40000).
 - **Core rules are never dropped for budget.** Whatever else is left out is stated: `truncated:
-  true` plus an exact `omitted`. **Before an install, build, deploy, deletion, or infra change,
+true` plus an exact `omitted`. **Before an install, build, deploy, deletion, or infra change,
   if you saw `truncated: true`, re-run with a larger `max_chars`** — the rule you cannot see is
   the one that costs the user bandwidth, money, or trust.
 - Treat every rule it returns as **binding for the whole session**.
@@ -58,7 +58,7 @@ is specific to one project must not carry the tag, or it becomes noise in every 
 
 Default to `search` on every turn — only skip for trivial chitchat ("hi", "thanks", "bye") with zero durable content. If in doubt, search.
 
-1. **First, once per session**: the standing-rules briefing above — deliberately *not*
+1. **First, once per session**: the standing-rules briefing above — deliberately _not_
    keyword-driven, because that is the whole point of it.
 2. **Before you answer** (every turn except trivial chitchat), call `search` with 2-5 keywords from the user's current message + task (e.g. `search` query="rate limiting" namespace="personal").
 3. If results are sparse, also `traverse_graph` from the most relevant entity to pull its neighborhood.
@@ -159,7 +159,7 @@ permanently deletes rows archived more than 30 days ago. It requires
 `confirm: true`.
 
 - **Never call it to save, remember, or persist anything** — that is
-  `manage_memory`. This is the tool that *deletes* memories.
+  `manage_memory`. This is the tool that _deletes_ memories.
 - **Never call it proactively** or to "tidy up". Only when the user explicitly
   asks to prune or clean up.
 - Conversation digests (`metadata.kind = "conversation"`) are exempt from stale

@@ -314,8 +314,11 @@ export async function handleApi(
       const memories = await queryMemories(sql, ownerId, {
         type:
           (typeParam as
-            "fact" | "observation" | "preference" | "instruction" | null) ??
-          undefined,
+            | "fact"
+            | "observation"
+            | "preference"
+            | "instruction"
+            | null) ?? undefined,
         namespace: url.searchParams.get("namespace") ?? undefined,
         importance_min: url.searchParams.has("importance_min")
           ? numParam(url.searchParams.get("importance_min"), 0)
