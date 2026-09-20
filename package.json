@@ -44,6 +44,6 @@
     "pg": "^8.23.0"
   },
   "peerDependencies": {
-    "typescript": "^5"
+    "typescript": "^7.0.0"
   }
 }
