@@ -627,6 +627,44 @@ describe.skipIf(!hasDb)("search", () => {
     expect(hits.map((h) => h.id)).toEqual([ids.get("A")]);
   });
 
+  // ── min_terms: the precision dial ────────────────────────────────────
+  // Nonsense tokens keep these assertions hermetic — no other fixture in the
+  // suite can match them, so the expected sets are exact.
+  test("min_terms drops lower-coverage hits and keeps the best", async () => {
+    await addMemory({ key: "MT_FULL", content: "zebraqux plumbusfoo alpha" });
+    await addMemory({ key: "MT_ONE", content: "zebraqux elsewhere" });
+
+    const loose = await run("zebraqux plumbusfoo");
+    expect(keysOf(loose)).toContain(ids.get("MT_FULL"));
+    expect(keysOf(loose)).toContain(ids.get("MT_ONE"));
+
+    const strict = await run("zebraqux plumbusfoo", { min_terms: 2 });
+    expect(strict.map((h) => h.id)).toEqual([ids.get("MT_FULL")]);
+    expect(strict[0]!.matched_terms).toBe(2);
+  });
+
+  test("min_terms is applied before the LIMIT, so a page still fills", async () => {
+    const hits = await run("zebraqux plumbusfoo", { min_terms: 2, limit: 1 });
+    expect(hits.length).toBe(1);
+    expect(hits[0]!.id).toBe(ids.get("MT_FULL"));
+  });
+
+  test("min_terms above the achievable coverage returns nothing, not noise", async () => {
+    const hits = await run("zebraqux plumbusfoo", { min_terms: 5 });
+    expect(hits).toEqual([]);
+  });
+
+  test("summarizeSearch reports the best coverage achieved", () => {
+    const hit = (matched_terms: number) =>
+      ({ matched_terms }) as Parameters<typeof summarizeSearch>[1][number];
+    const full = summarizeSearch("alpha beta gamma", [hit(3), hit(1)]);
+    expect(full.best_matched_terms).toBe(3);
+    expect(full.partial).toBe(false);
+    const partial = summarizeSearch("alpha beta gamma", [hit(2), hit(1)]);
+    expect(partial.best_matched_terms).toBe(2);
+    expect(partial.partial).toBe(true);
+  });
+
   // ── Text handling ────────────────────────────────────────────────────
   test("query matching is case- and whitespace-insensitive", async () => {
     const hits = await run("   JeV   bUn   ");

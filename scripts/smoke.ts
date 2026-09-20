@@ -470,6 +470,7 @@ if (hasDb) {
     })) as {
       hits: Array<{ matched_terms?: number }>;
       terms?: string[];
+      best_matched_terms?: number;
       partial?: boolean;
     };
     check(
@@ -486,6 +487,27 @@ if (hasDb) {
       "search hits report matched_terms",
       partialSearch.hits[0]?.matched_terms === 2,
       `matched_terms=${partialSearch.hits[0]?.matched_terms}`,
+    );
+    check(
+      "search reports best_matched_terms",
+      partialSearch.best_matched_terms === 2,
+      `best_matched_terms=${partialSearch.best_matched_terms}`,
+    );
+
+    // The precision dial: a coverage floor, applied before the LIMIT.
+    const filteredSearch = (await callTool("search", {
+      q: "cold starts deploy pipeline",
+      namespace: ns,
+      min_terms: 2,
+    })) as {
+      count: number;
+      hits: Array<{ matched_terms?: number }>;
+    };
+    check(
+      "search min_terms applies a coverage floor",
+      filteredSearch.count <= partialSearch.hits.length &&
+        filteredSearch.hits.every((h) => (h.matched_terms ?? 0) >= 2),
+      `${filteredSearch.count} hits (unfiltered ${partialSearch.hits.length})`,
     );
 
     // Tag search: filter by tag across memories + entities.

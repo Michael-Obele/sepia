@@ -18,6 +18,12 @@ export interface SearchOptions {
   /** match memories/entities carrying ALL of these tags */
   tags?: string[];
   limit?: number;
+  /**
+   * Precision dial: drop hits covering fewer than this many query terms. Absent
+   * = best-effort recall (every row matching ANY word, ranked). Filtered in SQL
+   * BEFORE the LIMIT, so a narrowed search still returns a full page.
+   */
+  min_terms?: number;
 }
 
 export interface SearchHit {
@@ -48,25 +54,27 @@ export interface SearchHit {
 }
 
 /**
- * Result-set summary for callers that hand hits to a model: the normalized
- * terms the query ranked on, and whether the results are a best-effort
- * (partial) match — i.e. no single row covered the whole query.
+ * Result-set summary for callers that hand hits to a model: the terms the query
+ * ranked on, the best coverage any hit achieved, and whether the results are a
+ * best-effort (partial) match — i.e. no single row covered the whole query.
  *
- * `partial: true` means "ranked suggestions, not an exhaustive answer". A
- * `count` of 0 with terms present means genuinely nothing matched.
+ * `partial: true` means "ranked suggestions, not an exhaustive answer".
+ * `best_matched_terms` is the number to compare against `terms.length`: a caller
+ * that wants precision instead of recall can re-ask with `min_terms` set to it.
  */
 export function summarizeSearch(
   q: string,
   hits: SearchHit[],
-): { terms: string[]; partial: boolean } {
+): { terms: string[]; best_matched_terms: number; partial: boolean } {
   const { terms } = matchPlan(q);
+  const best = hits.reduce((n, h) => Math.max(n, h.matched_terms), 0);
   return {
     terms,
-    // Every hit, not just the best-ranked one: the score's whole-word and phrase
-    // bonuses can lift a lower-coverage row above a full-coverage one, so
-    // `hits[0]` is not provably the max-coverage row.
-    partial:
-      hits.length > 0 && hits.every((h) => h.matched_terms < terms.length),
+    best_matched_terms: best,
+    // Equivalent to `hits.every(h => h.matched_terms < terms.length)` — `best`
+    // IS that maximum — but computed once rather than per hit, and still correct
+    // if the scoring weights ever change.
+    partial: hits.length > 0 && best < terms.length,
   };
 }
 
@@ -264,6 +272,10 @@ export async function search(
   const memWhereSql = sql`AND ${sql.join(memWhere, sql` AND `)}`;
   const entWhereSql = sql`AND ${sql.join(entWhere, sql` AND `)}`;
 
+  // Precision dial. Applied in SQL, before the LIMIT, so a narrowed search still
+  // fills the page from the surviving rows rather than truncating it.
+  const minTerms = opts.min_terms ?? null;
+
   const res = await db.execute(sql`
     SELECT src.kind, src.id, src.name, src.content, src.type, src.importance,
            src.updated_at, src.namespace, src.haystack,
@@ -290,6 +302,7 @@ export async function search(
           FROM unnest(${likeArray}, ${regexArray}) AS w(pat, rx)
          WHERE src.haystack ILIKE w.pat
       ) AS sc ON TRUE
+     WHERE ${minTerms}::int IS NULL OR COALESCE(sc.matched, 0) >= ${minTerms}::int
      ORDER BY score DESC, src.importance DESC NULLS LAST, src.updated_at DESC
      LIMIT ${limit}
   `);

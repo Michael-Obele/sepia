@@ -11,7 +11,7 @@ export function registerSearchTools(server: McpServer<any, any>) {
       name: "search",
       title: "Search Memory",
       description:
-        "Unified keyword + metadata search across memories, entity names, and entity summaries. Multi-word queries are best-effort: rows matching more of your words rank first, and results are never emptied by one absent word. `partial: true` in the result means no single row covered the whole query.",
+        "Unified keyword + metadata search across memories, entity names, and entity summaries. Multi-word queries are best-effort: rows matching more of your words rank first, and results are never emptied by one absent word. `partial: true` means no single row covered the whole query, and `best_matched_terms` reports the best coverage achieved — pass it back as `min_terms` when you want precision instead of recall.",
       icons: [SEPIA_ICON],
       schema: SearchToolInput,
       annotations: { readOnlyHint: true },

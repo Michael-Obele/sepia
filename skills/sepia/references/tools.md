@@ -52,8 +52,9 @@ Actions: `create` | `get` | `update` | `delete` | `query` | **`briefing`** | `ba
 - `type`? (string) — memory type (fact|observation|preference|instruction) OR entity type (person|project|tool|concept|repo)
 - `tags`? (string[]) — match memories/entities carrying ALL of these tags
 - `limit`? (1-25, default 10)
+- `min_terms`? (1-50) — the precision dial: drop hits covering fewer than this many query terms. Absent = best-effort recall. Applied in SQL BEFORE the LIMIT, so a narrowed search still fills the page. Set it to a previous call's `best_matched_terms` to keep only that coverage class; too high returns 0 hits with `terms` present, which is the filter working, not an empty store.
 - Matching is best-effort: a row matching ANY word is a candidate, and rows matching MORE words rank first — so a result set is never emptied by one absent word. Verbatim phrase > whole-word match > substring, then importance DESC, then updated_at DESC. Empty `q` → recent items.
-- Returns `{ count, terms, partial, hits }`. `partial: true` means no single hit covered the whole query — check it (and each hit's `matched_terms`) before concluding nothing exists. Hits add `kind` (memory|entity), id, snippet (centred on the match), score.
+- Returns `{ count, terms, best_matched_terms, partial, hits }`. `partial: true` means no single hit covered the whole query — check it (and `best_matched_terms`, and each hit's `matched_terms`) before concluding nothing exists, and pass `min_terms` when you want precision instead of recall. Hits add `kind` (memory|entity), id, snippet (centred on the match), score.
 
 ## traverse_graph
 

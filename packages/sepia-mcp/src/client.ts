@@ -261,6 +261,7 @@ export class SepiaClient {
     type?: string;
     tags?: string[];
     limit?: number;
+    min_terms?: number;
   }) {
     const qs = new URLSearchParams({ q: params.q });
     if (params.namespace !== undefined) qs.set("namespace", params.namespace);
@@ -268,9 +269,12 @@ export class SepiaClient {
     if (params.tags !== undefined && params.tags.length)
       qs.set("tags", params.tags.join(","));
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.min_terms !== undefined)
+      qs.set("min_terms", String(params.min_terms));
     return this.request<{
       count: number;
       terms?: string[];
+      best_matched_terms?: number;
       partial?: boolean;
       results: unknown[];
     }>("GET", `/api/search?${qs.toString()}`);

@@ -459,6 +459,9 @@ export async function handleApi(
         type: url.searchParams.get("type") ?? undefined,
         tags: tagsParam(url.searchParams.get("tags")),
         limit: numParam(url.searchParams.get("limit"), 10),
+        min_terms: url.searchParams.has("min_terms")
+          ? numParam(url.searchParams.get("min_terms"), 1)
+          : undefined,
       });
       const results = await search(sql, ownerId, input);
       return json(

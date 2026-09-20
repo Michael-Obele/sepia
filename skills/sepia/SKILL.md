@@ -69,7 +69,7 @@ Default to `search` on every turn — only skip for trivial chitchat ("hi", "tha
 2. **Before you answer** (every turn except trivial chitchat), call `search` with 2-5 keywords from the user's current message + task (e.g. `search` query="rate limiting" namespace="personal").
 3. If results are sparse, also `traverse_graph` from the most relevant entity to pull its neighborhood.
 4. Weave recalled facts into your answer naturally. Cite what came from memory when it matters ("From your memory: ...").
-5. Search is **best-effort**: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits, or the result says `partial: true`, retry with ONE distinctive keyword (or drop filters) BEFORE concluding nothing exists — then say so. Never fabricate memories.
+5. Search is **best-effort**: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits, or the result says `partial: true`, retry with ONE distinctive keyword (or drop filters) BEFORE concluding nothing exists — then say so. Never fabricate memories. The result also reports `best_matched_terms` (the best coverage any hit achieved): when a broad query is drowning in common-word noise, re-ask with `min_terms` set to it to keep only that coverage class.
 
 > Two Sepia calls per turn is normal and expected: `search` before you answer, persist after you answer.
 

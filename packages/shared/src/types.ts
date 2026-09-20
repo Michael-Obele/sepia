@@ -158,7 +158,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * `bun run scripts/stamp-docs-version.ts` to stamp it into every file.
  * Served at /version so installed copies can be checked for staleness.
  */
-export const DOCS_VERSION = "1.6.0";
+export const DOCS_VERSION = "1.7.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [

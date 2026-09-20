@@ -325,6 +325,23 @@ export const SearchInput = v.object({
     ),
     10,
   ),
+  /**
+   * The precision dial. Default is best-effort recall; this trades it for
+   * precision when a broad query returns common-word noise. Pair it with
+   * `best_matched_terms` from a previous call (that is the ceiling worth asking
+   * for). A too-high value returns 0 hits with `terms` present — that is the
+   * filter doing its job, not an empty memory store.
+   */
+  min_terms: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(1),
+      v.maxValue(50),
+      v.description(
+        "Drop hits covering fewer than this many query terms (precision dial; absent = best-effort recall). Too high returns 0 with `terms` present — that is the filter, not a missing memory.",
+      ),
+    ),
+  ),
 });
 
 /** Graph traversal input. */
