@@ -13,6 +13,7 @@ export * from "./db/lib/search.ts";
 export * from "./db/lib/graph.ts";
 export * from "./db/lib/prune.ts";
 export * from "./db/lib/stats.ts";
+export * from "./db/lib/telemetry.ts";
 export * from "./db/lib/plans.ts";
 export * from "./db/lib/users.ts";
 export * from "./db/lib/oauth-clients.ts";

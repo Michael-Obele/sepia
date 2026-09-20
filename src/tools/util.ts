@@ -1,5 +1,6 @@
 import { McpError } from "tmcp";
 import { tool } from "tmcp/utils";
+import { fingerprintSession } from "@sepia/shared";
 import { MemoryError } from "../db.ts";
 
 /**
@@ -37,4 +38,23 @@ export function safe<T>(handler: (args: T) => Promise<unknown>) {
       return tool.error(message);
     }
   };
+}
+
+/**
+ * Session identity for telemetry correlation — the MCP transport session for the
+ * current agent conversation, salted so it cannot be linked across days.
+ *
+ * Returns null when the transport has no session, so uncorrelated calls are
+ * REPORTED as uncorrelated instead of being quietly attributed to a bucket.
+ * The summary surfaces that coverage rather than pretending it is complete.
+ */
+export function telemetrySession(ctx: {
+  sessionId?: string;
+  sessionInfo?: { clientInfo?: { name?: string } };
+}): string | null {
+  if (!ctx.sessionId) return null;
+  return fingerprintSession([
+    ctx.sessionId,
+    ctx.sessionInfo?.clientInfo?.name ?? "",
+  ]);
 }

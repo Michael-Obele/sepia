@@ -715,6 +715,48 @@ if (hasDb) {
       `status ${convRes.status}, count ${convJson.count}`,
     );
 
+    // Telemetry surface. The summary must report its own COVERAGE honestly —
+    // correlated searches can never exceed total searches, and uncorrelated calls
+    // are reported as such rather than bucketed into a synthetic session.
+    const telSettings = await fetch(`${restBase}/api/telemetry/settings`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+    const telSettingsJson = (await telSettings.json()) as { tier?: string };
+    check(
+      "REST telemetry settings respond",
+      telSettings.status === 200 && typeof telSettingsJson.tier === "string",
+      `status ${telSettings.status}, tier ${telSettingsJson.tier}`,
+    );
+    const telSummary = await fetch(`${restBase}/api/telemetry/summary`, {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    });
+    const telSummaryJson = (await telSummary.json()) as {
+      searches?: number;
+      correlated_searches?: number;
+    };
+    check(
+      "REST telemetry summary reports coverage honestly",
+      telSummary.status === 200 &&
+        typeof telSummaryJson.searches === "number" &&
+        typeof telSummaryJson.correlated_searches === "number" &&
+        (telSummaryJson.correlated_searches ?? 0) <=
+          (telSummaryJson.searches ?? 0),
+      `status ${telSummary.status}, searches=${telSummaryJson.searches}, correlated=${telSummaryJson.correlated_searches}`,
+    );
+    const telBadTier = await fetch(`${restBase}/api/telemetry/settings`, {
+      method: "PUT",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ tier: "everything" }),
+    });
+    check(
+      "REST telemetry rejects an unknown tier",
+      telBadTier.status === 422,
+      `status ${telBadTier.status}`,
+    );
+
     await callTool("manage_namespace", { action: "delete", name: ns });
     ok("namespace delete (cascade cleanup)");
   } catch (error) {

@@ -2,8 +2,12 @@ import type { McpServer } from "tmcp";
 import * as v from "valibot";
 import { SearchToolInput } from "@sepia/shared";
 import { db } from "../db.ts";
-import { search, summarizeSearch } from "@sepia/shared";
-import { safe, SEPIA_ICON } from "./util.ts";
+import {
+  recordTelemetrySafe,
+  search,
+  summarizeSearch,
+} from "@sepia/shared";
+import { safe, SEPIA_ICON, telemetrySession } from "./util.ts";
 
 export function registerSearchTools(server: McpServer<any, any>) {
   server.tool(
@@ -19,12 +23,24 @@ export function registerSearchTools(server: McpServer<any, any>) {
     safe(async (args: v.InferInput<typeof SearchToolInput>) => {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
+      const startedAt = Date.now();
       const hits = await search(db(), user.id, args);
-      return {
-        count: hits.length,
-        ...summarizeSearch(args.q, hits),
-        hits,
-      };
+      const summary = summarizeSearch(args.q, hits);
+      recordTelemetrySafe(db(), {
+        ownerId: user.id,
+        sessionHash: telemetrySession(server.ctx),
+        tool: "search",
+        engine: "coverage",
+        terms: summary.terms,
+        bestMatchedTerms: summary.best_matched_terms,
+        hitCount: hits.length,
+        latencyMs: Date.now() - startedAt,
+        // What the model actually receives, so cost is measured, not guessed.
+        resultChars: hits.reduce((n, h) => n + (h.snippet?.length ?? 0), 0),
+        queryText: args.q,
+        hitIds: hits.map((h) => h.id),
+      });
+      return { count: hits.length, ...summary, hits };
     }),
   );
 }

@@ -33,6 +33,14 @@ import {
   type UserRow,
   BRIEFING_CHARS_DEFAULT,
   BRIEFING_DETAILS,
+  TELEMETRY_TIERS,
+  recordTelemetrySafe,
+  getTelemetrySettings,
+  setTelemetrySettings,
+  telemetrySummary,
+  listTelemetry,
+  deleteTelemetry,
+  purgeExpiredTelemetry,
   // Valibot schemas (single source of truth for input validation)
   NamespaceInput,
   EntityInput,
@@ -463,16 +471,92 @@ export async function handleApi(
           ? numParam(url.searchParams.get("min_terms"), 1)
           : undefined,
       });
+      const startedAt = Date.now();
       const results = await search(sql, ownerId, input);
+      const summary = summarizeSearch(input.q, results);
+      // There is no MCP session on the REST path, so this is logged as
+      // UNCORRELATED rather than bucketed into a synthetic one — the summary
+      // reports how much of the data is correlated instead of faking it.
+      recordTelemetrySafe(sql, {
+        ownerId,
+        sessionHash: null,
+        tool: "search",
+        engine: "coverage",
+        terms: summary.terms,
+        bestMatchedTerms: summary.best_matched_terms,
+        hitCount: results.length,
+        latencyMs: Date.now() - startedAt,
+        resultChars: results.reduce((n, h) => n + (h.snippet?.length ?? 0), 0),
+        queryText: input.q,
+        hitIds: results.map((h) => h.id),
+      });
       return json(
         {
           count: results.length,
-          ...summarizeSearch(input.q, results),
+          ...summary,
           results,
         },
         200,
         cors,
       );
+    }
+
+    // ── Telemetry (opt-in, OFF by default; the owner's own data) ──────────
+    if (
+      path === "/api/telemetry/settings" &&
+      (method === "GET" || method === "PUT")
+    ) {
+      if (method === "GET")
+        return json(await getTelemetrySettings(sql, ownerId), 200, cors);
+      const body = (await readBody(request)) as {
+        tier?: string;
+        ttl_days?: number;
+      };
+      const tier = body.tier ?? "off";
+      if (!(TELEMETRY_TIERS as readonly string[]).includes(tier))
+        return error(
+          "invalid_input",
+          'tier must be "off", "signals" or "transcripts"',
+          422,
+        );
+      return json(
+        await setTelemetrySettings(sql, ownerId, {
+          tier: tier as (typeof TELEMETRY_TIERS)[number],
+          ttlDays: body.ttl_days,
+        }),
+        200,
+        cors,
+      );
+    }
+    if (path === "/api/telemetry/summary" && method === "GET") {
+      // Retention is enforced on read — this app has no scheduler (Fly scales
+      // to zero), and pretending a cron exists would be worse than doing it here.
+      await purgeExpiredTelemetry(sql, ownerId);
+      return json(
+        await telemetrySummary(
+          sql,
+          ownerId,
+          numParam(url.searchParams.get("days"), 30),
+        ),
+        200,
+        cors,
+      );
+    }
+    if (path === "/api/telemetry/events" && method === "GET") {
+      return json(
+        {
+          events: await listTelemetry(
+            sql,
+            ownerId,
+            numParam(url.searchParams.get("limit"), 100),
+          ),
+        },
+        200,
+        cors,
+      );
+    }
+    if (path === "/api/telemetry" && method === "DELETE") {
+      return json({ deleted: await deleteTelemetry(sql, ownerId) }, 200, cors);
     }
     if (path === "/api/graph" && method === "GET") {
       const root = url.searchParams.get("root");

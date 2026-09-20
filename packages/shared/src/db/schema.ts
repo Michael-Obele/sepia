@@ -583,3 +583,102 @@ export const memoryEntityLinks = pgTable(
     }),
   ],
 );
+
+// ── Telemetry (opt-in, OFF by default, owner-scoped) ────────────────────────
+// Answers questions the server otherwise cannot: is search actually working? did
+// the agent engage with what it was given? does the session-start briefing ever
+// fire? Without it we are guessing — which is why a search bug can hide for
+// weeks and why we could not tell whether a ranking change helped.
+//
+// The privacy posture is structural rather than a policy promise: this data
+// lives in the OWNER'S OWN Postgres, is never sent to a third party, and the
+// owner can read and delete every row. `tier` gates what is written at all:
+//   off         — nothing recorded (the default for every account)
+//   signals     — counters + a SALTED query fingerprint; never text, never content
+//   transcripts — also raw query text + returned ids, expiring after `ttl_days`
+export const TELEMETRY_TIERS = ["off", "signals", "transcripts"] as const;
+
+export const telemetrySettings = pgTable(
+  "telemetry_settings",
+  {
+    ownerId: uuid("owner_id").primaryKey().notNull(),
+    tier: text().notNull().default("off"),
+    /** Retention for tier-2 payloads (query text + hit ids) only. */
+    ttlDays: integer("ttl_days").notNull().default(30),
+    enabledAt: timestamp("enabled_at", { withTimezone: true, mode: "string" }),
+    updatedAt: timestamp("updated_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.ownerId],
+      foreignColumns: [users.id],
+      name: "telemetry_settings_owner_id_fkey",
+    }).onDelete("cascade"),
+    check(
+      "telemetry_settings_tier_check",
+      sql`${table.tier} IN ('off', 'signals', 'transcripts')`,
+    ),
+    check(
+      "telemetry_settings_ttl_check",
+      sql`${table.ttlDays} >= 1 AND ${table.ttlDays} <= 365`,
+    ),
+  ],
+);
+
+/**
+ * Append-only event log. Outcomes (did the agent go on to fetch a hit? re-ask?)
+ * are DERIVED from the stream when read, never written back — so the hot path
+ * stays a single insert and the log stays immutable.
+ *
+ * Never stored here, at any tier: memory content, entity names, agent
+ * conversation, credentials. A query FINGERPRINT is a salted hash of the
+ * normalised terms, rotated daily, so equivalent queries group without the text
+ * being recoverable from the table itself.
+ */
+export const telemetryEvents = pgTable(
+  "telemetry_events",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    ownerId: uuid("owner_id").notNull(),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      mode: "string",
+    }).defaultNow(),
+    /** Correlates calls within one agent session. NULL = uncorrelated (e.g. REST). */
+    sessionHash: text("session_hash"),
+    tool: text().notNull(),
+    /** the `action` argument where the tool has one (briefing | get | create | …) */
+    action: text(),
+    /** search only: which ranking path served the call */
+    engine: text(),
+    /** salted hash of the normalised sorted terms — groups queries without storing them */
+    queryFingerprint: text("query_fingerprint"),
+    terms: integer(),
+    bestMatchedTerms: integer("best_matched_terms"),
+    hitCount: integer("hit_count"),
+    latencyMs: integer("latency_ms"),
+    resultChars: integer("result_chars"),
+    /** tier "transcripts" only — NULL at every other tier */
+    queryText: text("query_text"),
+    /** tier "transcripts" only — NULL at every other tier */
+    hitIds: uuid("hit_ids").array(),
+  },
+  (table) => [
+    index("idx_telemetry_events_owner").using(
+      "btree",
+      table.ownerId.asc().nullsLast().op("uuid_ops"),
+    ),
+    index("idx_telemetry_events_session").using(
+      "btree",
+      table.sessionHash.asc().nullsLast().op("text_ops"),
+    ),
+    foreignKey({
+      columns: [table.ownerId],
+      foreignColumns: [users.id],
+      name: "telemetry_events_owner_id_fkey",
+    }).onDelete("cascade"),
+  ],
+);
