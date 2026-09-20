@@ -222,7 +222,7 @@
 							<div class="flex flex-wrap gap-2">
 								<Button
 									size="sm"
-									variant={s.tier === 'signals' ? 'default' : 'ghost'}
+									variant={s.tier === 'signals' ? 'default' : 'outline'}
 									disabled={saving}
 									onclick={() => setTier('signals')}>Counters only</Button
 								>

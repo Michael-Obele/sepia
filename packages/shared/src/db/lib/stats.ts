@@ -1,6 +1,5 @@
 import type { Db } from "../client.ts";
 import { and, eq, sql } from "drizzle-orm";
-import type { BatchItem } from "drizzle-orm/batch";
 import { entities, memories, namespaces, relations } from "../schema.ts";
 import { STALE_AFTER_DAYS, STALE_IMPORTANCE } from "../../types.ts";
 
@@ -39,12 +38,32 @@ export interface Stats {
 
 /** Dashboard stats: counts, top entities, decay candidates, recent feed. */
 export async function getStats(db: Db, ownerId: string): Promise<Stats> {
-  // All 10 queries in ONE Neon HTTP round trip via db.batch. Firing them as
+  // All 11 queries in ONE Neon HTTP round trip via db.batch. Firing them as
   // separate requests (even via Promise.all) costs ~500-700ms each through the
   // Neon HTTP driver, so getStats used to take ~10s. A single batch is ~1s.
   // Every query is scoped to the owner's namespaces.
   const owned = sql`(SELECT id FROM ${namespaces} WHERE owner_id = ${ownerId})`;
-  const queries: BatchItem<"pg">[] = [
+  // The array is passed INLINE to db.batch — never hoisted into a typed
+  // `BatchItem<"pg">[]` variable and then re-cast. Hoisting widens every element
+  // to one generic shape, which erases each query's result type and lets the
+  // destructuring below drift out of order WITHOUT a compile error. That is how
+  // `recent`/`conv` were silently swapped (they read each other's results, so
+  // the feed showed a phantom memory and `conversations` always read 0).
+  // Inlined, TypeScript infers the tuple and checks the order for us.
+  const [
+    // ORDER MUST MATCH THE ARRAY BELOW, position for position:
+    ns, // 1  namespace count
+    ent, // 2  entity count
+    mem, // 3  memory count
+    rel, // 4  relation count
+    archived, // 5  archived memory count
+    memByType, // 6  memories grouped by type
+    entByType, // 7  entities grouped by type
+    top, // 8  top entities by access_count
+    decay, // 9  prune candidates (raw SQL)
+    conv, // 10 conversation digests
+    recent, // 11 most recently updated memories
+  ] = await db.batch([
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(namespaces)
@@ -122,21 +141,7 @@ export async function getStats(db: Db, ownerId: string): Promise<Stats> {
       .where(and(eq(memories.archived, false), eq(namespaces.ownerId, ownerId)))
       .orderBy(sql`${memories.updatedAt} DESC`)
       .limit(10),
-  ];
-
-  const [
-    ns,
-    ent,
-    mem,
-    rel,
-    archived,
-    memByType,
-    entByType,
-    top,
-    decay,
-    recent,
-    conv,
-  ] = await db.batch(queries as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
+  ]);
 
   const memoriesByType: Record<string, number> = {};
   for (const r of memByType) memoriesByType[String(r.type)] = Number(r.n);
@@ -168,22 +173,18 @@ export async function getStats(db: Db, ownerId: string): Promise<Stats> {
       }),
     ),
     decay_candidates: Number(decay.rows[0]?.n ?? 0),
-    recent_memories: recent.map(
-      (m: {
-        id: unknown;
-        content: unknown;
-        type: unknown;
-        importance: unknown;
-        namespace: unknown;
-        updated_at: unknown;
-      }) => ({
-        id: String(m.id ?? ""),
-        content: String(m.content ?? ""),
-        type: String(m.type ?? ""),
-        importance: Number(m.importance ?? 0),
-        namespace: String(m.namespace ?? ""),
-        updated_at: String(m.updated_at ?? ""),
-      }),
-    ),
+    // No `?? ""` fallbacks on `id`: a missing id here means the batch results are
+    // out of order, and coercing it to "" is what turned that into a fabricated
+    // row the UI then tried to DELETE (empty string is not a uuid → 500).
+    recent_memories: recent.map((m) => ({
+      id: m.id,
+      content: m.content,
+      // `type`, `importance` and `updated_at` are nullable columns, unlike
+      // id/content/namespace — those three are the only defaults needed.
+      type: m.type ?? "",
+      importance: m.importance ?? 0,
+      namespace: m.namespace,
+      updated_at: m.updated_at ?? "",
+    })),
   };
 }

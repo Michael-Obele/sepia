@@ -6,7 +6,7 @@
 	import { browser, dev } from '$app/environment';
 
 	let playgroundAnnotationProps: AnnotationProps = {
-		toolbarPosition: 'bottom-left',
+		toolbarPosition: 'bottom-right',
 		outputMode: 'forensic',
 		pauseAnimations: true,
 		clearOnCopy: true,
