@@ -13,8 +13,19 @@ import {
   boolean,
   primaryKey,
   check,
+  customType,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+
+/**
+ * `tsvector` has no first-class drizzle type. These columns are only ever read by
+ * hand-written SQL, never selected or inserted, so a bare custom type is enough.
+ * `content_tsv` / `haystack_tsv` are normal Postgres full-text columns — plain
+ * `tsvector`, standard operators — and only the INDEX access method differs.
+ */
+const tsvector = customType<{ data: string }>({
+  dataType: () => "tsvector",
+});
 
 /**
  * Sepia knowledge-graph schema — single source of truth for the DB shape.
@@ -271,6 +282,15 @@ export const entities = pgTable(
     importance: real().default(0.5),
     accessCount: integer("access_count").default(0),
     tags: text("tags").array().default([]),
+    /**
+     * BM25 index source, generated so it can never drift from `name`/`summary`
+     * and STORED so it can be indexed. The haystack deliberately mirrors what
+     * search already matched against, so the ranked path sees the same text the
+     * substring path did.
+     */
+    haystackTsv: tsvector("haystack_tsv").generatedAlwaysAs(
+      sql`to_tsvector('english', COALESCE(name, '') || ' ' || COALESCE(summary, ''))`,
+    ),
     createdAt: timestamp("created_at", {
       withTimezone: true,
       mode: "string",
@@ -293,6 +313,15 @@ export const entities = pgTable(
       "btree",
       table.type.asc().nullsLast().op("text_ops"),
     ),
+    // BM25 index for ranked search. `b = 0` disables length normalisation —
+    // measured, not assumed: with the default b = 0.75 the correct 2,259-char
+    // memory ranked 6th for its own query, 3rd at b = 0.4, and 1st at b = 0.
+    // Sepia's rows span two orders of magnitude in length, so length carries no
+    // signal about relevance here. `default_limit` is the top-K pushdown; keep
+    // it close to the query LIMIT rather than the 1000 default.
+    index("entities_haystack_bm25")
+      .using("lakebase_bm25", table.haystackTsv)
+      .with({ b: 0, default_limit: 100 }),
     // New: no two entities with the same name in the same namespace.
     unique("entities_namespace_id_name_key").on(table.namespaceId, table.name),
     // New: importance must stay in [0, 1].
@@ -393,6 +422,15 @@ export const memories = pgTable(
       mode: "string",
     }).defaultNow(),
     archived: boolean().default(false),
+    /**
+     * BM25 index source. Generated so it can never drift from `content`, and
+     * STORED so it can be indexed. Deliberately just `content`: the metadata
+     * fields (digest title / conversation_id / source_ai) are matched but were
+     * never ranked, and widening this would silently change result ordering.
+     */
+    contentTsv: tsvector("content_tsv").generatedAlwaysAs(
+      sql`to_tsvector('english', COALESCE(content, ''))`,
+    ),
   },
   (table) => [
     index("idx_memories_importance").using(
@@ -407,6 +445,11 @@ export const memories = pgTable(
       "btree",
       table.type.asc().nullsLast().op("text_ops"),
     ),
+    // BM25 index for ranked search — see `entities_haystack_bm25` for why
+    // b = 0 (measured) and why default_limit is lowered from the 1000 default.
+    index("memories_content_bm25")
+      .using("lakebase_bm25", table.contentTsv)
+      .with({ b: 0, default_limit: 100 }),
     // New: importance must stay in [0, 1].
     check(
       "memories_importance_check",

@@ -71,9 +71,13 @@ switch (action) {
     break;
   }
   case "on": {
-    const tier = (args[1] === "transcripts" ? "transcripts" : "signals") as TelemetryTier;
+    const tier = (
+      args[1] === "transcripts" ? "transcripts" : "signals"
+    ) as TelemetryTier;
     const s = await setTelemetrySettings(conn, ownerId, { tier, ttlDays: 30 });
-    console.log(`telemetry enabled for ${ownerId}: tier=${s.tier}, ttl=${s.ttlDays}d`);
+    console.log(
+      `telemetry enabled for ${ownerId}: tier=${s.tier}, ttl=${s.ttlDays}d`,
+    );
     console.log(
       tier === "transcripts"
         ? "  collecting counters AND raw query text + returned ids (expires in 30 days)"
@@ -84,15 +88,21 @@ switch (action) {
   case "off": {
     const s = await setTelemetrySettings(conn, ownerId, { tier: "off" });
     console.log(`telemetry disabled for ${ownerId} (tier=${s.tier})`);
-    console.log("  existing rows are kept; use `telemetry delete` to erase them");
+    console.log(
+      "  existing rows are kept; use `telemetry delete` to erase them",
+    );
     break;
   }
   case "delete": {
-    console.log(`deleted ${await deleteTelemetry(conn, ownerId)} telemetry rows`);
+    console.log(
+      `deleted ${await deleteTelemetry(conn, ownerId)} telemetry rows`,
+    );
     break;
   }
   case "purge": {
-    console.log(`nulled tier-2 payloads on ${await purgeExpiredTelemetry(conn, ownerId)} rows`);
+    console.log(
+      `nulled tier-2 payloads on ${await purgeExpiredTelemetry(conn, ownerId)} rows`,
+    );
     break;
   }
   case "events": {
@@ -101,7 +111,9 @@ switch (action) {
     for (const r of rows) {
       console.log(
         `  ${r.createdAt ?? ""}  ${r.tool}/${r.action ?? "-"}  engine=${r.engine ?? "-"}  hits=${r.hitCount ?? "-"}  cov=${r.bestMatchedTerms ?? "-"}/${r.terms ?? "-"}  ${r.latencyMs ?? "-"}ms` +
-          (r.queryText ? `  q=${JSON.stringify(r.queryText.slice(0, 60))}` : ""),
+          (r.queryText
+            ? `  q=${JSON.stringify(r.queryText.slice(0, 60))}`
+            : ""),
       );
     }
     break;
@@ -110,9 +122,15 @@ switch (action) {
     // Enforce retention before reporting, since there is no scheduler.
     await purgeExpiredTelemetry(conn, ownerId);
     const s = await telemetrySummary(conn, ownerId, Number(args[1] ?? 30));
-    console.log(`telemetry summary — account ${ownerId}, last ${s.window_days} days`);
-    console.log(`  tier ${s.tier}, ttl ${s.ttl_days}d, oldest event ${s.oldest ?? "none"}`);
-    console.log(`  events ${s.events}   searches ${s.searches}   distinct queries ${s.distinct_queries}`);
+    console.log(
+      `telemetry summary — account ${ownerId}, last ${s.window_days} days`,
+    );
+    console.log(
+      `  tier ${s.tier}, ttl ${s.ttl_days}d, oldest event ${s.oldest ?? "none"}`,
+    );
+    console.log(
+      `  events ${s.events}   searches ${s.searches}   distinct queries ${s.distinct_queries}`,
+    );
     console.log(
       `  correlated searches ${s.correlated_searches}/${s.searches} (${pct(s.correlated_searches, s.searches)}) — only these can be given an outcome`,
     );
@@ -125,7 +143,9 @@ switch (action) {
     console.log(
       `  REFORMULATED ${s.reformulated} (${pct(s.reformulated, s.correlated_searches)})  ← another search within 120s`,
     );
-    console.log(`  latency p50 ${s.latency_ms.p50 ?? "—"}ms  p95 ${s.latency_ms.p95 ?? "—"}ms`);
+    console.log(
+      `  latency p50 ${s.latency_ms.p50 ?? "—"}ms  p95 ${s.latency_ms.p95 ?? "—"}ms`,
+    );
     console.log(`  avg result payload ${s.avg_result_chars ?? "—"} chars`);
     console.log("  by engine:");
     if (!s.by_engine.length) console.log("    (no correlated searches yet)");

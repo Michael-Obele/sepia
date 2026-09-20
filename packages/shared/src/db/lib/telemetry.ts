@@ -154,16 +154,25 @@ export function recordTelemetrySafe(db: Db, input: TelemetryInput): void {
  * (Fly scales to zero), so this runs on read — call it before showing data,
  * rather than pretending a cron exists.
  */
-export async function purgeExpiredTelemetry(db: Db, ownerId?: string) {
-  // A correlated FROM keeps this one statement; volumes here are tiny.
+/**
+ * Enforce retention on the tier-2 payloads. There is no scheduler in this app
+ * (Fly scales to zero), so this runs on read — call it before showing data,
+ * rather than pretending a cron exists.
+ *
+ * `ownerId` is REQUIRED on purpose. It used to be optional, which meant one
+ * careless call could sweep every account's payloads in a single statement:
+ * not a leak, but the wrong shape for a scoping guarantee. Now no call shape
+ * exists that can reach another account's rows.
+ */
+export async function purgeExpiredTelemetry(db: Db, ownerId: string) {
   const res = await db.execute(sql`
     UPDATE ${telemetryEvents} e
        SET query_text = NULL, hit_ids = NULL
       FROM ${telemetrySettings} s
      WHERE s.owner_id = e.owner_id
+       AND e.owner_id = ${ownerId}
        AND (e.query_text IS NOT NULL OR e.hit_ids IS NOT NULL)
        AND e.created_at < now() - (s.ttl_days * interval '1 day')
-       ${ownerId ? sql`AND e.owner_id = ${ownerId}` : sql``}
   `);
   return Number(res.rowCount ?? 0);
 }
@@ -285,7 +294,8 @@ export async function telemetrySummary(
   `);
   const b = (brief.rows[0] ?? {}) as Record<string, unknown>;
 
-  const num = (v: unknown): number => (v === null || v === undefined ? 0 : Number(v));
+  const num = (v: unknown): number =>
+    v === null || v === undefined ? 0 : Number(v);
   const numOrNull = (v: unknown): number | null =>
     v === null || v === undefined ? null : Number(v);
 
@@ -318,11 +328,7 @@ export async function telemetrySummary(
 }
 
 /** Raw rows for the transparency viewer — the owner sees exactly what is stored. */
-export async function listTelemetry(
-  db: Db,
-  ownerId: string,
-  limit = 100,
-) {
+export async function listTelemetry(db: Db, ownerId: string, limit = 100) {
   const safeLimit = Math.min(Math.max(limit, 1), 500);
   return db
     .select()
@@ -354,7 +360,10 @@ export async function telemetryFailures(
       and(
         eq(telemetryEvents.ownerId, ownerId),
         eq(telemetryEvents.tool, "search"),
-        gte(telemetryEvents.createdAt, sql`now() - (${windowDays} * interval '1 day')`),
+        gte(
+          telemetryEvents.createdAt,
+          sql`now() - (${windowDays} * interval '1 day')`,
+        ),
         sql`(${telemetryEvents.hitCount} = 0 OR ${telemetryEvents.bestMatchedTerms} < ${telemetryEvents.terms})`,
       ),
     )

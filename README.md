@@ -16,24 +16,25 @@ If you're re-explaining preferences every chat or paying SaaS per memory, you're
 | What hurts with alternatives                            | What Sepia gives you                                                               | Outcome                              |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------ |
 | **Local JSONL** — no remote, no search across sessions  | **Remote knowledge graph** — entities, relations, memories with importance scoring | Recall from any editor or web AI     |
-| **17-tool SaaS** + RBAC, audit trails, per-seat pricing | **7 tools, not 17** — `action` enums, pure-SQL `prune_memories`, no team bloat  | Small LLM surface, $0/mo self-hosted |
+| **17-tool SaaS** + RBAC, audit trails, per-seat pricing | **7 tools, not 17** — `action` enums, pure-SQL `prune_memories`, no team bloat     | Small LLM surface, $0/mo self-hosted |
 | **No memory contract** — you re-prompt every session    | **Instructions + always-on files + Skill** — auto-injected usage contract          | Remember without being asked         |
 | **No dashboard** — raw JSONL or vendor UI               | **SvelteKit dashboard** — search, graph, CRUD, conversations                       | Browse the same data agents write    |
 
 ## Features
 
-| Feature                       | What it does                                                                                                                                                                                                                                                                                   |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 🧠 **Knowledge graph**        | Entities (nodes), weighted relations (edges), memories (facts/observations) with importance scoring, in isolated namespaces                                                                                                                                                                    |
-| 🔎 **Search + traversal**     | Unified keyword search across everything; BFS graph traversal from any entity                                                                                                                                                                                                                  |
-| 🧹 **`prune_memories`**       | Destructive maintenance sweep: decay-scoring, dedup, purge — pure SQL, no LLM calls. Requires `confirm: true` — **never a way to save memory**                                                                                                                                                                                                             |
-| 📋 **Server instructions**    | A usage contract sent in the MCP `initialize` handshake; supporting clients (Claude Code, Codex, Copilot, Goose) inject it into the system prompt — zero-reminder usage                                                                                                                        |
-| ⚡ **Always-on instructions** | `skills/sepia/always-on/` — VS Code `*.instructions.md` (`applyTo: '**/*'`), Cursor `.mdc` (`alwaysApply: true`), `~/.claude/CLAUDE.md`, `AGENTS.md`; injected into **every** session, covering clients that ignore `instructions` (Cursor)                                                    |
-| 🛠️ **Bundled Agent Skill**    | `skills/sepia/SKILL.md` (agentskills.io standard) — works in Zed, Cursor, Claude Code, Codex, OpenCode; the on-demand extended guide (tool-by-tool detail)                                                                                                                                     |
-| � **Conversation migration**  | `manage_memory` action=ingest — save a distilled handoff digest (summary + decisions + preferences + entities) that any other AI can resume; digests are protected from consolidation and grouped by `conversation_id`                                                                         |
-| 🖥️ **Web dashboard**          | SvelteKit app on Netlify (SSR + remote functions): landing + pricing pages, search with URL-backed filters, graph view, conversations, stats, and a "Connect an AI" page — never wakes the API's scaled-to-zero machine                                                                        |
-| 🌐 **Online AI support**      | Grok, ChatGPT, Claude web, Gemini (Spark), Perplexity, Le Chat all accept remote MCP connectors — your memory follows you to the web                                                                                                                                                           |
-| 🔐 **Two-phase auth**         | Phase 1: static Bearer token (local editors). Phase 2: **OAuth 2.1 + PKCE live** — built-in authorization server via `@tmcp/auth` (login page, dynamic client registration, Client ID Metadata Documents) for Grok/ChatGPT/Gemini-style connectors. Hosted accounts with plans are in progress |
+| Feature                       | What it does                                                                                                                                                                                                                                                                                                |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🧠 **Knowledge graph**        | Entities (nodes), weighted relations (edges), memories (facts/observations) with importance scoring, in isolated namespaces                                                                                                                                                                                 |
+| 🔎 **Search + traversal**     | Unified keyword search across everything; BFS graph traversal from any entity                                                                                                                                                                                                                               |
+| 🧹 **`prune_memories`**       | Destructive maintenance sweep: decay-scoring, dedup, purge — pure SQL, no LLM calls. Requires `confirm: true` — **never a way to save memory**                                                                                                                                                              |
+| 📋 **Server instructions**    | A usage contract sent in the MCP `initialize` handshake; supporting clients (Claude Code, Codex, Copilot, Goose) inject it into the system prompt — zero-reminder usage                                                                                                                                     |
+| ⚡ **Always-on instructions** | `skills/sepia/always-on/` — VS Code `*.instructions.md` (`applyTo: '**/*'`), Cursor `.mdc` (`alwaysApply: true`), `~/.claude/CLAUDE.md`, `AGENTS.md`; injected into **every** session, covering clients that ignore `instructions` (Cursor)                                                                 |
+| 🛠️ **Bundled Agent Skill**    | `skills/sepia/SKILL.md` (agentskills.io standard) — works in Zed, Cursor, Claude Code, Codex, OpenCode; the on-demand extended guide (tool-by-tool detail)                                                                                                                                                  |
+| � **Conversation migration**  | `manage_memory` action=ingest — save a distilled handoff digest (summary + decisions + preferences + entities) that any other AI can resume; digests are protected from consolidation and grouped by `conversation_id`                                                                                      |
+| 🖥️ **Web dashboard**          | SvelteKit app on Netlify (SSR + remote functions): landing + pricing pages, search with URL-backed filters, graph view, conversations, stats, and a "Connect an AI" page — never wakes the API's scaled-to-zero machine                                                                                     |
+| 🌐 **Online AI support**      | Grok, ChatGPT, Claude web, Gemini (Spark), Perplexity, Le Chat all accept remote MCP connectors — your memory follows you to the web                                                                                                                                                                        |
+| 📊 **Opt-in telemetry**       | **Off by default and not recommended** — records counters (optionally query text, 30-day TTL) **inside your own database** so zero-result searches, repeated queries and briefing adoption become visible. No third-party endpoint; view or erase it any time. See [Security & Privacy](#security--privacy) |
+| 🔐 **Two-phase auth**         | Phase 1: static Bearer token (local editors). Phase 2: **OAuth 2.1 + PKCE live** — built-in authorization server via `@tmcp/auth` (login page, dynamic client registration, Client ID Metadata Documents) for Grok/ChatGPT/Gemini-style connectors. Hosted accounts with plans are in progress              |
 
 ## Architecture
 
@@ -349,3 +350,41 @@ Restart your editor to pick it up. Claude Code users can also invoke the skill o
 - The memory contract forbids storing credentials/secrets — the server is a memory, not a vault
 - OAuth consent screen (Phase 2) lists scopes (`memory:read`, `memory:write`)
 - `prune_memories` purges archived rows; retention rules can be added (e.g. importance < 0.2 and unaccessed 90 days → archive)
+
+### Telemetry — opt-in, off by default, and we do not recommend turning it on
+
+Sepia _can_ record how search and memory are actually used, so that failure modes are
+visible instead of guessed at. **It is off for every account, and we do not advise enabling
+it.** The maintainers run it on their own account only, to improve the system. If you do
+enable it, you help improve Sepia for everyone — but that is entirely your call, and every
+account starts off.
+
+- **Nothing leaves your infrastructure.** Rows go to _your_ Postgres and are read by _your_
+  dashboard. There is no third-party analytics endpoint, no phone-home, no vendor.
+- **Two tiers**, and you choose one:
+  - `signals` — **counters only**: which tool ran, which ranking engine served a search, how
+    many query terms matched, hit count, latency, payload size, and a **salted, day-rotating
+    fingerprint** of the query. Equivalent queries can be grouped, but the query text is not
+    stored and cannot be recovered, and the daily salt rotation makes cross-day profiling
+    impossible by construction.
+  - `transcripts` — additionally stores the raw **query text and returned ids**, deleted
+    after 30 days. This is the tier that turns a real failure into a reproducible case.
+- **Never recorded, at either tier:** memory content, entity names, agent conversation, or
+  credentials.
+- **You stay in control:** view every stored row, or erase all of it, from the dashboard or
+  the API. CLI: `bun run scripts/telemetry.ts {status|on|off|summary|events|purge|delete}`.
+- **It cannot change what your model sees.** No tool is added, no prompt text changes, and a
+  search gains no round trip — recording is fire-and-forget.
+
+Why it exists at all: every search bug in this project so far was found by an agent hitting
+it inside a real task, never by a test. Without this signal there is no feedback loop except
+somebody noticing that something felt wrong.
+
+### What telemetry is _not_
+
+It is not product analytics and not a growth instrument. It answers four operational
+questions the server otherwise cannot: are searches returning nothing; is the agent asking
+the same question twice in one session; did the session-start briefing fire before the agent
+started working; and did latency or payload size regress. The summary reports its own
+**coverage** — how many searches it can actually attribute to an outcome — rather than
+presenting a confident number built on uncorrelated rows.
