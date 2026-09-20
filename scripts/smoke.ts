@@ -510,6 +510,20 @@ if (hasDb) {
       `${filteredSearch.count} hits (unfiltered ${partialSearch.hits.length})`,
     );
 
+    // The floor must actually FLOOR. A threshold above the achievable coverage has
+    // to return nothing — without this, the check above still passes if `min_terms`
+    // is silently ignored, which is exactly how a test stops testing anything.
+    const overFiltered = (await callTool("search", {
+      q: "cold starts deploy pipeline",
+      namespace: ns,
+      min_terms: 3,
+    })) as { count: number };
+    check(
+      "search min_terms above the ceiling returns nothing",
+      overFiltered.count === 0,
+      `${overFiltered.count} hits (ceiling is ${partialSearch.best_matched_terms})`,
+    );
+
     // Tag search: filter by tag across memories + entities.
     const tagSearch = (await callTool("search", {
       q: "",
