@@ -172,10 +172,17 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
 /**
  * Version of the agent-facing docs (contract, SKILL.md, always-on files,
  * llms.txt). Bump when any of them change, then run
- * `bun run scripts/stamp-docs-version.ts` to stamp it into every file.
+ * `bun run scripts/stamp-docs-version.ts` to stamp it into every file — the
+ * `sepia-docs-version` comment, the `Docs version:` line and the `version:`
+ * YAML frontmatter alike (declared in `scripts/docs-manifest.ts`).
  * Served at /version so installed copies can be checked for staleness.
+ *
+ * This is the ONLY version concept. A `version:` in a frontmatter is not a
+ * separate "skill version" — nothing reads or bumps it — and treating it as
+ * one froze VS Code / Cursor / SKILL.md at 1.0.0 while every other marker
+ * advanced.
  */
-export const DOCS_VERSION = "1.8.0";
+export const DOCS_VERSION = "1.9.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [

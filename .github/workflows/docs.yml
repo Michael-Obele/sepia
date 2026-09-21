@@ -1,0 +1,53 @@
+name: Docs consistency
+
+# The docs-version gate, on every path that changes a doc OR the tooling that
+# checks it.
+#
+# Deliberately a SEPARATE workflow rather than more paths in release.yml: that
+# workflow's `paths:` filter is load-bearing (anything it matches can lead to a
+# `sepia-mcp` publish), so adding `scripts/**` there would let a typo fix in a
+# script trigger a release. This one only reads.
+#
+# It exists because the docs gate in release.yml fires on
+# `packages/shared/src/**` — i.e. exactly when DOCS_VERSION can change — which
+# left the case "a doc changed, the version did not" uncatchable, including for
+# the checks' own source files.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "scripts/**"
+      - "skills/**"
+      - "llms.txt"
+      - "AGENTS.md"
+      - "packages/shared/src/types.ts"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "scripts/**"
+      - "skills/**"
+      - "llms.txt"
+      - "AGENTS.md"
+      - "packages/shared/src/types.ts"
+      - ".github/workflows/docs.yml"
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      # Every agent-facing doc must carry exactly ONE version — DOCS_VERSION —
+      # in whichever form it exposes it. No network and no DATABASE_URL: this
+      # pass only reads files in the repo.
+      - name: Docs version consistency
+        run: bun run scripts/check-docs-version.ts --source-only
+
+      # The severity policy that check depends on. Pure file I/O, and the layer
+      # where every hole in this mechanism has hidden: a deleted marker that
+      # only warned, an installed copy that only warned, a stripped HTML comment
+      # that looked like "never installed".
+      - name: Marker + policy unit tests
+        run: bun test scripts/docs-manifest.test.ts

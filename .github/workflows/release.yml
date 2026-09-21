@@ -41,6 +41,19 @@ jobs:
       - run: bun install --frozen-lockfile
       - name: Type-check
         run: cd packages/sepia-mcp && bun run check
+      # Every agent-facing doc must carry ONE version — DOCS_VERSION. A
+      # frontmatter version left behind by a bump is how VS Code, Cursor and
+      # SKILL.md sat at 1.0.0 for months. Runs on packages/shared/src/** (where
+      # DOCS_VERSION lives), i.e. exactly when a bump can happen.
+      #
+      # The manifest tests come with it: they are pure file I/O (no DB, no
+      # network) and they cover the severity policy the check itself depends on
+      # — every hole this mechanism has had was a severity decision nobody
+      # exercised. The full suite has no CI step (pre-existing).
+      - name: Docs version consistency
+        run: |
+          bun run scripts/check-docs-version.ts --source-only
+          bun test scripts/docs-manifest.test.ts
       - name: Build
         run: cd packages/sepia-mcp && bun run build
 

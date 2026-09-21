@@ -12,6 +12,11 @@
 #
 # Idempotent: re-running overwrites in place, never duplicates.
 #
+# VERIFIES what it wrote. Every installed copy must end up advertising the same
+# version as the source (frontmatter `version: "X"`, `sepia-docs-version: X`, or
+# `Docs version: X`) — a copy that silently keeps an old version is the exact
+# failure this script exists to prevent, so it exits non-zero instead.
+#
 # KEEP IN SYNC with scripts/remote-install.sh (`replace_section`) — that is the
 # copy served at /install for `curl | bash`. Both must replace the
 # <!-- sepia:start --> … <!-- sepia:end --> block IN PLACE: an installer that
@@ -26,10 +31,58 @@ if [ ! -f "$SRC/SKILL.md" ]; then
   exit 1
 fi
 
+# The version a file advertises — any of the three marker forms
+# (sepia-docs-version comment, `Docs version:` line, `version:` frontmatter).
+#
+# Whole-line anchored, mirroring scripts/docs-manifest.ts: a marker QUOTED
+# inside prose is not a marker, so a doc that shows the format in a sentence
+# cannot make this return the wrong version.
+#
+# awk rather than `sed | head -1`: head closes the pipe after one line, so sed
+# dies of SIGPIPE and `set -o pipefail` turns that into a silent abort. awk's
+# explicit exit stops after the first match without breaking anything.
+#
+# KEEP IN SYNC with scripts/remote-install.sh's file_version — it cannot be
+# shared, because that script is served standalone to `curl | bash`.
+file_version() {
+  awk '
+    /^[[:space:]]*<!--[[:space:]]*sepia-docs-version:[[:space:]]*[0-9]/ {
+      v = $0; sub(/.*sepia-docs-version:[[:space:]]*/, "", v); sub(/[^0-9.].*/, "", v)
+      print v; exit
+    }
+    /^version:[[:space:]]*"[0-9]/ {
+      v = $0; sub(/^version:[[:space:]]*"/, "", v); sub(/".*/, "", v)
+      print v; exit
+    }
+    /^Docs version:[[:space:]]*[0-9]/ {
+      v = $0; sub(/^Docs version:[[:space:]]*/, "", v); sub(/[^0-9.].*/, "", v)
+      print v; exit
+    }
+  ' "$1" 2>/dev/null
+}
+
+VERSION="$(file_version "$SRC/SKILL.md" || true)"
+if [ -z "$VERSION" ]; then
+  echo "error: no version marker in $SRC/SKILL.md (run bun run scripts/stamp-docs-version.ts)" >&2
+  exit 1
+fi
+
+# Fail loudly if a destination did not land at the source version. `|| true` so a
+# missing/unreadable file reports itself instead of aborting on the assignment.
+verify() {
+  local file="$1" got
+  got="$(file_version "$file" || true)"
+  if [ "$got" != "$VERSION" ]; then
+    echo "error: $file is at ${got:-no version marker}, expected $VERSION — install incomplete" >&2
+    exit 1
+  fi
+}
+
 install_to() {
   mkdir -p "$1"
   cp -R "$SRC/." "$1/"
-  echo "installed → $1"
+  verify "$1/SKILL.md"
+  echo "installed → $1 (v$VERSION)"
 }
 
 # Replace or append a section to a file idempotently. The section is wrapped
@@ -49,10 +102,12 @@ append_section() {
       cat "$section"
       printf '%s\n' "$end_marker"
     } > "$file.tmp" && mv "$file.tmp" "$file"
-    echo "updated → $file"
+    verify "$file"
+    echo "updated → $file (v$VERSION)"
   else
     { [ -f "$file" ] && printf '\n'; printf '%s\n' "$start_marker"; cat "$section"; printf '%s\n' "$end_marker"; } >> "$file"
-    echo "appended → $file"
+    verify "$file"
+    echo "appended → $file (v$VERSION)"
   fi
 }
 
@@ -69,14 +124,16 @@ append_section() {
 VSCODE_PROMPTS="${VSCODE_USER_PROMPTS_FOLDER:-$HOME/.config/Code/User/prompts}"
 if [ -d "$VSCODE_PROMPTS" ]; then
   cp "$SRC/always-on/vscode.instructions.md" "$VSCODE_PROMPTS/sepia.instructions.md"
-  echo "installed → $VSCODE_PROMPTS/sepia.instructions.md"
+  verify "$VSCODE_PROMPTS/sepia.instructions.md"
+  echo "installed → $VSCODE_PROMPTS/sepia.instructions.md (v$VERSION)"
 fi
 
 # Cursor — user rules (alwaysApply: true → every session, unconditionally).
 if [ -d "$HOME/.cursor" ]; then
   mkdir -p "$HOME/.cursor/rules"
   cp "$SRC/always-on/cursor.mdc" "$HOME/.cursor/rules/sepia.mdc"
-  echo "installed → $HOME/.cursor/rules/sepia.mdc"
+  verify "$HOME/.cursor/rules/sepia.mdc"
+  echo "installed → $HOME/.cursor/rules/sepia.mdc (v$VERSION)"
 fi
 
 # Claude Code — user-global CLAUDE.md (loaded at the start of every session).
@@ -102,4 +159,5 @@ else
   echo "note: no AGENTS.md in $(pwd) — append skills/sepia/always-on/agents.md manually for repo-level agents"
 fi
 
-echo "Done. Restart your editor to pick up the skill + always-on instructions."
+echo "Done — every copy is at v$VERSION. Restart your editor to pick up the skill + always-on instructions."
+echo "Verify anytime: bun run scripts/check-docs-version.ts"

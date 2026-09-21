@@ -9,9 +9,13 @@
  *   bun run smoke                          # protocol tests against localhost:8080
  *   SMOKE_URL=https://... bun run smoke    # against a deployed server
  */
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { db } from "../src/db.ts";
-import { TOOL_NAMES } from "@sepia/shared";
+import { DOCS_VERSION, TOOL_NAMES } from "@sepia/shared";
+import { AGENT_DOCS, describeMarkers, verdict } from "./docs-manifest.ts";
 
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BASE = process.env.SMOKE_URL ?? "http://localhost:8080/mcp";
 const token = process.env.MCP_BEARER_TOKEN;
 const hasDb = Boolean(process.env.DATABASE_URL);
@@ -779,6 +783,27 @@ if (hasDb) {
   } catch {
     /* expected without DATABASE_URL */
   }
+}
+
+// ── Agent-facing docs carry exactly ONE version ───────────────────────────
+// Local file check — no server, no DB. Two markers disagreeing inside one file
+// (a frozen `version: "1.0.0"` beside a current body marker) is exactly how
+// VS Code, Cursor and SKILL.md went stale while the other editors refreshed;
+// the old check hid it by reading only the first marker it found.
+console.log("\nagent-facing docs");
+for (const doc of AGENT_DOCS) {
+  const v = verdict(join(ROOT, doc.path), doc.markers, DOCS_VERSION);
+  const detail =
+    v.state === "ok"
+      ? describeMarkers(v.found)
+      : v.state === "absent"
+        ? "file declared in scripts/docs-manifest.ts does not exist"
+        : v.state === "unmarked"
+          ? `${v.missing.join(", ")} marker missing — ${describeMarkers(v.found)}`
+          : v.state === "conflict"
+            ? `markers disagree — ${describeMarkers(v.found)}`
+            : `${describeMarkers(v.found)} → ${DOCS_VERSION} (run bun run scripts/stamp-docs-version.ts)`;
+  check(`${doc.path} carries ${DOCS_VERSION}`, v.state === "ok", detail);
 }
 
 console.log(

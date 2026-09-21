@@ -33,6 +33,30 @@ section_version() {
     "$1" 2>/dev/null || true
 }
 
+# Read whichever version marker a file carries (comment, `Docs version:` line,
+# or `version:` frontmatter) — mirrors install-skill.sh's file_version, so both
+# installers report the same thing for the same file. Whole-line anchored like
+# scripts/docs-manifest.ts, so a marker quoted in prose never counts. awk with
+# an explicit exit rather than `sed | head`: head would SIGPIPE sed, and
+# `set -o pipefail` would turn that into a silent abort on this `curl | bash`
+# path.
+file_version() {
+  awk '
+    /^[[:space:]]*<!--[[:space:]]*sepia-docs-version:[[:space:]]*[0-9]/ {
+      v = $0; sub(/.*sepia-docs-version:[[:space:]]*/, "", v); sub(/[^0-9.].*/, "", v)
+      print v; exit
+    }
+    /^version:[[:space:]]*"[0-9]/ {
+      v = $0; sub(/^version:[[:space:]]*"/, "", v); sub(/".*/, "", v)
+      print v; exit
+    }
+    /^Docs version:[[:space:]]*[0-9]/ {
+      v = $0; sub(/^Docs version:[[:space:]]*/, "", v); sub(/[^0-9.].*/, "", v)
+      print v; exit
+    }
+  ' "$1" 2>/dev/null
+}
+
 # Replace the sepia block in a file, idempotently - MIRRORS install-skill.sh
 # (`append_section`): the block sits between <!-- sepia:start --> and
 # <!-- sepia:end -->, so re-running UPDATES it in place instead of skipping.
@@ -101,7 +125,11 @@ safe_fetch() {
     echo "warn: could not fetch $url — server may not be updated yet, skipping $dest"
     return 1
   fi
-  echo "installed → $dest"
+  # Report what landed: whole-file fetches (skill, vscode, cursor, zed) have no
+  # marker-wrapped section, so this line is the only version signal in the log.
+  local got
+  got="$(file_version "$dest" || true)"
+  echo "installed → $dest (v${got:-unknown})"
   return 0
 }
 
