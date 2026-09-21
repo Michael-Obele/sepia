@@ -3,6 +3,7 @@ import { HttpTransport } from "@tmcp/transport-http";
 import { ValibotJsonSchemaAdapter } from "@tmcp/adapter-valibot";
 import { DOCS_VERSION, type UserRow } from "@sepia/shared";
 import { MEMORY_CONTRACT } from "./instructions.ts";
+import { SERVER_VERSION } from "./version.ts";
 import { auth, authEnabled, ensureAdmin, requireAuth } from "./auth.ts";
 import { handleOAuthRequest, oauthEnabled } from "./oauth.ts";
 import { handleApi } from "./api.ts";
@@ -44,7 +45,8 @@ function corsHeadersFor(
 const server = new McpServer(
   {
     name: "sepia",
-    version: "1.0.0",
+    // The deploy's name, not a hand-written number — see src/version.ts.
+    version: SERVER_VERSION,
     description:
       "Sepia — personal knowledge-graph memory server: entities, relations, memories in namespaces, with search, traversal, and consolidation.",
   },
@@ -110,7 +112,7 @@ Bun.serve({
     if (url.pathname === "/") {
       return Response.json({
         name: "sepia",
-        version: "1.0.0",
+        version: SERVER_VERSION,
         docs_version: DOCS_VERSION,
         mcp: "/mcp",
         health: "/healthz",
@@ -140,7 +142,7 @@ Bun.serve({
     if (url.pathname === "/version") {
       return Response.json({
         name: "sepia",
-        version: "1.0.0",
+        version: SERVER_VERSION,
         docs_version: DOCS_VERSION,
         endpoints: {
           mcp: "/mcp",

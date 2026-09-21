@@ -26,6 +26,9 @@ import { registerMemoryTools } from "./tools/memory.ts";
 import { registerSearchTools } from "./tools/search.ts";
 import { registerTraverseTools } from "./tools/traverse.ts";
 import { registerPruneMemoriesTools } from "./tools/prune.ts";
+// This package's OWN version — Changesets maintains it on every release, so
+// nothing has to remember to bump it (it used to be a literal "1.0.0").
+import pkg from "../package.json";
 
 export interface SepiaMcpOptions {
   baseUrl?: string;
@@ -54,7 +57,7 @@ export function createSepiaServer(opts: SepiaMcpOptions = {}) {
   const server = new McpServer(
     {
       name: "sepia",
-      version: "1.0.0",
+      version: pkg.version,
       description:
         "Sepia — personal knowledge-graph memory server (remote REST client). Entities, relations, memories in namespaces, with search, traversal, and consolidation.",
     },

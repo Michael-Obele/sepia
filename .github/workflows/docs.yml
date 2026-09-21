@@ -3,15 +3,11 @@ name: Docs consistency
 # The docs-version gate, on every path that changes a doc OR the tooling that
 # checks it.
 #
-# Deliberately a SEPARATE workflow rather than more paths in release.yml: that
-# workflow's `paths:` filter is load-bearing (anything it matches can lead to a
-# `sepia-mcp` publish), so adding `scripts/**` there would let a typo fix in a
-# script trigger a release. This one only reads.
-#
-# It exists because the docs gate in release.yml fires on
-# `packages/shared/src/**` — i.e. exactly when DOCS_VERSION can change — which
-# left the case "a doc changed, the version did not" uncatchable, including for
-# the checks' own source files.
+# This is the ONLY workflow that gates on docs, and that is the point: a
+# `sepia-mcp` publish must never be blocked by a doc-version problem. It is
+# separate from release.yml because it has to fire on the paths release.yml
+# ignores — `scripts/**`, `skills/**`, `llms.txt`, `AGENTS.md` — so that a doc
+# changing without its version marker is caught at all.
 on:
   push:
     branches: [master]
