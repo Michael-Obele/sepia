@@ -118,17 +118,20 @@ Sepia's docs are the agents' only window into the server. When you add a feature
 4. `llms.txt` — full capability overview, served at /llms.txt. What agents fetch when they need the whole surface.
 5. `scripts/gen-skill-ref.ts` — run `bun run scripts/gen-skill-ref.ts` to regenerate `skills/sepia/references/tools.md` from the schemas.
 6. `scripts/smoke.ts` — cover the new surface (a feature without a smoke check is untested).
-7. Version — bump `DOCS_VERSION` in `packages/shared/src/types.ts` and run `bun run scripts/stamp-docs-version.ts` (stamps the shared `sepia-docs-version` marker into always-on/\*, llms.txt, AGENTS.md). NOTE: the `version:` frontmatter keys in SKILL.md / vscode / cursor are those files' OWN versions (managed by the skill system) — the stamp script never touches them.
-8. Installed copies — run `bash scripts/install-skill.sh` (block-marker sections update in place, never duplicate).
+7. Version — bump `DOCS_VERSION` in `packages/shared/src/types.ts`, then run `bun run scripts/stamp-docs-version.ts`. It stamps that ONE version into every agent-facing file, in whichever form the file exposes it: the `sepia-docs-version` HTML comment, `llms.txt`'s `Docs version:` line, and the `version:` YAML **frontmatter** of `SKILL.md` / `vscode` / `cursor`. Which files carry which markers is declared once in `scripts/docs-manifest.ts` — shared by the stamp, the checker and smoke, so a file cannot be stamped without also being checked. Then prove it: `bun run scripts/check-docs-version.ts --source-only`. (Never put a marker on a line of its own outside a real marker — the stamp rewrites every marker line it finds. One quoted mid-sentence is safe.)
+8. Installed copies — run `bash scripts/install-skill.sh` (block-marker sections update in place, never duplicate). It reports the version it wrote for every file and aborts if a copy did not land at the source version — but it reads the FIRST marker in the file, so a full marker audit (missing, disagreeing, stale) is `check-docs-version.ts`'s job, not the installer's.
 9. Deploy — `fly deploy` so the served versions (/version, /llms.txt, /skill, /instructions/\*, MCP instructions) update for everyone.
-10. Check — `bun run scripts/check-docs-version.ts` after deploy to confirm installed copies are current.
+10. Check — `bun run scripts/check-docs-version.ts` after deploy. It checks both halves (repo markers vs `DOCS_VERSION`, installed copies vs the served version) and fails on a file whose markers DISAGREE — not just on one that is old. `--source-only` skips the network; `docs.yml` runs that half (plus the marker/policy unit tests) on every docs or scripts path, and `release.yml` runs it on a `DOCS_VERSION` bump.
+
+**THERE IS NO "OWN VERSION".** A `version:` in a frontmatter IS `DOCS_VERSION` — no skill/instruction system reads or bumps it. It used to be hand-written and left out of the stamp, so it froze at `1.0.0` while every body marker moved on: VS Code, Cursor and the skill advertised 1.0.0 for months, and `check-docs-version.ts` reported "all current" because it read only the first marker it found. Never hand-edit a version marker — stamp it, and never reintroduce a second version concept.
 
 Rule: no feature is done until its docs are updated. Check the diff of every always-on file before committing.
 
 <!-- sepia:start -->
+
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
 
-<!-- sepia-docs-version: 1.8.0 -->
+<!-- sepia-docs-version: 1.9.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (any `AGENTS.md`-aware agent: Codex, OpenCode, Copilot, Cursor, Zed). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 

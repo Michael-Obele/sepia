@@ -101,4 +101,4 @@ Rules the distilling agent must follow:
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
 
-Docs version: 1.8.0
+Docs version: 1.9.0
