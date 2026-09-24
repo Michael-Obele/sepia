@@ -1,19 +1,21 @@
 <script lang="ts">
-	import { Plus, Pencil, Trash2, Archive } from '@lucide/svelte';
+	import { Plus, Pencil, Trash2, Archive, ChevronUp, ChevronDown } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card, CardContent, CardHeader } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
 		getBriefingData,
+		getMemories,
 		getNamespaces,
 		getMemoryDetail,
 		updateMemoryData,
 		removeMemory
 	} from '$lib/remote/index.js';
-	import { importancePct, TYPE_BADGE } from '$lib/format.js';
+	import { importancePct, TYPE_BADGE, truncate } from '$lib/format.js';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { ALWAYS_TAG, CORE_IMPORTANCE, BRIEFING_ITEM_CHARS } from '@sepia/shared/types';
@@ -128,8 +130,90 @@
 	} | null>(null);
 
 	async function del(id: string) {
-		await removeMemory(String(id));
-		toast.success('Rule deleted');
+		try {
+			await removeMemory(String(id));
+			toast.success('Rule deleted');
+		} finally {
+			// Refresh even on failure so a stale card (row already gone) reconciles.
+			void load();
+		}
+	}
+
+	// --- promote / demote: importance IS the rank ------------------------------
+
+	/** One click crosses the 90% core boundary; further clicks rank within. */
+	function nextImportance(imp: number, dir: 'up' | 'down'): number {
+		const r = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 100) / 100;
+		if (dir === 'up') {
+			if (imp < CORE_IMPORTANCE) return CORE_IMPORTANCE;
+			return r(imp + 0.05);
+		}
+		if (imp > CORE_IMPORTANCE) return CORE_IMPORTANCE;
+		return r(imp - 0.05);
+	}
+
+	async function promote(m: { id: string; importance: number | null; tags: string[] | null }) {
+		const imp = m.importance ?? 0.5;
+		const next = nextImportance(imp, 'up');
+		if (next === imp) {
+			toast.info('Already at 100%');
+			return;
+		}
+		await updateMemoryData([String(m.id), { importance: next }]);
+		toast.success(
+			imp < CORE_IMPORTANCE
+				? `Promoted to core (${Math.round(next * 100)}%)`
+				: `Promoted to ${Math.round(next * 100)}%`
+		);
+		void load();
+	}
+
+	async function demote(m: { id: string; importance: number | null; tags: string[] | null }) {
+		const imp = m.importance ?? 0.5;
+		const next = nextImportance(imp, 'down');
+		if (next === imp) {
+			toast.info('Already at 0%');
+			return;
+		}
+		const tagged = m.tags?.includes(ALWAYS_TAG) ?? false;
+		await updateMemoryData([String(m.id), { importance: next }]);
+		if (next < CORE_IMPORTANCE && tagged) {
+			toast.warning(`Importance ${Math.round(next * 100)}% — still core via \`always\` tag`);
+		} else if (imp >= CORE_IMPORTANCE && next < CORE_IMPORTANCE) {
+			toast.success(`Demoted to tail (${Math.round(next * 100)}%)`);
+		} else {
+			toast.success(`Demoted to ${Math.round(next * 100)}%`);
+		}
+		void load();
+	}
+
+	// --- elevate existing memories into rules (submit-gated search) -----------
+
+	let elevateQuery = $state('');
+	let elevateResults = $state<Awaited<ReturnType<typeof getMemories>> | null>(null);
+	let elevating = $state(false);
+
+	async function searchExisting() {
+		const q = elevateQuery.trim();
+		if (!q || elevating) return;
+		elevating = true;
+		try {
+			elevateResults = await getMemories({ q, limit: 8 });
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Search failed');
+		} finally {
+			elevating = false;
+		}
+	}
+
+	/** Elevate: merge `always` into the row's OWN tags — a tags update replaces the set. */
+	async function elevate(m: { id: string; tags?: string[] | null }) {
+		const tags = m.tags ?? [];
+		if (tags.includes(ALWAYS_TAG)) return;
+		await updateMemoryData([String(m.id), { tags: [...tags, ALWAYS_TAG] }]);
+		toast.success('Elevated to a standing rule — loads in every AI session');
+		elevateQuery = '';
+		elevateResults = null;
 		void load();
 	}
 </script>
@@ -185,6 +269,49 @@
 						</Button>
 					</div>
 				</div>
+			</CardContent>
+		</Card>
+
+		<!-- Elevate an existing memory into a rule -->
+		<Card>
+			<CardContent class="space-y-3 py-4">
+				<form
+					class="flex flex-wrap gap-2"
+					onsubmit={(e) => {
+						e.preventDefault();
+						void searchExisting();
+					}}
+				>
+					<Input
+						bind:value={elevateQuery}
+						placeholder="Add existing rule — search your memories…"
+						aria-label="Search memories to elevate"
+						class="max-w-md flex-1"
+					/>
+					<Button type="submit" variant="outline" disabled={elevating}>
+						{elevating ? 'Searching…' : 'Search'}
+					</Button>
+				</form>
+				{#if elevateResults}
+					{#if elevateResults.length === 0}
+						<p class="text-sm text-muted-foreground">No memories match “{elevateQuery}”.</p>
+					{:else}
+						<div class="max-h-64 space-y-1 overflow-y-auto rounded-md border p-1">
+							{#each elevateResults as r (r.id)}
+								<div class="flex items-center justify-between gap-2 px-2 py-1.5">
+									<span class="min-w-0 flex-1 truncate text-sm">{truncate(r.content, 90)}</span>
+									{#if r.tags?.includes(ALWAYS_TAG)}
+										<Badge variant="secondary">already a rule</Badge>
+									{:else}
+										<Button size="sm" variant="outline" onclick={() => void elevate(r)}>
+											Elevate
+										</Button>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				{/if}
 			</CardContent>
 		</Card>
 
@@ -270,6 +397,24 @@
 									<Button
 										variant="ghost"
 										size="icon"
+										onclick={() => void promote(m)}
+										aria-label="Promote rule"
+										title="Promote (+5%, or jump to 90% to enter core)"
+									>
+										<ChevronUp class="size-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
+										onclick={() => void demote(m)}
+										aria-label="Demote rule"
+										title="Demote (−5%, or below 90% to leave core)"
+									>
+										<ChevronDown class="size-4" />
+									</Button>
+									<Button
+										variant="ghost"
+										size="icon"
 										onclick={() => void openEdit(m)}
 										aria-label="Edit rule"
 									>
@@ -317,7 +462,6 @@
 
 <MemoryFormDialog
 	bind:open={showForm}
-	briefing
 	namespaces={namespaceList}
 	memory={formMemory}
 	onSaved={() => void load()}
