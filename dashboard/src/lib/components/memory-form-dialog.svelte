@@ -6,20 +6,24 @@
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { Slider } from '$lib/components/ui/slider/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Search, X } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { addMemory, updateMemoryData, getEntities } from '$lib/remote/index.js';
-	import { MEMORY_TYPES } from '@sepia/shared/types';
+	import { MEMORY_TYPES, ALWAYS_TAG } from '@sepia/shared/types';
 
 	let {
 		open = $bindable(false),
 		namespaces = [],
 		memory = null,
+		briefing = false,
 		onSaved = () => {}
 	}: {
 		open?: boolean;
 		namespaces?: string[];
 		memory?: Record<string, unknown> | null;
+		/** Show the briefing-specific "always" control (used by /app/briefing). */
+		briefing?: boolean;
 		onSaved?: () => void;
 	} = $props();
 
@@ -77,6 +81,19 @@
 			.split(',')
 			.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
 			.filter(Boolean);
+	}
+
+	/**
+	 * The `always` tag is what puts a rule into the core briefing regardless of
+	 * importance. It edits `tagsText` — the FULL tag set — because a `tags`
+	 * update REPLACES every tag on the row; a partial set would destroy them.
+	 */
+	const alwaysOn = $derived(parseTags(tagsText).includes(ALWAYS_TAG));
+
+	function setAlways(on: boolean) {
+		const tags = parseTags(tagsText);
+		const next = on ? [...new Set([...tags, ALWAYS_TAG])] : tags.filter((t) => t !== ALWAYS_TAG);
+		tagsText = next.join(', ');
 	}
 
 	async function save() {
@@ -164,6 +181,19 @@
 					placeholder="comma-separated, e.g. user-experience, auth, performance"
 				/>
 			</div>
+
+			{#if briefing}
+				<div class="flex items-center justify-between gap-4 rounded-md border p-3">
+					<div class="space-y-1">
+						<Label for="mem-always">Always — load at every session</Label>
+						<p class="text-xs text-muted-foreground">
+							Core briefing rule: loads unconditionally at the start of every AI session, whatever
+							its importance.
+						</p>
+					</div>
+					<Switch id="mem-always" checked={alwaysOn} onCheckedChange={setAlways} />
+				</div>
+			{/if}
 
 			<div class="space-y-2">
 				<div class="flex items-center justify-between">
