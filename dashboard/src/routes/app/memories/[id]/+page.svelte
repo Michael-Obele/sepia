@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowLeft, Pencil, Trash2, Archive, ArchiveRestore } from '@lucide/svelte';
+	import { ArrowLeft, Pencil, Trash2, Archive, ArchiveRestore, Star } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -12,6 +12,7 @@
 		getNamespaces
 	} from '$lib/remote/index.js';
 	import { formatDate, importancePct, TYPE_BADGE } from '$lib/format.js';
+	import { ALWAYS_TAG } from '@sepia/shared/types';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { goto } from '$app/navigation';
@@ -54,7 +55,14 @@
 	});
 
 	async function del() {
-		await removeMemory(params.id);
+		try {
+			await removeMemory(params.id);
+		} catch (e) {
+			// Surface the gone/not-found state instead of pretending it worked;
+			// rethrow so the confirm dialog shows the error toast.
+			memory?.refresh();
+			throw e;
+		}
 		toast.success('Memory deleted');
 		goto('/app/memories');
 	}
@@ -62,6 +70,20 @@
 	async function toggleArchive(m: { archived: boolean | null }) {
 		await updateMemoryData([params.id, { archived: !m.archived }]);
 		toast.success(m.archived ? 'Restored from archive' : 'Archived');
+		memory?.refresh();
+	}
+
+	/** Elevate ⇄ demote: flip `always` on this memory's OWN tag set (updates REPLACE tags). */
+	async function toggleRule(m: { id: string; tags?: string[] | null }) {
+		const tags = m.tags ?? [];
+		const has = tags.includes(ALWAYS_TAG);
+		await updateMemoryData([
+			String(m.id),
+			{ tags: has ? tags.filter((t) => t !== ALWAYS_TAG) : [...tags, ALWAYS_TAG] }
+		]);
+		toast.success(
+			has ? 'Removed from the briefing' : 'Elevated to a standing rule — loads in every AI session'
+		);
 		memory?.refresh();
 	}
 </script>
@@ -85,8 +107,22 @@
 						{#if m.archived}
 							<Badge variant="secondary">archived</Badge>
 						{/if}
+						{#if m.tags?.includes(ALWAYS_TAG)}
+							<Badge>always</Badge>
+						{/if}
 					</div>
 					<div class="flex gap-1">
+						<Button
+							variant="ghost"
+							size="icon"
+							onclick={() => void toggleRule(m)}
+							aria-label={m.tags?.includes(ALWAYS_TAG) ? 'Remove from briefing' : 'Elevate to rule'}
+							title={m.tags?.includes(ALWAYS_TAG)
+								? 'Remove from the briefing'
+								: 'Elevate to a standing rule'}
+						>
+							<Star class={m.tags?.includes(ALWAYS_TAG) ? 'size-4 fill-current' : 'size-4'} />
+						</Button>
 						<Button
 							variant="ghost"
 							size="icon"

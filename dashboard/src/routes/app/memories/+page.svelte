@@ -5,6 +5,7 @@
 		Archive,
 		ArchiveRestore,
 		Search,
+		Star,
 		SlidersHorizontal,
 		LoaderCircle,
 		RotateCcw
@@ -21,7 +22,7 @@
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { page } from '$app/state';
-	import { MEMORY_TYPES } from '@sepia/shared/types';
+	import { MEMORY_TYPES, ALWAYS_TAG } from '@sepia/shared/types';
 	import { useSearchParams } from 'runed/kit';
 	import { memoriesSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
 	import { onMount } from 'svelte';
@@ -113,14 +114,32 @@
 	}
 
 	async function del(id: string) {
-		await removeMemory(id);
-		toast.success('Memory deleted');
-		load();
+		try {
+			await removeMemory(id);
+			toast.success('Memory deleted');
+		} finally {
+			// Refresh even on failure so a stale card (row already gone) reconciles.
+			load();
+		}
 	}
 
 	async function toggleArchive(m: { id: string; archived: boolean | null }) {
 		await updateMemoryData([String(m.id), { archived: !m.archived }]);
 		toast.success(m.archived ? 'Restored from archive' : 'Archived');
+		load();
+	}
+
+	/** Elevate ⇄ demote: flip `always` on the card's OWN tag set (updates REPLACE tags). */
+	async function toggleRule(m: { id: string; tags?: string[] | null }) {
+		const tags = m.tags ?? [];
+		const has = tags.includes(ALWAYS_TAG);
+		await updateMemoryData([
+			String(m.id),
+			{ tags: has ? tags.filter((t) => t !== ALWAYS_TAG) : [...tags, ALWAYS_TAG] }
+		]);
+		toast.success(
+			has ? 'Removed from the briefing' : 'Elevated to a standing rule — loads in every AI session'
+		);
 		load();
 	}
 
@@ -298,6 +317,9 @@
 								<div class="mt-2 flex flex-wrap items-center gap-2">
 									<Badge class={TYPE_BADGE[m.type as keyof typeof TYPE_BADGE] ?? ''}>{m.type}</Badge
 									>
+									{#if m.tags?.includes(ALWAYS_TAG)}
+										<Badge>always</Badge>
+									{/if}
 									<span class="text-xs text-muted-foreground">{m.namespace}</span>
 									<span class="text-xs text-muted-foreground">· {importancePct(m.importance)}%</span
 									>
@@ -319,6 +341,19 @@
 								{/if}
 							</a>
 							<div class="flex shrink-0 gap-1">
+								<Button
+									variant="ghost"
+									size="icon"
+									onclick={() => void toggleRule(m)}
+									aria-label={m.tags?.includes(ALWAYS_TAG)
+										? 'Remove from briefing'
+										: 'Elevate to rule'}
+									title={m.tags?.includes(ALWAYS_TAG)
+										? 'Remove from the briefing'
+										: 'Elevate to a standing rule'}
+								>
+									<Star class={m.tags?.includes(ALWAYS_TAG) ? 'size-4 fill-current' : 'size-4'} />
+								</Button>
 								<Button
 									variant="ghost"
 									size="icon"
