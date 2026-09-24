@@ -2,6 +2,7 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { TriangleAlert } from '@lucide/svelte';
+	import { toast } from 'svelte-sonner';
 
 	let {
 		open = false,
@@ -27,9 +28,13 @@
 		busy = true;
 		try {
 			await onConfirm?.();
-			onClose?.();
+		} catch (e) {
+			// A failed delete (e.g. the row is already gone) must not leave the
+			// dialog stuck open with no feedback — surface it and close.
+			toast.error((e as Error)?.message || 'Delete failed');
 		} finally {
 			busy = false;
+			onClose?.();
 		}
 	}
 </script>
