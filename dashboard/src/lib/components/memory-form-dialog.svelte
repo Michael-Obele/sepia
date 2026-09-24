@@ -16,14 +16,11 @@
 		open = $bindable(false),
 		namespaces = [],
 		memory = null,
-		briefing = false,
 		onSaved = () => {}
 	}: {
 		open?: boolean;
 		namespaces?: string[];
 		memory?: Record<string, unknown> | null;
-		/** Show the briefing-specific "always" control (used by /app/briefing). */
-		briefing?: boolean;
 		onSaved?: () => void;
 	} = $props();
 
@@ -182,18 +179,16 @@
 				/>
 			</div>
 
-			{#if briefing}
-				<div class="flex items-center justify-between gap-4 rounded-md border p-3">
-					<div class="space-y-1">
-						<Label for="mem-always">Always — load at every session</Label>
-						<p class="text-xs text-muted-foreground">
-							Core briefing rule: loads unconditionally at the start of every AI session, whatever
-							its importance.
-						</p>
-					</div>
-					<Switch id="mem-always" checked={alwaysOn} onCheckedChange={setAlways} />
+			<div class="flex items-center justify-between gap-4 rounded-md border p-3">
+				<div class="space-y-1">
+					<Label for="mem-always">Always — load at every session</Label>
+					<p class="text-xs text-muted-foreground">
+						Core briefing rule: loads unconditionally at the start of every AI session, whatever its
+						importance.
+					</p>
 				</div>
-			{/if}
+				<Switch id="mem-always" checked={alwaysOn} onCheckedChange={setAlways} />
+			</div>
 
 			<div class="space-y-2">
 				<div class="flex items-center justify-between">
