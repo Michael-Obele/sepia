@@ -47,6 +47,7 @@
 				type: m.type,
 				importance: m.importance,
 				namespace: m.namespace,
+				tags: m.tags,
 				entity_ids: m.entities.map((e) => String(e.id))
 			};
 		});
