@@ -11,6 +11,7 @@ export {
 	updateEntityData,
 	removeEntity
 } from './entities.remote';
+export { getBriefingData } from './briefing.remote';
 export {
 	getMemories,
 	getMemoryDetail,
