@@ -4,6 +4,7 @@
 	import {
 		Search,
 		Layers,
+		ScrollText,
 		Boxes,
 		Network,
 		MessagesSquare,
@@ -20,6 +21,7 @@
 	const nav = [
 		{ href: '/app', label: 'Search', icon: Search },
 		{ href: '/app/memories', label: 'Memories', icon: Layers },
+		{ href: '/app/briefing', label: 'Briefing', icon: ScrollText },
 		{ href: '/app/conversations', label: 'Conversations', icon: MessagesSquare },
 		{ href: '/app/entities', label: 'Entities', icon: Boxes },
 		{ href: '/app/graph', label: 'Graph', icon: Network },
