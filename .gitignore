@@ -38,6 +38,8 @@ articles/
 
 # internal planning docs (not for public repo)
 plan/
+docs/plans/
+docs/plans/*
 .vscode/mcp.json
 .playwright-mcp/
 docs/superpowers/
