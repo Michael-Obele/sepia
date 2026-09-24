@@ -7,6 +7,7 @@
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getEntities, getNamespaces, removeEntity } from '$lib/remote/index.js';
+	import { fresh } from '$lib/fresh.js';
 	import { importancePct, entityTypeBadge, truncate } from '$lib/format.js';
 	import EntityFormDialog from '$lib/components/entity-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
@@ -52,12 +53,14 @@
 		loading = true;
 		error = '';
 		try {
-			const result = await getEntities({
-				q: params.q || undefined,
-				namespace: params.namespace === 'all' ? undefined : params.namespace,
-				type: params.type || undefined,
-				limit: PAGE_SIZE
-			});
+			const result = await fresh(
+				getEntities({
+					q: params.q || undefined,
+					namespace: params.namespace === 'all' ? undefined : params.namespace,
+					type: params.type || undefined,
+					limit: PAGE_SIZE
+				})
+			);
 			if (seq !== loadSeq) return;
 			entities = result;
 			hasMore = result.length >= PAGE_SIZE;
@@ -74,13 +77,15 @@
 		loadingMore = true;
 		error = '';
 		try {
-			const next = await getEntities({
-				q: params.q || undefined,
-				namespace: params.namespace === 'all' ? undefined : params.namespace,
-				type: params.type || undefined,
-				limit: PAGE_SIZE,
-				offset: entities.length
-			});
+			const next = await fresh(
+				getEntities({
+					q: params.q || undefined,
+					namespace: params.namespace === 'all' ? undefined : params.namespace,
+					type: params.type || undefined,
+					limit: PAGE_SIZE,
+					offset: entities.length
+				})
+			);
 			entities = [...entities, ...next];
 			hasMore = next.length >= PAGE_SIZE;
 		} catch (e) {

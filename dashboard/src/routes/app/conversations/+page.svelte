@@ -17,6 +17,7 @@
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getMemories, getNamespaces, removeMemory, updateMemoryData } from '$lib/remote/index.js';
+	import { fresh } from '$lib/fresh.js';
 	import {
 		timeAgo,
 		sourceBadge,
@@ -83,7 +84,7 @@
 			// Real digests are auto-tagged `conversation` AND have
 			// metadata.kind === "conversation" — filter out regular memories
 			// that merely carry the tag.
-			digests = (await getMemories({ tags: ['conversation'], limit: 50 })).filter(
+			digests = (await fresh(getMemories({ tags: ['conversation'], limit: 50 }))).filter(
 				(d) => (d.metadata as Record<string, unknown> | null)?.kind === 'conversation'
 			);
 		} catch (e) {

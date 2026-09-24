@@ -18,6 +18,7 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getMemories, getNamespaces, removeMemory, updateMemoryData } from '$lib/remote/index.js';
+	import { fresh } from '$lib/fresh.js';
 	import { timeAgo, importancePct, TYPE_BADGE, truncate } from '$lib/format.js';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
@@ -69,15 +70,17 @@
 		error = '';
 		offset = 0;
 		try {
-			const result = await getMemories({
-				q: params.q || undefined,
-				type: params.type === 'all' ? undefined : params.type,
-				namespace: params.namespace === 'all' ? undefined : params.namespace,
-				archived: params.archived,
-				importance_min: params.minImportance > 0 ? params.minImportance : undefined,
-				limit,
-				offset: 0
-			});
+			const result = await fresh(
+				getMemories({
+					q: params.q || undefined,
+					type: params.type === 'all' ? undefined : params.type,
+					namespace: params.namespace === 'all' ? undefined : params.namespace,
+					archived: params.archived,
+					importance_min: params.minImportance > 0 ? params.minImportance : undefined,
+					limit,
+					offset: 0
+				})
+			);
 			if (seq !== loadSeq) return;
 			memories = result;
 			hasMore = result.length >= limit;
@@ -94,15 +97,17 @@
 		loadingMore = true;
 		error = '';
 		try {
-			const next = await getMemories({
-				q: params.q || undefined,
-				type: params.type === 'all' ? undefined : params.type,
-				namespace: params.namespace === 'all' ? undefined : params.namespace,
-				archived: params.archived,
-				importance_min: params.minImportance > 0 ? params.minImportance : undefined,
-				limit,
-				offset: offset + limit
-			});
+			const next = await fresh(
+				getMemories({
+					q: params.q || undefined,
+					type: params.type === 'all' ? undefined : params.type,
+					namespace: params.namespace === 'all' ? undefined : params.namespace,
+					archived: params.archived,
+					importance_min: params.minImportance > 0 ? params.minImportance : undefined,
+					limit,
+					offset: offset + limit
+				})
+			);
 			memories = [...memories, ...next];
 			offset += limit;
 			hasMore = next.length >= limit;

@@ -15,6 +15,7 @@
 		updateMemoryData,
 		removeMemory
 	} from '$lib/remote/index.js';
+	import { fresh } from '$lib/fresh.js';
 	import { importancePct, TYPE_BADGE, truncate } from '$lib/format.js';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
@@ -48,10 +49,14 @@
 		loading = true;
 		error = '';
 		try {
-			const b = await getBriefingData({
-				namespace: ns === 'all' ? undefined : ns,
-				detail
-			});
+			// fresh(): query() memoizes same-args calls — without refresh() this
+			// would re-await the pre-mutation result and never show our own writes.
+			const b = await fresh(
+				getBriefingData({
+					namespace: ns === 'all' ? undefined : ns,
+					detail
+				})
+			);
 			if (seq !== loadSeq) return;
 			briefing = b;
 		} catch (e) {
@@ -88,7 +93,7 @@
 	/** Open the editor with the FULL row — the list only carries compacted text. */
 	async function openEdit(item: { id: string }) {
 		try {
-			const d = await getMemoryDetail(String(item.id));
+			const d = await fresh(getMemoryDetail(String(item.id)));
 			formMemory = {
 				id: d.id,
 				content: d.content,
@@ -198,7 +203,7 @@
 		if (!q || elevating) return;
 		elevating = true;
 		try {
-			elevateResults = await getMemories({ q, limit: 8 });
+			elevateResults = await fresh(getMemories({ q, limit: 8 }));
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Search failed');
 		} finally {
