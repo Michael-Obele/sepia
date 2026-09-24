@@ -47,9 +47,15 @@ work**. It takes no keywords.
   ≈ 886 tokens against 235 tail rules ≈ 8.5k tokens — so loading it by default gets steadily
   more expensive and less useful. A long constraint list is also self-defeating: the rules that
   matter stop standing out. `detail: "all"` returns the tail, and is the right call immediately
-  before anything slow, metered, destructive, or expensive.
+  before anything slow, metered, destructive, or expensive — and on the FIRST session-start
+  call when the context window is large (~1M tokens): the whole set is ~10k tokens (≈1% of
+  that window), read once per session, and priority ordering still puts core rules first.
+  Core-by-default protects small contexts; it does not withhold rules from big ones.
 - Each rule is compacted to 400 chars (the full text stays reachable with `action: "get"` on its
-  `id`), within a character budget (`max_chars`, default 8000, max 40000 — `detail: "all"` only).
+  `id`), within a character budget (`max_chars`, default 8000, max 200000 — `detail: "all"` only;
+  max = FETCH_MAX rows (500) × ITEM_CHARS (400), the physical maximum, so `detail: "all"` at max
+  is everything). Measured 2026-09-24: the full standing set is 256 rules / 37,527 chars ≈ 9.4k
+  tokens — it fits.
 - Returns `{ detail, count, core_count, other_standing, truncated, omitted, max_chars?, memories }`.
 - **Core rules are never dropped for budget**, and `truncated` + an exact `omitted` state what was
   left out **of what you asked for** — so "what you did not see" is always knowable.
@@ -101,4 +107,4 @@ Rules the distilling agent must follow:
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
 
-Docs version: 1.9.0
+Docs version: 1.10.0

@@ -1,6 +1,6 @@
 ## Sepia memory (always-on) — Zed
 
-<!-- sepia-docs-version: 1.9.0 -->
+<!-- sepia-docs-version: 1.10.0 -->
 
 You are connected to the user's personal Sepia memory server over MCP (`context_servers.sepia` in `~/.config/zed/settings.json`: `url: "https://sepia.fly.dev/mcp"` + `headers.Authorization: "Bearer TOKEN"`; or stdio bridge via `mcp-remote`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
@@ -10,7 +10,7 @@ You are connected to the user's personal Sepia memory server over MCP (`context_
 
 **FIRST — once per session, before your first substantive action:**
 
-0. Call `manage_memory` with `action: "briefing"` — the user's **core standing rules** (everything tagged `always`, plus every instruction/preference at importance >= 0.9). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. It also reports `other_standing` — the situational rules it did NOT return. **Before anything slow, metered, destructive, or expensive** (an install, build, deploy, deletion, or infra change), call it again with `detail: "all"`: the rule that bites in those moments is exactly the one a default load leaves out.
+0. Call `manage_memory` with `action: "briefing"` — the user's **core standing rules** (everything tagged `always`, plus every instruction/preference at importance >= 0.9). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. It also reports `other_standing` — the situational rules it did NOT return. **Before anything slow, metered, destructive, or expensive** (an install, build, deploy, deletion, or infra change), call it again with `detail: "all"`: the rule that bites in those moments is exactly the one a default load leaves out. **~1M-token context window?** Make that FIRST call with `detail: "all"` (and `max_chars` at its maximum) instead — the whole standing set is ~10k tokens (≈1% of your window), read once per session, priority-ordered with core first; core-by-default protects small contexts, it does not withhold rules from big ones. If you don't know your window size, keep the default.
 
 **BEFORE you answer (every turn except trivial chitchat):**
 

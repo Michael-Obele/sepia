@@ -1,5 +1,5 @@
 ---
-version: "1.9.0"
+version: "1.10.0"
 name: sepia
 description: >-
   Use when the user's AI assistant should recall or persist long-term knowledge
@@ -56,7 +56,13 @@ call `manage_memory` with `action: "briefing"`. No keywords.
 - **Core rules are never dropped for budget**, in either mode.
 - **Escalation**: before anything slow, metered, destructive, or expensive (install, build,
   deploy, deletion, infra change), call again with `detail: "all"` — and raise `max_chars`
-  (default 8000, max 40000) if that reports `truncated: true`.
+  (default 8000, max 200000 = FETCH_MAX rows × ITEM_CHARS, the physical maximum) if that
+  reports `truncated: true`.
+- **Large context window (~1M tokens)?** Make the FIRST call `detail: "all"` (with
+  `max_chars` at its maximum): the whole standing set is ~10k tokens — ≈1% of that window,
+  read once per session — and priority ordering still puts core rules first. Core-by-default
+  exists to protect small contexts, not to withhold rules from big ones. If you don't know
+  your window size, keep the default.
   Tag a rule `always` only when it applies in **every** repo and **every** session. A rule that
   is specific to one project must not carry the tag, or it becomes noise in every other session.
 

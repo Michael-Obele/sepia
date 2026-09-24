@@ -126,6 +126,7 @@ Sepia's docs are the agents' only window into the server. When you add a feature
 **THERE IS NO "OWN VERSION".** A `version:` in a frontmatter IS `DOCS_VERSION` — no skill/instruction system reads or bumps it. It used to be hand-written and left out of the stamp, so it froze at `1.0.0` while every body marker moved on: VS Code, Cursor and the skill advertised 1.0.0 for months, and `check-docs-version.ts` reported "all current" because it read only the first marker it found. Never hand-edit a version marker — stamp it, and never reintroduce a second version concept.
 
 **EVERY VERSION IS DERIVED, NEVER TYPED.** Three artifacts, three real sources — none of them a literal someone must remember to bump:
+
 - the agent-facing docs → `DOCS_VERSION`, stamped into every file's markers;
 - the **deployed server** → its Fly deploy name (`src/version.ts`, from `FLY_IMAGE_REF`/`FLY_MACHINE_VERSION`), because a continuously-deployed app has no semver to report; locally it reads `dev`;
 - the **`sepia-mcp` npm package** → its own `package.json` version, which Changesets maintains.
@@ -138,7 +139,7 @@ Rule: no feature is done until its docs are updated. Check the diff of every alw
 
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
 
-<!-- sepia-docs-version: 1.9.0 -->
+<!-- sepia-docs-version: 1.10.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (any `AGENTS.md`-aware agent: Codex, OpenCode, Copilot, Cursor, Zed). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
@@ -148,7 +149,7 @@ You are connected to the user's personal Sepia memory server (sepia) over MCP (a
 
 **FIRST — once per session, before your first substantive action:**
 
-0. Call `manage_memory` with `action: "briefing"` — the user's **core standing rules** (everything tagged `always`, plus every instruction/preference at importance >= 0.9). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. It also reports `other_standing` — the situational rules it did NOT return. **Before anything slow, metered, destructive, or expensive** (an install, build, deploy, deletion, or infra change), call it again with `detail: "all"`: the rule that bites in those moments is exactly the one a default load leaves out.
+0. Call `manage_memory` with `action: "briefing"` — the user's **core standing rules** (everything tagged `always`, plus every instruction/preference at importance >= 0.9). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. It also reports `other_standing` — the situational rules it did NOT return. **Before anything slow, metered, destructive, or expensive** (an install, build, deploy, deletion, or infra change), call it again with `detail: "all"`: the rule that bites in those moments is exactly the one a default load leaves out. **~1M-token context window?** Make that FIRST call with `detail: "all"` (and `max_chars` at its maximum) instead — the whole standing set is ~10k tokens (≈1% of your window), read once per session, priority-ordered with core first; core-by-default protects small contexts, it does not withhold rules from big ones. If you don't know your window size, keep the default.
 
 **BEFORE you answer (every turn except trivial chitchat):**
 
