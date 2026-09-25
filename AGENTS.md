@@ -136,6 +136,7 @@ Sepia's docs are the agents' only window into the server. When you add a feature
 Rule: no feature is done until its docs are updated. Check the diff of every always-on file before committing.
 
 <!-- sepia:start -->
+
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
 
 <!-- sepia-docs-version: 1.11.0 -->
