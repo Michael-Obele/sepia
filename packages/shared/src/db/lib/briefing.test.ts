@@ -373,6 +373,24 @@ describe.skipIf(!hasDb)("briefing", () => {
     expect(b.truncated).toBe(false);
   });
 
+  test("budget: false ignores max_chars and returns the whole slice", async () => {
+    const b = await getBriefing(conn, ownerId, {
+      namespace: NS_BUDGET,
+      detail: "all",
+      max_chars: 1000,
+      budget: false,
+    });
+    // The same 1000-char budget dropped a rule two tests above; with the budget
+    // off, the caller gets everything and says so exactly.
+    expect(b.count).toBe(5);
+    expect(b.omitted).toBe(0);
+    expect(b.truncated).toBe(false);
+    expect(b.max_chars).toBeUndefined();
+    expect(b.memories.some((m) => m.content.startsWith("budget-rule-3"))).toBe(
+      true,
+    );
+  });
+
   test("core is never dropped for budget, even when it overflows", async () => {
     const b = await getBriefing(conn, ownerId, {
       namespace: NS_CORE,

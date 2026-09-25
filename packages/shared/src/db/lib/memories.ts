@@ -358,7 +358,7 @@ export interface Briefing {
   truncated: boolean;
   /** How many of the requested slice were left out. Exact (COUNT), never inferred. */
   omitted: number;
-  /** The budget in effect — only meaningful (and only present) for `detail: "all"`. */
+  /** The budget in effect — only present for `detail: "all"` when the budget applies. */
   max_chars?: number;
   memories: BriefingItem[];
 }
@@ -382,9 +382,16 @@ export async function getBriefing(
     namespace?: string;
     max_chars?: number;
     detail?: BriefingDetail;
+    /**
+     * Set false to get the whole requested slice with no character budget
+     * (the dashboard's browsing view). Default true — the AI's escalation to
+     * `detail: "all"` must stay bounded no matter how large the tail grows.
+     */
+    budget?: boolean;
   } = {},
 ): Promise<Briefing> {
   const detail: BriefingDetail = opts.detail ?? BRIEFING_DETAIL_DEFAULT;
+  const applyBudget = opts.budget ?? true;
   const maxChars = Math.min(
     Math.max(opts.max_chars ?? BRIEFING_CHARS_DEFAULT, 1000),
     BRIEFING_CHARS_MAX,
@@ -443,8 +450,9 @@ export async function getBriefing(
     const core = row.core === true;
     const content = compactContent(row.content);
     // Only `all` mode fills a budget, and it stops at the first rule that does not fit.
-    // Core rows are ordered first, so this can never cut into them.
-    if (detail === "all" && !core && used + content.length > maxChars) break;
+    // Core rows are ordered first, so this can never cut into them. `budget: false`
+    // skips the budget entirely — the caller then gets an exact, untruncated slice.
+    if (applyBudget && detail === "all" && !core && used + content.length > maxChars) break;
     included.push({
       id: row.id,
       type: row.type,
@@ -467,7 +475,7 @@ export async function getBriefing(
     other_standing: Math.max(total - totalCore, 0),
     truncated: omitted > 0,
     omitted,
-    ...(detail === "all" ? { max_chars: maxChars } : {}),
+    ...(detail === "all" && applyBudget ? { max_chars: maxChars } : {}),
     memories: included,
   };
 }
