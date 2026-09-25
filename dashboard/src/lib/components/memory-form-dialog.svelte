@@ -135,7 +135,10 @@
 		<div class="space-y-4 py-2">
 			<div class="space-y-2">
 				<Label for="mem-content">Content</Label>
+				<!-- Fixed height (h-30) with the component's min-h-16 floor dropped: long text
+				     scrolls inside instead of growing the dialog past the fields below. -->
 				<Textarea
+					class="field-sizing-none h-30 min-h-0"
 					id="mem-content"
 					bind:value={content}
 					rows={4}
