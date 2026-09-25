@@ -76,7 +76,11 @@ FIRST — once per session, before your first substantive action (NOT keyword-dr
    rules it did NOT return. BEFORE anything slow, metered, destructive, or expensive (an
    install, build, deploy, deletion, or infra change), call it again with detail="all" and
    read the rest — the rule that bites in those moments is exactly the one a default load
-   leaves out.
+   leaves out. A ~1M-token context window? Then make THAT FIRST call detail="all" with
+   max_chars at its maximum instead — the full standing set is only ~10k tokens (≈1% of your
+   window), it is read once per session, and core-by-default exists to protect small
+   contexts, not to withhold rules from big ones. If you don't know your window size, keep
+   the default.
 
 THEN — before you answer (every turn except trivial chitchat):
 1. Call "search" with 2-5 keywords from the user's current message + task (e.g. query="auth rate limiting"). If sparse, also call "traverse_graph" from the top entity.
@@ -154,7 +158,7 @@ their bandwidth, their money, or their trust. Briefing first, then search.`;
  */
 export const MEMORY_CONTRACT_QUICK = `You are connected to a memory server (Sepia) over MCP. Use it on ALMOST EVERY turn.
 
-FIRST, once per session and before any real work: call "manage_memory" with action=briefing. That returns your CORE standing rules — everything tagged "always" plus every instruction/preference at importance >= 0.9. Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. It also reports other_standing: the situational rules it did not return. Before anything slow, metered, destructive or expensive (install, build, deploy, deletion, infra), call it again with detail="all".
+FIRST, once per session and before any real work: call "manage_memory" with action=briefing. That returns your CORE standing rules — everything tagged "always" plus every instruction/preference at importance >= 0.9. Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. It also reports other_standing: the situational rules it did not return. Before anything slow, metered, destructive or expensive (install, build, deploy, deletion, infra), call it again with detail="all". If your context window is ~1M tokens, make the FIRST call with detail="all" instead — the full standing set is only ~10k tokens and this read happens once per session.
 
 BEFORE you answer (every turn except trivial chitchat): call "search" with 2-5 keywords about the task. Search is best-effort (rows matching more of your words rank first) — if it returns 0 hits or partial: true, retry with ONE distinctive keyword before concluding nothing exists. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
@@ -182,7 +186,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * one froze VS Code / Cursor / SKILL.md at 1.0.0 while every other marker
  * advanced.
  */
-export const DOCS_VERSION = "1.9.0";
+export const DOCS_VERSION = "1.10.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [
@@ -284,7 +288,9 @@ export const BRIEFING_TYPES = ["instruction", "preference"] as const;
  * `core` (the default) is the guarantee: the rules that must be in context BEFORE any work,
  * because relevance search cannot find a constraint you have not guessed at. `all` adds the
  * tail — situational and project-scoped rules — and is meant to be requested explicitly,
- * immediately before something slow, metered, destructive, or expensive.
+ * immediately before something slow, metered, destructive, or expensive, or on the FIRST
+ * session-start call when the context window is large enough (~1M tokens) to absorb the whole
+ * set once per session without competing for room.
  *
  * The split is not about saving tokens for its own sake: core is STABLE (single digits) while
  * the tail grows without bound, so anything that loads the tail by default gets worse over
@@ -300,9 +306,18 @@ export const BRIEFING_ITEM_CHARS = 400;
  * dropped for budget, so the core briefing ignores it entirely.
  */
 export const BRIEFING_CHARS_DEFAULT = 8000;
-export const BRIEFING_CHARS_MAX = 40000;
 /** Hard cap on rows fetched while budgeting, so `omitted` stays bounded work. */
 export const BRIEFING_FETCH_MAX = 500;
+/**
+ * Ceiling on `max_chars` — deliberately `FETCH_MAX * ITEM_CHARS`: the most any briefing can
+ * physically return, so `detail: "all"` at max is *everything*, never a silent subset.
+ *
+ * Raised 40000 → 200000 (2026-09-24): the real standing set hit 37,527 chars — 94% of the
+ * old cap and growing — which would have made "request the full briefing" (the large-context
+ * instruction) truncate within weeks. ~200k chars ≈ 50k tokens: trivial for a 1M-token window,
+ * still an explicit opt-in for everyone else (`detail: "core"` never reads this at all).
+ */
+export const BRIEFING_CHARS_MAX = BRIEFING_FETCH_MAX * BRIEFING_ITEM_CHARS;
 
 /** Consolidation policy (days). */
 export const STALE_AFTER_DAYS = 90; // importance < 0.3 and untouched for this long → archive

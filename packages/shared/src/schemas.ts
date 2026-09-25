@@ -594,13 +594,14 @@ export const MemoryToolInput = v.object({
    * briefing: which slice of the standing rules to return. `core` (the default) is the stable
    * guarantee — the rules that must be in context before any work. `all` adds the growing tail
    * of situational rules and is the right call immediately BEFORE something slow, metered,
-   * destructive, or expensive.
+   * destructive, or expensive — and the right default for large (~1M-token) context windows,
+   * which can absorb the whole set once per session.
    */
   detail: v.optional(
     v.pipe(
       v.picklist([...BRIEFING_DETAILS]),
       v.description(
-        'briefing: "core" (default) = the never-dropped standing rules; "all" = also return the tail of situational rules (max_chars applies only then).',
+        'briefing: "core" (default) = the never-dropped standing rules; "all" = also return the tail of situational rules (max_chars applies only then). On a ~1M-token context window, request "all" on the first session-start call.',
       ),
     ),
     BRIEFING_DETAIL_DEFAULT,
@@ -616,7 +617,7 @@ export const MemoryToolInput = v.object({
       v.minValue(1000),
       v.maxValue(BRIEFING_CHARS_MAX),
       v.description(
-        `briefing (detail="all" only): total character budget (default ${BRIEFING_CHARS_DEFAULT}, max ${BRIEFING_CHARS_MAX}). If truncated: true, raise it or fetch the ids.`,
+        `briefing (detail="all" only): total character budget (default ${BRIEFING_CHARS_DEFAULT}, max ${BRIEFING_CHARS_MAX} — the physical maximum a briefing can return: FETCH_MAX rows x ITEM_CHARS). If truncated: true, raise it or fetch the ids.`,
       ),
     ),
     BRIEFING_CHARS_DEFAULT,
