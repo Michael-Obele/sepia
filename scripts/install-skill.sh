@@ -151,6 +151,27 @@ if [ -d "$HOME/.config/opencode" ]; then
   append_section "$HOME/.config/opencode/AGENTS.md" "$SRC/always-on/agents.md"
 fi
 
+# Home AGENTS.md (any agentsmd-compliant agent reading ~/AGENTS.md). Block-installed
+# so re-runs update in place — the checker holds it to the same version contract
+# as every other copy, and it used to be written only by remote-install.sh.
+if [ -d "$HOME" ]; then
+  append_section "$HOME/AGENTS.md" "$SRC/always-on/agents.md"
+fi
+
+# OpenCode dedicated always-on file — whole-file, like the remote installer writes it.
+if [ -d "$HOME/.config/opencode" ]; then
+  cp "$SRC/always-on/opencode.md" "$HOME/.config/opencode/sepia.md"
+  verify "$HOME/.config/opencode/sepia.md"
+  echo "installed → $HOME/.config/opencode/sepia.md (v$VERSION)"
+fi
+
+# Zed dedicated always-on file — whole-file.
+if [ -d "$HOME/.config/zed" ]; then
+  cp "$SRC/always-on/zed.md" "$HOME/.config/zed/sepia.md"
+  verify "$HOME/.config/zed/sepia.md"
+  echo "installed → $HOME/.config/zed/sepia.md (v$VERSION)"
+fi
+
 # AGENTS.md (Codex, Cursor, Copilot, any agentsmd-compliant agent) — install
 # into the current repo's AGENTS.md if one exists, else print the snippet.
 if [ -f "AGENTS.md" ]; then

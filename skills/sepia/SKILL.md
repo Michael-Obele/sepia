@@ -1,5 +1,5 @@
 ---
-version: "1.10.0"
+version: "1.11.0"
 name: sepia
 description: >-
   Use when the user's AI assistant should recall or persist long-term knowledge
@@ -40,8 +40,10 @@ you have not guessed is unsearchable by construction.
 So this one read is **unconditional**. Before your first substantive action in a session,
 call `manage_memory` with `action: "briefing"`. No keywords.
 
-- **Core** = every memory tagged `always` **or** at importance >= 0.9. The importance half
-  means it works on rules stored before this feature existed — there is no tagging migration.
+- **Core** = every memory tagged `always`, and only that (tag-only membership since
+  2026-09-24). Importance ranks rules within the briefing — it never admits or removes one.
+  The tag is the single switch: add it → in, remove it → out, so a project-scoped rule can
+  never silently ride along into every future session.
 - **It returns core by default, and that split is the design.** Core is a handful of rules and
   stays small — safe to load every session forever. The tail (situational, project-scoped)
   grows without bound (measured: 9 core rules ≈ 886 tokens against 235 tail rules ≈ 8.5k), and

@@ -26,7 +26,6 @@ import {
   BRIEFING_FETCH_MAX,
   BRIEFING_ITEM_CHARS,
   BRIEFING_TYPES,
-  CORE_IMPORTANCE,
   normalizeTags,
   type BriefingDetail,
 } from "../../types.ts";
@@ -311,7 +310,7 @@ export interface BriefingItem {
   content: string;
   importance: number | null;
   tags: string[] | null;
-  /** Core rules are the guarantee: tagged `always`, or importance >= CORE_IMPORTANCE. */
+  /** Core = the `always` tag, and only the tag — membership is explicit, importance only ranks. */
   core: boolean;
 }
 
@@ -397,7 +396,12 @@ export async function getBriefing(
     BRIEFING_CHARS_MAX,
   );
   const alwaysExpr = sql`${memories.tags} @> ARRAY[${ALWAYS_TAG}]::text[]`;
-  const coreExpr = sql<boolean>`(${alwaysExpr} OR ${memories.importance} >= ${CORE_IMPORTANCE})`;
+  // Core membership is the `always` tag ALONE (tag-only core, 2026-09-24). The old
+  // `OR importance >= CORE_IMPORTANCE` half silently admitted any ≥0.9 row — including
+  // project-scoped rules that then shipped to every session — and made removal impossible
+  // without corrupting importance. One knob for membership (the tag), one for rank
+  // (importance).
+  const coreExpr = alwaysExpr;
   const conditions = [
     eq(memories.archived, false),
     eq(namespaces.ownerId, ownerId),

@@ -58,7 +58,8 @@ STANDING RULES — THE THING YOU CANNOT SEARCH FOR. Some memories are standing r
 the user wants you to behave, everywhere, always. They are exactly the rules you do not yet
 know you need — you cannot keyword-search for a rule whose existence you have not guessed.
 So they are loaded unconditionally, once per session, BEFORE any work starts.
-- core = every memory tagged "always", plus every instruction/preference at importance >= 0.9
+- core = every memory tagged "always" and ONLY that (importance ranks rules within the
+  briefing; it never admits or removes one — tagging "always" is the single switch)
 - read them with manage_memory action=briefing (one call, no keywords)
 - briefing returns CORE by DEFAULT. The tail (situational and project-scoped rules) is opt-in
   via detail="all". Core is a handful of rules and stays small; the tail grows without bound,
@@ -158,7 +159,7 @@ their bandwidth, their money, or their trust. Briefing first, then search.`;
  */
 export const MEMORY_CONTRACT_QUICK = `You are connected to a memory server (Sepia) over MCP. Use it on ALMOST EVERY turn.
 
-FIRST, once per session and before any real work: call "manage_memory" with action=briefing. That returns your CORE standing rules — everything tagged "always" plus every instruction/preference at importance >= 0.9. Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. It also reports other_standing: the situational rules it did not return. Before anything slow, metered, destructive or expensive (install, build, deploy, deletion, infra), call it again with detail="all". If your context window is ~1M tokens, make the FIRST call with detail="all" instead — the full standing set is only ~10k tokens and this read happens once per session.
+FIRST, once per session and before any real work: call "manage_memory" with action=briefing. That returns your CORE standing rules — everything tagged "always" and only that (importance ranks them; the tag decides membership). Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. It also reports other_standing: the situational rules it did not return. Before anything slow, metered, destructive or expensive (install, build, deploy, deletion, infra), call it again with detail="all". If your context window is ~1M tokens, make the FIRST call with detail="all" instead — the full standing set is only ~10k tokens and this read happens once per session.
 
 BEFORE you answer (every turn except trivial chitchat): call "search" with 2-5 keywords about the task. Search is best-effort (rows matching more of your words rank first) — if it returns 0 hits or partial: true, retry with ONE distinctive keyword before concluding nothing exists. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
@@ -186,7 +187,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * one froze VS Code / Cursor / SKILL.md at 1.0.0 while every other marker
  * advanced.
  */
-export const DOCS_VERSION = "1.10.0";
+export const DOCS_VERSION = "1.11.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [
@@ -270,11 +271,18 @@ export const TRAVERSE_DEPTH_MAX = 3;
  * starts, because a constraint cannot be found by relevance search: relevance is computed
  * against a task that has not been scoped yet. Read them with `manage_memory action=briefing`.
  *
- * A memory is CORE when it carries `ALWAYS_TAG` or its importance is at least
- * `CORE_IMPORTANCE`. The importance half is deliberate: it means the guarantee holds for
- * rules already stored at 0.9+, with no tagging migration.
+ * A memory is CORE when — and ONLY when — it carries `ALWAYS_TAG` (tag-only core,
+ * 2026-09-24). Importance ranks rows within the briefing; it never admits or removes one.
+ * The old `importance >= CORE_IMPORTANCE` half is gone: it silently promoted any ≥0.9 row
+ * (project-scoped rules included) into every session and made removal impossible without
+ * corrupting rank.
  */
 export const ALWAYS_TAG = "always";
+/**
+ * Rank boundary within the briefing — NOT membership. Rows at/above it sort at the top of
+ * their slice; only `ALWAYS_TAG` decides whether a row is in core at all. Kept exported
+ * because the dashboard uses it as the promote/demote step boundary.
+ */
 export const CORE_IMPORTANCE = 0.9;
 /** Which ranking engine `search` uses. `coverage` is the default (see search.ts). */
 export const SEARCH_ENGINES = ["coverage", "bm25"] as const;

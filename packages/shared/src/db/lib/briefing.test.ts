@@ -6,9 +6,9 @@
  * downloads" only helps if it is already in context. So the briefing is the one read that
  * must happen unconditionally at the start of a session, and it must be trustworthy in two
  * specific ways:
- *   1. CORE IS NEVER DROPPED FOR BUDGET. Core = tagged `always` OR importance >= 0.9. The
- *      second half is what makes the guarantee work with zero migration, so it is asserted
- *      directly rather than assumed.
+ *   1. CORE IS NEVER DROPPED FOR BUDGET. Core = tagged `always` and ONLY that (tag-only
+ *      membership since 2026-09-24 — importance ranks rows, it never admits one). The
+ *      predicate is asserted directly rather than assumed.
  *   2. TRUNCATION IS REPORTED, NEVER IMPLIED. The failure being fixed is a *silent* subset:
  *      a model that cannot tell what it did not see. `omitted` must therefore be exact.
  *
@@ -114,7 +114,9 @@ describe.skipIf(!hasDb)("briefing", () => {
           namespaceId: nsMain,
           type: "instruction",
           importance: 0.95,
-          content: "identity rule without a tag",
+          // The regression this suite exists for: 0.95 with NO tag used to be core via
+          // the old `OR importance >= 0.9` half. Tag-only membership puts it in the tail.
+          content: "high-importance rule that is not tagged",
         },
         {
           namespaceId: nsMain,
@@ -185,6 +187,7 @@ describe.skipIf(!hasDb)("briefing", () => {
           namespaceId: nsBudget,
           type: "instruction",
           importance: 0.95,
+          tags: ["always"],
           content: "BUDGET-CORE",
         },
         ...[0.74, 0.73, 0.72, 0.71].map((importance, i) => ({
@@ -207,6 +210,7 @@ describe.skipIf(!hasDb)("briefing", () => {
           namespaceId: nsCore,
           type: "instruction",
           importance,
+          tags: ["always"],
           content: pad(`core-rule-${i}`, 1000),
         })),
       )
@@ -219,6 +223,7 @@ describe.skipIf(!hasDb)("briefing", () => {
       namespaceId: otherNs,
       type: "instruction",
       importance: 0.99,
+      tags: ["always"],
       content: "other tenant secret rule",
     });
   }, SETUP_TIMEOUT_MS);
@@ -237,15 +242,15 @@ describe.skipIf(!hasDb)("briefing", () => {
       detail: "all",
     });
     expect(b.memories.map((m) => m.id)).toEqual([
-      id("HIGH_UNTAGGED"),
       id("ALWAYS_LOW"),
       id("FACT_ALWAYS"),
+      id("HIGH_UNTAGGED"),
       id("LONG"),
       id("MID"),
       id("OTHER"),
     ]);
     expect(b.count).toBe(6);
-    expect(b.core_count).toBe(3);
+    expect(b.core_count).toBe(2);
     expect(b.truncated).toBe(false);
     expect(b.omitted).toBe(0);
   });
@@ -255,13 +260,12 @@ describe.skipIf(!hasDb)("briefing", () => {
     const b = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
     expect(b.detail).toBe("core");
     expect(b.memories.map((m) => m.id)).toEqual([
-      id("HIGH_UNTAGGED"),
       id("ALWAYS_LOW"),
       id("FACT_ALWAYS"),
     ]);
-    expect(b.count).toBe(3);
-    expect(b.core_count).toBe(3);
-    expect(b.other_standing).toBe(3);
+    expect(b.count).toBe(2);
+    expect(b.core_count).toBe(2);
+    expect(b.other_standing).toBe(4);
     // Nothing was left out of what was ASKED for, so the flag stays quiet. If `truncated`
     // were always true the caller would habituate to it and it would stop being read.
     expect(b.truncated).toBe(false);
@@ -278,7 +282,7 @@ describe.skipIf(!hasDb)("briefing", () => {
     const dflt = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
     expect(tiny.memories).toEqual(dflt.memories);
     expect(tiny.max_chars).toBeUndefined();
-    expect(tiny.other_standing).toBe(3);
+    expect(tiny.other_standing).toBe(4);
   });
 
   test("all mode adds the tail, and reports the budget it used", async () => {
@@ -288,18 +292,26 @@ describe.skipIf(!hasDb)("briefing", () => {
     });
     expect(b.detail).toBe("all");
     expect(b.count).toBe(6);
-    expect(b.core_count).toBe(3);
-    expect(b.other_standing).toBe(3);
+    expect(b.core_count).toBe(2);
+    expect(b.other_standing).toBe(4);
     expect(b.truncated).toBe(false);
     expect(b.max_chars).toBe(BRIEFING_CHARS_DEFAULT);
   });
 
-  test("importance >= CORE_IMPORTANCE is core with no tag (zero-migration path)", async () => {
+  test("high importance WITHOUT the tag is NOT core (tag-only membership)", async () => {
     const b = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
     const high = b.memories.find((m) => m.id === id("HIGH_UNTAGGED"));
-    expect(high?.core).toBe(true);
-    expect(high?.tags).toEqual([]);
-    expect(CORE_IMPORTANCE).toBe(0.9);
+    // Absent from the default (core) slice entirely — it lives in the tail.
+    expect(high).toBeUndefined();
+    const all = await getBriefing(conn, ownerId, {
+      namespace: NS_MAIN,
+      detail: "all",
+    });
+    const tail = all.memories.find((m) => m.id === id("HIGH_UNTAGGED"));
+    expect(tail?.core).toBe(false);
+    expect(tail?.tags).toEqual([]);
+    // Importance still ranks — it is the top of the tail — it just no longer admits.
+    expect(tail?.importance ?? 0).toBeGreaterThanOrEqual(CORE_IMPORTANCE);
   });
 
   test("the always tag promotes a low-importance rule above untagged ones", async () => {

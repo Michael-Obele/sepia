@@ -114,14 +114,14 @@
 		}
 	}
 
-	/** New rule, prefilled to land in core (instruction @ ≥90%). No `id` → dialog creates. */
+	/** New rule, prefilled to land in core: the `always` tag IS membership. No `id` → dialog creates. */
 	function openCreate() {
 		formMemory = {
 			content: '',
 			type: 'instruction',
 			importance: CORE_IMPORTANCE,
 			namespace: ns !== 'all' ? ns : (namespaceList[0] ?? 'personal'),
-			tags: [],
+			tags: [ALWAYS_TAG],
 			entity_ids: []
 		};
 		showForm = true;
@@ -149,9 +149,9 @@
 		}
 	}
 
-	// --- promote / demote: importance IS the rank ------------------------------
+	// --- promote / demote: importance IS the rank (membership is the `always` tag) ------
 
-	/** One click crosses the 90% core boundary; further clicks rank within. */
+	/** One click steps the rank by 5%; the tag decides core, this decides order. */
 	function nextImportance(imp: number, dir: 'up' | 'down'): number {
 		const r = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 100) / 100;
 		if (dir === 'up') {
@@ -170,11 +170,7 @@
 			return;
 		}
 		await updateMemoryData([String(m.id), { importance: next }]);
-		toast.success(
-			imp < CORE_IMPORTANCE
-				? `Promoted to core (${Math.round(next * 100)}%)`
-				: `Promoted to ${Math.round(next * 100)}%`
-		);
+		toast.success(`Promoted to ${Math.round(next * 100)}%`);
 		void load();
 	}
 
@@ -187,10 +183,10 @@
 		}
 		const tagged = m.tags?.includes(ALWAYS_TAG) ?? false;
 		await updateMemoryData([String(m.id), { importance: next }]);
-		if (next < CORE_IMPORTANCE && tagged) {
-			toast.warning(`Importance ${Math.round(next * 100)}% — still core via \`always\` tag`);
-		} else if (imp >= CORE_IMPORTANCE && next < CORE_IMPORTANCE) {
-			toast.success(`Demoted to tail (${Math.round(next * 100)}%)`);
+		if (tagged) {
+			toast.warning(
+				`Rank ${Math.round(next * 100)}% — still core; remove the \`always\` tag to take it out of the briefing`
+			);
 		} else {
 			toast.success(`Demoted to ${Math.round(next * 100)}%`);
 		}
@@ -412,9 +408,7 @@
 										</Badge>
 									{/if}
 									{#if m.core}
-										<Badge variant={m.tags?.includes(ALWAYS_TAG) ? 'default' : 'secondary'}>
-											{m.tags?.includes(ALWAYS_TAG) ? 'always' : 'core'}
-										</Badge>
+										<Badge>always</Badge>
 									{:else}
 										<Badge variant="outline">tail</Badge>
 									{/if}
@@ -426,7 +420,7 @@
 										size="icon"
 										onclick={() => void promote(m)}
 										aria-label="Promote rule"
-										title="Promote (+5%, or jump to 90% to enter core)"
+										title="Promote (+5% — rank within the briefing)"
 									>
 										<ChevronUp class="size-4" />
 									</Button>
@@ -435,7 +429,7 @@
 										size="icon"
 										onclick={() => void demote(m)}
 										aria-label="Demote rule"
-										title="Demote (−5%, or below 90% to leave core)"
+										title="Demote (−5% — rank only; remove the `always` tag to leave core)"
 									>
 										<ChevronDown class="size-4" />
 									</Button>

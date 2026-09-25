@@ -39,8 +39,10 @@ existence has not been guessed is unsearchable by construction.
 So `briefing` is the one read that must happen **unconditionally, once per session, before any
 work**. It takes no keywords.
 
-- **Core** = every memory tagged `always` **or** at importance >= 0.9. The importance half means
-  it works for rules stored before this feature existed — there is no tagging migration.
+- **Core** = every memory tagged `always`, and only that (tag-only membership since 2026-09-24).
+  Importance ranks rules within the briefing; it never admits or removes one. The tag is the
+  single switch: add it → in, remove it → out — so a project-scoped rule can never silently
+  attach itself to every future session, and revoking membership never corrupts rank.
 - **It returns core by default** (`detail: "core"`), and that split is the design. Core is a
   handful of rules and stays small, so it is safe to load every session forever. The tail
   (situational and project-scoped rules) grows without bound — measured 2026-09-20: 9 core rules
@@ -107,4 +109,4 @@ Rules the distilling agent must follow:
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
 
-Docs version: 1.10.0
+Docs version: 1.11.0
