@@ -27,6 +27,8 @@
 	// Controls: which slice of the standing rules to show.
 	let ns = $state('all');
 	let detail = $state<'core' | 'all'>('core');
+	// "Show all" opt-out: the AI's one-shot escalation is budget-limited, the browser isn't.
+	let showAll = $state(false);
 
 	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
 	let namespaceList = $state<string[]>([]);
@@ -54,7 +56,10 @@
 			const b = await fresh(
 				getBriefingData({
 					namespace: ns === 'all' ? undefined : ns,
-					detail
+					detail,
+					// Conditional spread keeps the payload identical when budgeted, so the
+					// default view stays the AI's exact budgeted slice (and stays cached).
+					...(showAll ? { budget: false } : {})
 				})
 			);
 			if (seq !== loadSeq) return;
@@ -358,13 +363,30 @@
 
 			{#if briefing.truncated}
 				<div
-					class="rounded-lg border border-amber-600 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100"
+					class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-600 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950 dark:text-amber-100"
 					role="status"
 				>
-					Incomplete: {briefing.omitted} rule{briefing.omitted === 1 ? '' : 's'} left out of this {detail ===
-					'all'
-						? 'budgeted slice'
-						: 'core set'}.
+					{#if detail === 'all' && !showAll}
+						<span>
+							Showing {briefing.count} of {briefing.count + briefing.omitted} standing rules — this is
+							the AI's budget-limited view.
+						</span>
+						<Button
+							size="sm"
+							variant="outline"
+							onclick={() => {
+								showAll = true;
+								void load();
+							}}
+						>
+							Show all {briefing.count + briefing.omitted}
+						</Button>
+					{:else}
+						<span>
+							Incomplete: {briefing.omitted} rule{briefing.omitted === 1 ? '' : 's'} left out of this
+							{detail === 'all' ? 'fetch' : 'core set'}.
+						</span>
+					{/if}
 				</div>
 			{/if}
 

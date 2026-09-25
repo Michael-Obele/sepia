@@ -6,7 +6,9 @@ import { requireAuth } from '$lib/server/auth';
 
 const BriefingFilters = v.object({
 	namespace: v.optional(v.string()),
-	detail: v.optional(v.picklist(['core', 'all']))
+	detail: v.optional(v.picklist(['core', 'all'])),
+	/** false = the whole tail with no character budget (the page's "Show all" action). */
+	budget: v.optional(v.boolean())
 });
 
 /**
