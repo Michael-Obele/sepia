@@ -452,7 +452,13 @@ export async function getBriefing(
     // Only `all` mode fills a budget, and it stops at the first rule that does not fit.
     // Core rows are ordered first, so this can never cut into them. `budget: false`
     // skips the budget entirely — the caller then gets an exact, untruncated slice.
-    if (applyBudget && detail === "all" && !core && used + content.length > maxChars) break;
+    if (
+      applyBudget &&
+      detail === "all" &&
+      !core &&
+      used + content.length > maxChars
+    )
+      break;
     included.push({
       id: row.id,
       type: row.type,
