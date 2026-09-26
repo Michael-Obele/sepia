@@ -10,13 +10,14 @@
  *   bun run scripts/telemetry.ts summary [days]             (default: 30)
  *   bun run scripts/telemetry.ts events [limit]             (the raw rows, for transparency)
  *   bun run scripts/telemetry.ts purge                      (enforce the TTL now)
+ *   bun run scripts/telemetry.ts ttl <days>                 (retention, 1-365; default 30)
  *   bun run scripts/telemetry.ts delete                     (erase every row)
  *
  * Target a different account with `--email you@example.com`.
  */
 import { eq, sql } from "drizzle-orm";
 import { db } from "../src/db.ts";
-import { users } from "@sepia/shared";
+import { users, telemetrySettings } from "@sepia/shared";
 import {
   deleteTelemetry,
   getTelemetrySettings,
@@ -90,6 +91,25 @@ switch (action) {
     console.log(`telemetry disabled for ${ownerId} (tier=${s.tier})`);
     console.log(
       "  existing rows are kept; use `telemetry delete` to erase them",
+    );
+    break;
+  }
+  case "ttl": {
+    const days = Math.round(Number(args[1]));
+    if (!Number.isFinite(days) || days < 1 || days > 365)
+      throw new Error("ttl must be 1-365 days");
+    // Update ttl_days only — reusing setTelemetrySettings would also reset
+    // enabledAt, making "since" claim telemetry was just switched on.
+    const rows = await conn
+      .update(telemetrySettings)
+      .set({ ttlDays: days, updatedAt: sql`now()` })
+      .where(eq(telemetrySettings.ownerId, ownerId))
+      .returning({ ttlDays: telemetrySettings.ttlDays });
+    if (!rows[0])
+      throw new Error("telemetry has never been enabled for this account");
+    console.log(`ttl for ${ownerId} set to ${rows[0].ttlDays} days`);
+    console.log(
+      "  applies to tier-2 payloads (raw query text + returned ids) only",
     );
     break;
   }
