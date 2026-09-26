@@ -90,6 +90,11 @@ export function summarizeSearch(
   q: string,
   hits: SearchHit[],
 ): { terms: string[]; best_matched_terms: number; partial: boolean } {
+  // No query text = the recent-items path: nothing was ranked, so there is no
+  // coverage to report and nothing to flag as partial. Without this,
+  // `matchPlan`'s literal fallback would fabricate a single empty term and turn
+  // every "show me recent" call into a reported 0-of-1 miss.
+  if (!q.trim()) return { terms: [], best_matched_terms: 0, partial: false };
   const { terms } = matchPlan(q);
   const best = hits.reduce((n, h) => Math.max(n, h.matched_terms), 0);
   return {

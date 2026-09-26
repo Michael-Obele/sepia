@@ -870,4 +870,23 @@ describe("summarizeSearch", () => {
       "deploy",
     ]);
   });
+
+  // The empty query is the "show me recent items" path: nothing was ranked, so
+  // there are no terms to report. It used to fabricate one (`matchPlan` falls
+  // back to the empty literal), which made a recent-list call read as a
+  // 0-of-1 coverage miss — and as `partial`, i.e. "ranked suggestions rather
+  // than an answer" — polluting every coverage and zero-rate aggregate.
+  test("an empty query reports zero terms and is not partial", () => {
+    expect(summarizeSearch("", [hit(0)])).toEqual({
+      terms: [],
+      best_matched_terms: 0,
+      partial: false,
+    });
+    expect(summarizeSearch("   ", [hit(0)])).toEqual({
+      terms: [],
+      best_matched_terms: 0,
+      partial: false,
+    });
+    expect(summarizeSearch("", []).partial).toBe(false);
+  });
 });
