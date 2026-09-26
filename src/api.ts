@@ -36,6 +36,7 @@ import {
   TELEMETRY_TIERS,
   recordTelemetrySafe,
   resolveSearchEngine,
+  searchOptions,
   getTelemetrySettings,
   setTelemetrySettings,
   telemetrySummary,
@@ -490,6 +491,8 @@ export async function handleApi(
         resultChars: results.reduce((n, h) => n + (h.snippet?.length ?? 0), 0),
         queryText: input.q,
         hitIds: results.map((h) => h.id),
+        // Same shape as the MCP writer: structural call parameters only.
+        options: searchOptions(input),
       });
       return json(
         {

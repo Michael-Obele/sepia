@@ -6,6 +6,7 @@ import {
   recordTelemetrySafe,
   resolveSearchEngine,
   search,
+  searchOptions,
   summarizeSearch,
 } from "@sepia/shared";
 import { safe, SEPIA_ICON, telemetrySession } from "./util.ts";
@@ -42,6 +43,9 @@ export function registerSearchTools(server: McpServer<any, any>) {
         resultChars: hits.reduce((n, h) => n + (h.snippet?.length ?? 0), 0),
         queryText: args.q,
         hitIds: hits.map((h) => h.id),
+        // The call AS MADE (limit, precision dial, filters, requested engine) —
+        // never `q`, which is content and lives in queryText above.
+        options: searchOptions(args),
       });
       return { count: hits.length, ...summary, hits };
     }),

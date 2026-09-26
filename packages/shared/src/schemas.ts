@@ -13,6 +13,7 @@ import {
   MAX_TAGS,
   MEMORY_TYPES,
   QUERY_LIMIT_MAX,
+  SEARCH_LIMIT_DEFAULT,
   SEARCH_LIMIT_MAX,
   TAG_MAX_LENGTH,
   TRAVERSE_DEPTH_MAX,
@@ -324,7 +325,7 @@ export const SearchInput = v.object({
       v.maxValue(SEARCH_LIMIT_MAX),
       v.description("Max results (default 10, max 25)"),
     ),
-    10,
+    SEARCH_LIMIT_DEFAULT,
   ),
   /**
    * The precision dial. Default is best-effort recall; this trades it for

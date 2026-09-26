@@ -263,6 +263,8 @@ export const MAX_ENTITY_LINKS = 3;
 
 /** Upper bounds for list-like operations. */
 export const SEARCH_LIMIT_MAX = 25;
+/** What a search returns when the caller does not ask for a page size. */
+export const SEARCH_LIMIT_DEFAULT = 10;
 export const QUERY_LIMIT_MAX = 50;
 export const TRAVERSE_DEPTH_MAX = 3;
 

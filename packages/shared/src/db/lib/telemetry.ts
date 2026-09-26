@@ -5,7 +5,9 @@ import {
   TELEMETRY_TIERS,
   telemetryEvents,
   telemetrySettings,
+  type SearchCallOptions,
 } from "../schema.ts";
+import { SEARCH_LIMIT_DEFAULT } from "../../types.ts";
 
 export type TelemetryTier = (typeof TELEMETRY_TIERS)[number];
 
@@ -63,6 +65,41 @@ export interface TelemetryInput {
   queryText?: string | null;
   /** tier "transcripts" only — dropped at every other tier */
   hitIds?: string[] | null;
+  /**
+   * The call's structural parameters (see `SearchCallOptions`) — limit,
+   * precision dial, scope filters, requested engine. Recorded at EVERY tier,
+   * because it is what classifies an empty result. Never query text: build it
+   * with `searchOptions()`, which picks known keys instead of spreading.
+   */
+  options?: SearchCallOptions | null;
+}
+
+/**
+ * The `search` call as made, minus `q`.
+ *
+ * Built by picking known keys rather than spreading the input, so `q` cannot
+ * leak into a column that is written at every tier — `q` is content and lives
+ * only in `queryText`, gated to tier "transcripts". `limit` is always present:
+ * the input schema resolves it, and recording the RESOLVED value is what makes
+ * "the page was cut" (hit_count = limit) answerable later.
+ */
+export function searchOptions(input: {
+  limit?: number;
+  min_terms?: number;
+  namespace?: string;
+  type?: string;
+  tags?: string[];
+  engine?: string;
+}): SearchCallOptions {
+  const options: SearchCallOptions = {
+    limit: input.limit ?? SEARCH_LIMIT_DEFAULT,
+  };
+  if (input.min_terms !== undefined) options.min_terms = input.min_terms;
+  if (input.namespace) options.namespace = input.namespace;
+  if (input.type) options.type = input.type;
+  if (input.tags?.length) options.tags = input.tags;
+  if (input.engine) options.engine = input.engine;
+  return options;
 }
 
 export async function getTelemetrySettings(db: Db, ownerId: string) {
@@ -161,7 +198,13 @@ export async function recordTelemetry(
     resultChars: input.resultChars ?? null,
     queryText: tier2 ? (input.queryText ?? null) : null,
     hitIds: tier2 ? (input.hitIds ?? null) : null,
+    options: input.options ?? null,
   });
+
+  // Retention, piggybacked on the write path. Still inside the fire-and-forget
+  // wrapper and throttled per owner, so no caller ever waits on it and the hot
+  // path pays for one extra statement at most once per interval.
+  await maybePurgeExpiredTelemetry(db, input.ownerId);
 }
 
 /**
@@ -204,6 +247,36 @@ export async function purgeExpiredTelemetry(db: Db, ownerId: string) {
   return Number(res.rowCount ?? 0);
 }
 
+/**
+ * How often one account may run the retention sweep. There is no scheduler in
+ * this app (the Fly machine scales to zero), so expiry is enforced where the
+ * write already is instead of pretending a cron exists — throttled so the hot
+ * path pays for at most one extra statement per interval.
+ */
+export const PURGE_INTERVAL_MS = 15 * 60_000;
+
+/** Last sweep per owner, in-process. A restart simply sweeps once sooner. */
+const lastPurgeAt = new Map<string, number>();
+
+/**
+ * Opportunistic retention: run `purgeExpiredTelemetry` for this owner at most
+ * once per `PURGE_INTERVAL_MS`.
+ *
+ * `now` exists purely so the throttle can be tested without sleeping;
+ * production callers omit it. The returned count is diagnostic only — a caller
+ * must never depend on it.
+ */
+export async function maybePurgeExpiredTelemetry(
+  db: Db,
+  ownerId: string,
+  now = Date.now(),
+): Promise<number> {
+  const last = lastPurgeAt.get(ownerId);
+  if (last !== undefined && now - last < PURGE_INTERVAL_MS) return 0;
+  lastPurgeAt.set(ownerId, now);
+  return purgeExpiredTelemetry(db, ownerId);
+}
+
 export interface TelemetrySummary {
   window_days: number;
   tier: TelemetryTier;
@@ -213,14 +286,35 @@ export interface TelemetrySummary {
   /** searches with a session hash — the only ones an outcome can be derived for */
   correlated_searches: number;
   zero_result: number;
+  /** `zero_result` split by CAUSE — these three always sum to `zero_result`. */
+  /** Nothing matched AND nothing narrowed the request: the real failure. */
+  zero_bare: number;
+  /** The caller's `min_terms` did its job — not a retrieval failure. */
+  zero_precision: number;
+  /** A scope filter (namespace/type/tags) excluded everything. */
+  zero_filtered: number;
+  /** Row predates `options` — cause unknowable, so never counted as bare. */
+  zero_unknown: number;
+  /** hits that filled the requested page: "out of page", not "nothing found". */
+  truncated: number;
+  /** searches that actually carried terms — excludes the recent-items path. */
+  coveraged_searches: number;
+  /** mean best-term coverage (0–1, 2dp) over `coveraged_searches`. */
+  avg_coverage: number | null;
+  /** searches where some hit covered EVERY query term. */
+  full_coverage: number;
   repeated: number;
   reformulated: number;
+  /** follow-up search ≤120 s after an EMPTY one — the failure retry. */
+  retried_after_zero: number;
   distinct_queries: number;
   by_engine: Array<{
     engine: string;
     searches: number;
     zero_result: number;
     repeated: number;
+    /** rows where the CALLER asked for this engine — self-selected traffic. */
+    explicit: number;
   }>;
   briefing: {
     calls: number;
@@ -249,6 +343,17 @@ export async function telemetrySummary(
         AS correlated_searches,
       count(*) FILTER (WHERE tool = 'search' AND terms > 0 AND hit_count = 0)::int
         AS zero_result,
+      count(*) FILTER (WHERE tool = 'search' AND terms > 0)::int
+        AS coveraged_searches,
+      count(*) FILTER (
+        WHERE tool = 'search' AND terms > 0 AND best_matched_terms = terms
+      )::int AS full_coverage,
+      count(*) FILTER (
+        WHERE tool = 'search'
+          AND hit_count >= coalesce((options->>'limit')::int, 10)
+      )::int AS truncated,
+      avg(best_matched_terms::numeric / terms)
+        FILTER (WHERE tool = 'search' AND terms > 0) AS avg_coverage,
       count(DISTINCT query_fingerprint)::int AS distinct_queries,
       percentile_disc(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50,
       percentile_disc(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95,
@@ -258,6 +363,33 @@ export async function telemetrySummary(
      WHERE owner_id = ${ownerId} AND created_at > ${window}
   `);
   const t = (totals.rows[0] ?? {}) as Record<string, unknown>;
+
+  // WHY ITS OWN PASS: "came back empty" means three different things. A
+  // precision miss (min_terms), a filtered miss (scope) and a bare miss used
+  // to be one indistinguishable number, and only the last is a retrieval
+  // failure. The CASE keeps the precedence in ONE place, so the three buckets
+  // sum to `zero_result` by construction instead of drifting apart.
+  const zeros = await db.execute(sql`
+    SELECT CASE
+             WHEN options IS NULL THEN 'unknown'
+             WHEN (options->>'min_terms') IS NOT NULL THEN 'precision'
+             WHEN (options->>'namespace') IS NOT NULL
+               OR (options->>'type') IS NOT NULL
+               OR (options->>'tags') IS NOT NULL THEN 'filtered'
+             ELSE 'bare'
+           END AS cls,
+           count(*)::int AS n
+      FROM ${telemetryEvents}
+     WHERE owner_id = ${ownerId} AND tool = 'search'
+       AND terms > 0 AND hit_count = 0 AND created_at > ${window}
+     GROUP BY 1
+  `);
+  const zeroByClass = new Map(
+    (zeros.rows as Array<Record<string, unknown>>).map((r) => [
+      String(r.cls),
+      Number(r.n ?? 0),
+    ]),
+  );
 
   // Loop detection: a repeated fingerprint, or any follow-up search inside the
   // reformulation window, within the same session. Both are "that didn't work"
@@ -277,7 +409,12 @@ export async function telemetrySummary(
       count(*) FILTER (
         WHERE next_at IS NOT NULL
           AND next_at - created_at < (${REFORMULATION_WINDOW_SEC} * interval '1 second')
-      )::int AS reformulated
+      )::int AS reformulated,
+      count(*) FILTER (
+        WHERE next_at IS NOT NULL
+          AND next_at - created_at < (${REFORMULATION_WINDOW_SEC} * interval '1 second')
+          AND hit_count = 0
+      )::int AS retried_after_zero
       FROM s
   `);
   const l = (loops.rows[0] ?? {}) as Record<string, unknown>;
@@ -285,6 +422,7 @@ export async function telemetrySummary(
   const engines = await db.execute(sql`
     WITH s AS (
       SELECT engine, hit_count, terms, session_hash, query_fingerprint, created_at,
+             (options->>'engine') IS NOT NULL AS explicit_requested,
              LEAD(query_fingerprint) OVER w AS next_fp
         FROM ${telemetryEvents}
        WHERE owner_id = ${ownerId} AND tool = 'search' AND session_hash IS NOT NULL
@@ -294,7 +432,8 @@ export async function telemetrySummary(
     SELECT COALESCE(engine, 'unknown') AS engine,
            count(*)::int AS searches,
            count(*) FILTER (WHERE terms > 0 AND hit_count = 0)::int AS zero_result,
-           count(*) FILTER (WHERE next_fp = query_fingerprint)::int AS repeated
+           count(*) FILTER (WHERE next_fp = query_fingerprint)::int AS repeated,
+           count(*) FILTER (WHERE explicit_requested)::int AS explicit_requested
       FROM s GROUP BY 1 ORDER BY 2 DESC
   `);
 
@@ -334,14 +473,27 @@ export async function telemetrySummary(
     searches: num(t.searches),
     correlated_searches: num(t.correlated_searches),
     zero_result: num(t.zero_result),
+    zero_bare: zeroByClass.get("bare") ?? 0,
+    zero_precision: zeroByClass.get("precision") ?? 0,
+    zero_filtered: zeroByClass.get("filtered") ?? 0,
+    zero_unknown: zeroByClass.get("unknown") ?? 0,
+    truncated: num(t.truncated),
+    coveraged_searches: num(t.coveraged_searches),
+    avg_coverage:
+      t.avg_coverage === null || t.avg_coverage === undefined
+        ? null
+        : Math.round(Number(t.avg_coverage) * 100) / 100,
+    full_coverage: num(t.full_coverage),
     repeated: num(l.repeated),
     reformulated: num(l.reformulated),
+    retried_after_zero: num(l.retried_after_zero),
     distinct_queries: num(t.distinct_queries),
     by_engine: (engines.rows as Array<Record<string, unknown>>).map((r) => ({
       engine: String(r.engine),
       searches: num(r.searches),
       zero_result: num(r.zero_result),
       repeated: num(r.repeated),
+      explicit: num(r.explicit_requested),
     })),
     briefing: {
       calls: num(b.calls),
@@ -373,7 +525,13 @@ export async function deleteTelemetry(db: Db, ownerId: string) {
   return res.rowCount ?? 0;
 }
 
-/** Searches that came back empty or thin — the queue of real failures to learn from. */
+/**
+ * The queue of searches worth looking at: EMPTY, or covering under HALF the
+ * query. Reading as `best_matched_terms < terms` would return almost every
+ * search (best-effort recall is partial by design), which is why the old
+ * predicate never got a caller. `terms > 0` keeps the recent-items path out —
+ * it has no coverage to judge.
+ */
 export async function telemetryFailures(
   db: Db,
   ownerId: string,
@@ -391,7 +549,9 @@ export async function telemetryFailures(
           telemetryEvents.createdAt,
           sql`now() - (${windowDays} * interval '1 day')`,
         ),
-        sql`(${telemetryEvents.hitCount} = 0 OR ${telemetryEvents.bestMatchedTerms} < ${telemetryEvents.terms})`,
+        sql`${telemetryEvents.terms} > 0
+             AND (${telemetryEvents.hitCount} = 0
+                  OR ${telemetryEvents.bestMatchedTerms} * 2 < ${telemetryEvents.terms})`,
       ),
     )
     .orderBy(desc(telemetryEvents.createdAt))

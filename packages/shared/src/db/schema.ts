@@ -672,6 +672,25 @@ export const telemetrySettings = pgTable(
 );
 
 /**
+ * Structural parameters of one `search` call — everything the caller shaped
+ * EXCEPT `q`, which is content and lives in `query_text` (tier "transcripts"
+ * only). Optional keys are simply absent when the caller left them unset, so
+ * "the caller asked for this engine" reads as `engine` present, not as a
+ * nullable column with a sentinel.
+ */
+export interface SearchCallOptions {
+  /** Resolved page size (schema default 10) — `hit_count = limit` means the page was cut. */
+  limit: number;
+  /** The precision dial: how many query terms a hit had to cover. */
+  min_terms?: number;
+  namespace?: string;
+  type?: string;
+  tags?: string[];
+  /** The engine REQUESTED. Absent = the server default decided. */
+  engine?: string;
+}
+
+/**
  * Append-only event log. Outcomes (did the agent go on to fetch a hit? re-ask?)
  * are DERIVED from the stream when read, never written back — so the hot path
  * stays a single insert and the log stays immutable.
@@ -707,8 +726,18 @@ export const telemetryEvents = pgTable(
     /** tier "transcripts" only — NULL at every other tier */
     queryText: text("query_text"),
     /** tier "transcripts" only — NULL at every other tier */
-    hitIds: uuid("hit_ids").array(),
-  },
+    hitIds: uuid("hit_ids").array(),    /**
+     * The `search` CALL as made — limit, precision dial, scope filters, and the
+     * engine the caller asked for (absent = server default). Written at every
+     * tier, because it is structural and never content.
+     *
+     * NEVER put `q` here: query text belongs to `queryText` and is gated to
+     * tier "transcripts". This column is what makes an empty result
+     * classifiable — a precision miss (min_terms), a filtered miss, a truncated
+     * page (hit_count = limit) and a true false-zero read identically without
+     * it. NULL for non-search tools and for rows predating this column.
+     */
+    options: jsonb().$type<SearchCallOptions>(),  },
   (table) => [
     index("idx_telemetry_events_owner").using(
       "btree",

@@ -737,6 +737,13 @@ if (hasDb) {
     const telSummaryJson = (await telSummary.json()) as {
       searches?: number;
       correlated_searches?: number;
+      zero_result?: number;
+      zero_bare?: number;
+      zero_precision?: number;
+      zero_filtered?: number;
+      zero_unknown?: number;
+      retried_after_zero?: number;
+      avg_coverage?: number | null;
     };
     check(
       "REST telemetry summary reports coverage honestly",
@@ -746,6 +753,23 @@ if (hasDb) {
         (telSummaryJson.correlated_searches ?? 0) <=
           (telSummaryJson.searches ?? 0),
       `status ${telSummary.status}, searches=${telSummaryJson.searches}, correlated=${telSummaryJson.correlated_searches}`,
+    );
+    // The classification is the whole point of the `options` column: every
+    // empty result lands in exactly one cause, so a bare (true) failure can
+    // never be inflated by precision- or filter-misses — and a row recorded
+    // before options existed is reported as unknowable instead of guessed.
+    check(
+      "REST telemetry summary classifies every empty result",
+      telSummary.status === 200 &&
+        typeof telSummaryJson.zero_bare === "number" &&
+        (telSummaryJson.zero_bare ?? 0) +
+          (telSummaryJson.zero_precision ?? 0) +
+          (telSummaryJson.zero_filtered ?? 0) +
+          (telSummaryJson.zero_unknown ?? 0) ===
+          (telSummaryJson.zero_result ?? -1) &&
+        telSummaryJson.avg_coverage !== undefined &&
+        typeof telSummaryJson.retried_after_zero === "number",
+      `bare=${telSummaryJson.zero_bare} precision=${telSummaryJson.zero_precision} filtered=${telSummaryJson.zero_filtered} unknown=${telSummaryJson.zero_unknown} zero=${telSummaryJson.zero_result} avg=${telSummaryJson.avg_coverage} retried=${telSummaryJson.retried_after_zero}`,
     );
     const telBadTier = await fetch(`${restBase}/api/telemetry/settings`, {
       method: "PUT",

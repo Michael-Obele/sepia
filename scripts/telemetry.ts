@@ -126,7 +126,8 @@ switch (action) {
         `  ${r.createdAt ?? ""}  ${r.tool}/${r.action ?? "-"}  engine=${r.engine ?? "-"}  hits=${r.hitCount ?? "-"}  cov=${r.bestMatchedTerms ?? "-"}/${r.terms ?? "-"}  ${r.latencyMs ?? "-"}ms` +
           (r.queryText
             ? `  q=${JSON.stringify(r.queryText.slice(0, 60))}`
-            : ""),
+            : "") +
+          (r.options ? `  opts=${JSON.stringify(r.options)}` : ""),
       );
     }
     break;
@@ -148,13 +149,27 @@ switch (action) {
       `  correlated searches ${s.correlated_searches}/${s.searches} (${pct(s.correlated_searches, s.searches)}) — only these can be given an outcome`,
     );
     console.log(
-      `  ZERO-RESULT ${s.zero_result} (${pct(s.zero_result, s.searches)})  ← the false-zero bug class`,
+      `  ZERO-RESULT ${s.zero_result} (${pct(s.zero_result, s.searches)})  ` +
+        `bare ${s.zero_bare} · precision ${s.zero_precision} · filtered ${s.zero_filtered}` +
+        (s.zero_unknown ? ` · unclassifiable ${s.zero_unknown}` : ""),
+    );
+    console.log(
+      "    bare = nothing matched AND nothing narrowed the request — the only true failure; drive it toward 0 (industry bar: <2%)",
+    );
+    console.log(
+      `  TRUNCATED  ${s.truncated} (${pct(s.truncated, s.searches)})  ← filled the requested page, so more existed`,
+    );
+    console.log(
+      `  COVERAGE   avg ${s.avg_coverage ?? "—"} · full ${s.full_coverage}/${s.coveraged_searches} (${pct(s.full_coverage, s.coveraged_searches)})  ← recent-list calls excluded`,
     );
     console.log(
       `  REPEATED   ${s.repeated} (${pct(s.repeated, s.correlated_searches)})  ← same query again in a session`,
     );
     console.log(
-      `  REFORMULATED ${s.reformulated} (${pct(s.reformulated, s.correlated_searches)})  ← another search within 120s`,
+      `  CHAINED    ${s.reformulated} (${pct(s.reformulated, s.correlated_searches)})  ← another search within 120s — context, NOT a failure rate`,
+    );
+    console.log(
+      `  RETRIED    ${s.retried_after_zero} (${pct(s.retried_after_zero, s.correlated_searches)})  ← chained after an EMPTY result: the real "that didn't work" signal`,
     );
     console.log(
       `  latency p50 ${s.latency_ms.p50 ?? "—"}ms  p95 ${s.latency_ms.p95 ?? "—"}ms`,
@@ -164,7 +179,10 @@ switch (action) {
     if (!s.by_engine.length) console.log("    (no correlated searches yet)");
     for (const e of s.by_engine)
       console.log(
-        `    ${e.engine.padEnd(9)} searches=${e.searches} zero=${e.zero_result} repeated=${e.repeated}`,
+        `    ${e.engine.padEnd(9)} searches=${e.searches} zero=${e.zero_result} repeated=${e.repeated} explicit=${e.explicit}` +
+          (e.explicit
+            ? "  ← self-selected, not comparable with default traffic"
+            : ""),
       );
     console.log(
       `  briefing: ${s.briefing.calls} calls, ${s.briefing.escalated} escalated to detail=all, ${s.briefing.sessions_started_work_first} session(s) searched/wrote BEFORE ever calling it`,
