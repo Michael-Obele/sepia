@@ -1,4 +1,4 @@
-import { command, query } from '$app/server';
+import { command, form, query } from '$app/server';
 import * as v from 'valibot';
 import {
 	TELEMETRY_TIERS,
@@ -59,17 +59,23 @@ export const updateTelemetryTier = command(
  * Change retention only. Deliberately separate from the tier command: folding
  * the TTL into `setTelemetrySettings` would re-stamp `enabledAt` and make
  * "recording since" claim the switch was just flipped because the TTL moved.
+ *
+ * A `form` rather than a `command`: the preset-day buttons are its submit
+ * buttons, so the choice still lands without JavaScript.
  */
-export const updateTelemetryTtl = command(
-	v.pipe(v.number(), v.minValue(1), v.maxValue(365)),
-	async (ttlDays) => {
+export const updateTelemetryTtl = form(
+	v.object({ ttlDays: v.pipe(v.number(), v.minValue(1), v.maxValue(365)) }),
+	async ({ ttlDays }) => {
 		const user = await requireAuth();
 		return setTelemetryTtl(db(), user.id, ttlDays);
 	}
 );
 
-/** Erase every telemetry row for this account. */
-export const eraseTelemetry = command(async () => {
+/**
+ * Erase every telemetry row for this account. Schema-less on purpose: there
+ * are no inputs to validate, so the callback receives void.
+ */
+export const eraseTelemetry = form(async () => {
 	const user = await requireAuth();
 	return deleteTelemetry(db(), user.id);
 });

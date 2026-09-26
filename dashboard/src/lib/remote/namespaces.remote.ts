@@ -1,6 +1,6 @@
-import { query, command } from '$app/server';
+import { command, form, query } from '$app/server';
 import * as v from 'valibot';
-import { listNamespaces, createNamespace, deleteNamespace, NamespaceInput } from '@sepia/shared';
+import { listNamespaces, createNamespace, deleteNamespace } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
 
@@ -10,11 +10,18 @@ export const getNamespaces = query(async () => {
 	return listNamespaces(db(), user.id);
 });
 
-/** Create a namespace. */
-export const addNamespace = command(NamespaceInput, async (input) => {
-	const user = await requireAuth();
-	return createNamespace(db(), user.id, input.name, input.description, user.plan);
-});
+/** Create a namespace. A form (not a command): the Create button is a submit
+ * button, so creating still works without JavaScript. */
+export const addNamespace = form(
+	v.object({
+		name: v.pipe(v.string(), v.minLength(1, 'Namespace name is required'), v.maxLength(64)),
+		description: v.optional(v.string(), '')
+	}),
+	async ({ name, description }) => {
+		const user = await requireAuth();
+		return createNamespace(db(), user.id, name, description, user.plan);
+	}
+);
 
 /** Delete a namespace (cascades entities → relations/memories). */
 export const removeNamespace = command(v.string(), async (idOrName) => {

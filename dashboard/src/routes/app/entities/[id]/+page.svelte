@@ -11,7 +11,6 @@
 	import {
 		getEntityDetail,
 		removeEntity,
-		updateEntityData,
 		removeMemory,
 		removeRelation,
 		addRelation,
@@ -69,6 +68,8 @@
 	}
 
 	// ── New relation form ───────────────────────────────────────────────────
+	// The save path is the remote `addRelation` form in the markup below — the
+	// direction swap and shared-schema validation happen there, not here.
 	let relType = $state('related_to');
 	let relTarget = $state('');
 	let relWeight = $state(0.5);
@@ -82,37 +83,6 @@
 			return;
 		}
 		relResults = await getEntities({ q: relSearch, limit: 8 });
-	}
-
-	async function createRelation() {
-		if (!relTarget) {
-			toast.error('Choose a target entity');
-			return;
-		}
-		try {
-			if (relDirection === 'out') {
-				await addRelation({
-					source_id: entityId,
-					target_id: relTarget,
-					relation_type: relType,
-					weight: relWeight
-				});
-			} else {
-				await addRelation({
-					source_id: relTarget,
-					target_id: entityId,
-					relation_type: relType,
-					weight: relWeight
-				});
-			}
-			toast.success('Relation created');
-			relTarget = '';
-			relSearch = '';
-			relResults = [];
-			entity?.refresh();
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Failed to create relation');
-		}
 	}
 </script>
 
@@ -243,75 +213,103 @@
 								<Link2 class="size-4" /> New relation
 							</CardTitle>
 						</CardHeader>
-						<CardContent class="space-y-3">
-							<div class="flex flex-wrap items-end gap-3">
-								<div class="space-y-1">
-									<Label>Direction</Label>
-									<select
-										bind:value={relDirection}
-										class="h-9 rounded-md border border-input bg-background px-3 text-sm"
-									>
-										<option value="out">{e.name} → target</option>
-										<option value="in">target → {e.name}</option>
-									</select>
-								</div>
-								<div class="space-y-1">
-									<Label>Relation type</Label>
-									<Input bind:value={relType} placeholder="e.g. uses" class="w-32" />
-								</div>
-								<div class="space-y-1">
-									<Label>Target entity</Label>
-									<Input
-										bind:value={relSearch}
-										placeholder="Search entity…"
-										class="w-48"
-										onkeydown={(ev) => {
-											if (ev.key === 'Enter') {
-												ev.preventDefault();
-												searchRelTargets();
-											}
-										}}
-									/>
-								</div>
-								<Button variant="outline" onclick={searchRelTargets}>Find</Button>
-							</div>
-
-							{#if relResults.length > 0}
-								<div class="max-h-40 space-y-1 overflow-y-auto rounded-md border p-1">
-									{#each relResults as r}
-										<button
-											type="button"
-											onclick={() => {
-												relTarget = String(r.id);
-												relSearch = r.name;
-												relResults = [];
-											}}
-											class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+						<CardContent>
+							<form
+								{...addRelation.enhance(async (f) => {
+									try {
+										if (await f.submit()) {
+											toast.success('Relation created');
+											relTarget = '';
+											relSearch = '';
+											relResults = [];
+										} else {
+											toast.error(f.fields.allIssues()?.[0]?.message ?? 'Check the form fields');
+										}
+									} catch (e) {
+										toast.error((e as Error)?.message ?? 'Failed to create relation');
+									}
+								})}
+								class="space-y-3"
+							>
+								<input type="hidden" name="source_id" value={entityId} />
+								<input type="hidden" name="target_id" value={relTarget} />
+								<input type="hidden" name="direction" value={relDirection} />
+								<input {...addRelation.fields.weight.as('hidden', relWeight)} />
+								<div class="flex flex-wrap items-end gap-3">
+									<div class="space-y-1">
+										<Label>Direction</Label>
+										<select
+											name="direction"
+											bind:value={relDirection}
+											class="h-9 rounded-md border border-input bg-background px-3 text-sm"
 										>
-											<span class="truncate">{r.name}</span>
-											<Badge variant="outline">{r.type}</Badge>
-										</button>
-									{/each}
+											<option value="out">{e.name} → target</option>
+											<option value="in">target → {e.name}</option>
+										</select>
+									</div>
+									<div class="space-y-1">
+										<Label>Relation type</Label>
+										<Input
+											name="relation_type"
+											bind:value={relType}
+											placeholder="e.g. uses"
+											class="w-32"
+										/>
+									</div>
+									<div class="space-y-1">
+										<Label>Target entity</Label>
+										<Input
+											bind:value={relSearch}
+											placeholder="Search entity…"
+											class="w-48"
+											onkeydown={(ev) => {
+												if (ev.key === 'Enter') {
+													ev.preventDefault();
+													searchRelTargets();
+												}
+											}}
+										/>
+									</div>
+									<Button variant="outline" onclick={searchRelTargets}>Find</Button>
 								</div>
-							{/if}
 
-							<div class="flex items-center gap-3">
-								<span class="text-sm text-muted-foreground"
-									>Weight: {Math.round(relWeight * 100)}%</span
-								>
-								<input
-									type="range"
-									bind:value={relWeight}
-									min={0}
-									max={1}
-									step={0.05}
-									class="flex-1"
-									aria-label="Relation weight"
-								/>
-								<Button onclick={createRelation} class="gap-1">
-									<Plus class="size-4" /> Add relation
-								</Button>
-							</div>
+								{#if relResults.length > 0}
+									<div class="max-h-40 space-y-1 overflow-y-auto rounded-md border p-1">
+										{#each relResults as r}
+											<button
+												type="button"
+												onclick={() => {
+													relTarget = String(r.id);
+													relSearch = r.name;
+													relResults = [];
+												}}
+												class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+											>
+												<span class="truncate">{r.name}</span>
+												<Badge variant="outline">{r.type}</Badge>
+											</button>
+										{/each}
+									</div>
+								{/if}
+
+								<div class="flex items-center gap-3">
+									<span class="text-sm text-muted-foreground"
+										>Weight: {Math.round(relWeight * 100)}%</span
+									>
+									<input
+										type="range"
+										bind:value={relWeight}
+										min={0}
+										max={1}
+										step={0.05}
+										class="flex-1"
+										aria-label="Relation weight"
+									/>
+									<Button type="submit" disabled={addRelation.pending > 0} class="gap-1">
+										<Plus class="size-4" /> Add relation
+									</Button>
+								</div>
+							</form>
 						</CardContent>
 					</Card>
 

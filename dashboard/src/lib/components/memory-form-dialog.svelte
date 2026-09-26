@@ -9,7 +9,8 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Search, X } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
-	import { addMemory, updateMemoryData, getEntities } from '$lib/remote/index.js';
+	import { saveMemory, getEntities } from '$lib/remote/index.js';
+	import { parseTags } from '$lib/remote/parsers';
 	import { MEMORY_TYPES, ALWAYS_TAG } from '@sepia/shared/types';
 
 	let {
@@ -30,7 +31,6 @@
 	let namespace = $state('personal');
 	let entityIds = $state<string[]>([]);
 	let tagsText = $state('');
-	let saving = $state(false);
 
 	let entityQuery = $state('');
 	let entityResults = $state<Awaited<ReturnType<typeof getEntities>>>([]);
@@ -73,13 +73,6 @@
 		}
 	}
 
-	function parseTags(text: string): string[] {
-		return text
-			.split(',')
-			.map((t) => t.trim().toLowerCase().replace(/\s+/g, '-'))
-			.filter(Boolean);
-	}
-
 	/**
 	 * The `always` tag is what puts a rule into the core briefing regardless of
 	 * importance. It edits `tagsText` — the FULL tag set — because a `tags`
@@ -93,32 +86,8 @@
 		tagsText = next.join(', ');
 	}
 
-	async function save() {
-		if (!content.trim()) {
-			toast.error('Memory content is required');
-			return;
-		}
-		saving = true;
-		try {
-			const tags = parseTags(tagsText);
-			if (memory?.id) {
-				await updateMemoryData([
-					String(memory.id),
-					{ content, type, importance, entity_ids: entityIds, tags }
-				]);
-				toast.success('Memory updated');
-			} else {
-				await addMemory({ content, type, importance, namespace, entity_ids: entityIds, tags });
-				toast.success('Memory created');
-			}
-			open = false;
-			onSaved();
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Failed to save memory');
-		} finally {
-			saving = false;
-		}
-	}
+	// The save flow lives in the remote form (`saveMemory`): this dialog renders
+	// named inputs (plus hidden id/importance/entity links), enhance toasts.
 </script>
 
 <Dialog.Root bind:open>
@@ -132,138 +101,167 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="space-y-4 py-2">
-			<div class="space-y-2">
-				<Label for="mem-content">Content</Label>
-				<!-- Fixed height (h-30) with the component's min-h-16 floor dropped: long text
+		<!-- display:contents keeps the dialog's grid layout; the form is the save path. -->
+		<form
+			{...saveMemory.enhance(async (f) => {
+				try {
+					if (await f.submit()) {
+						toast.success(memory?.id ? 'Memory updated' : 'Memory created');
+						open = false;
+						onSaved();
+					} else {
+						toast.error(f.fields.allIssues()?.[0]?.message ?? 'Check the form fields');
+					}
+				} catch (e) {
+					toast.error((e as Error)?.message ?? 'Failed to save memory');
+				}
+			})}
+			class="contents"
+		>
+			<div class="space-y-4 py-2">
+				<!-- .as('hidden') supplies name, type and value; id '' means create. -->
+				<input {...saveMemory.fields.id.as('hidden', String(memory?.id ?? ''))} />
+				{#each entityIds as linkedId (linkedId)}
+					<input type="hidden" name="entity_ids[]" value={linkedId} />
+				{/each}
+				<div class="space-y-2">
+					<Label for="mem-content">Content</Label>
+					<!-- Fixed height (h-30) with the component's min-h-16 floor dropped: long text
 				     scrolls inside instead of growing the dialog past the fields below. -->
-				<Textarea
-					class="field-sizing-none h-30 min-h-0"
-					id="mem-content"
-					bind:value={content}
-					rows={4}
-					placeholder="What did you learn?"
-				/>
-			</div>
-
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-2">
-					<Label for="mem-type">Memory type</Label>
-					<select
-						id="mem-type"
-						bind:value={type}
-						class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-					>
-						{#each MEMORY_TYPES as t}
-							<option value={t}>{t}</option>
-						{/each}
-					</select>
-				</div>
-				<div class="space-y-2">
-					<Label for="mem-ns">Namespace</Label>
-					<select
-						id="mem-ns"
-						bind:value={namespace}
-						class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
-					>
-						{#each namespaces as n}
-							<option value={n}>{n}</option>
-						{/each}
-					</select>
-				</div>
-			</div>
-
-			<div class="space-y-2">
-				<Label for="mem-tags">Tags</Label>
-				<Input
-					id="mem-tags"
-					bind:value={tagsText}
-					placeholder="comma-separated, e.g. user-experience, auth, performance"
-				/>
-			</div>
-
-			<div class="flex items-center justify-between gap-4 rounded-md border p-3">
-				<div class="space-y-1">
-					<Label for="mem-always">Always — load at every session</Label>
-					<p class="text-xs text-muted-foreground">
-						Core briefing rule: loads unconditionally at the start of every AI session, whatever its
-						importance.
-					</p>
-				</div>
-				<Switch id="mem-always" checked={alwaysOn} onCheckedChange={setAlways} />
-			</div>
-
-			<div class="space-y-2">
-				<div class="flex items-center justify-between">
-					<Label>Importance</Label>
-					<span class="text-sm text-muted-foreground">{Math.round(importance * 100)}%</span>
-				</div>
-				<Slider
-					type="single"
-					value={importance}
-					onValueChange={(v: number) => (importance = v)}
-					min={0}
-					max={1}
-					step={0.05}
-				/>
-			</div>
-
-			<div class="space-y-2">
-				<Label>Linked entities (max 3)</Label>
-				<div class="relative">
-					<Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-					<Input
-						bind:value={entityQuery}
-						placeholder="Search entities to link…"
-						class="pl-9"
-						onkeydown={(e) => {
-							if (e.key === 'Enter') {
-								e.preventDefault();
-								searchEntities();
-							}
-						}}
+					<Textarea
+						class="field-sizing-none h-30 min-h-0"
+						id="mem-content"
+						name="content"
+						bind:value={content}
+						rows={4}
+						placeholder="What did you learn?"
 					/>
 				</div>
-				{#if entityResults.length > 0}
-					<div class="max-h-40 space-y-1 overflow-y-auto rounded-md border p-1">
-						{#each entityResults as e}
-							<button
-								type="button"
-								onclick={() => toggleEntity(String(e.id))}
-								class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
-							>
-								<span class="truncate">{e.name}</span>
-								{#if entityIds.includes(String(e.id))}
-									<Badge variant="secondary">Linked</Badge>
-								{/if}
-							</button>
-						{/each}
-					</div>
-				{/if}
-				{#if entityIds.length > 0}
-					<div class="flex flex-wrap gap-1">
-						{#each entityIds as id}
-							<Badge variant="outline" class="gap-1 pr-1">
-								{id.slice(0, 8)}…
-								<button type="button" onclick={() => toggleEntity(id)} aria-label="Remove link">
-									<X class="size-3" />
-								</button>
-							</Badge>
-						{/each}
-					</div>
-				{/if}
-			</div>
-		</div>
 
-		<Dialog.Footer>
-			<Dialog.Close>
-				{#snippet child({ props })}
-					<Button variant="ghost" {...props}>Cancel</Button>
-				{/snippet}
-			</Dialog.Close>
-			<Button onclick={save} disabled={saving}>
-				{saving ? 'Saving…' : memory?.id ? 'Save changes' : 'Create memory'}
-			</Button>
-		</Dialog.Footer>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label for="mem-type">Memory type</Label>
+						<select
+							id="mem-type"
+							name="type"
+							bind:value={type}
+							class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+						>
+							{#each MEMORY_TYPES as t}
+								<option value={t}>{t}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="space-y-2">
+						<Label for="mem-ns">Namespace</Label>
+						<select
+							id="mem-ns"
+							name="namespace"
+							bind:value={namespace}
+							class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+						>
+							{#each namespaces as n}
+								<option value={n}>{n}</option>
+							{/each}
+						</select>
+					</div>
+				</div>
+
+				<div class="space-y-2">
+					<Label for="mem-tags">Tags</Label>
+					<Input
+						id="mem-tags"
+						name="tags"
+						bind:value={tagsText}
+						placeholder="comma-separated, e.g. user-experience, auth, performance"
+					/>
+				</div>
+
+				<div class="flex items-center justify-between gap-4 rounded-md border p-3">
+					<div class="space-y-1">
+						<Label for="mem-always">Always — load at every session</Label>
+						<p class="text-xs text-muted-foreground">
+							Core briefing rule: loads unconditionally at the start of every AI session, whatever
+							its importance.
+						</p>
+					</div>
+					<Switch id="mem-always" checked={alwaysOn} onCheckedChange={setAlways} />
+				</div>
+
+				<div class="space-y-2">
+					<div class="flex items-center justify-between">
+						<Label>Importance</Label>
+						<span class="text-sm text-muted-foreground">{Math.round(importance * 100)}%</span>
+					</div>
+					<Slider
+						type="single"
+						value={importance}
+						onValueChange={(v: number) => (importance = v)}
+						min={0}
+						max={1}
+						step={0.05}
+					/>
+					<!-- The slider is not a form control; this mirrors its value (n: → number). -->
+					<input {...saveMemory.fields.importance.as('hidden', importance)} />
+				</div>
+
+				<div class="space-y-2">
+					<Label>Linked entities (max 3)</Label>
+					<div class="relative">
+						<Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
+						<Input
+							bind:value={entityQuery}
+							placeholder="Search entities to link…"
+							class="pl-9"
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									e.preventDefault();
+									searchEntities();
+								}
+							}}
+						/>
+					</div>
+					{#if entityResults.length > 0}
+						<div class="max-h-40 space-y-1 overflow-y-auto rounded-md border p-1">
+							{#each entityResults as e}
+								<button
+									type="button"
+									onclick={() => toggleEntity(String(e.id))}
+									class="flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-sm hover:bg-accent"
+								>
+									<span class="truncate">{e.name}</span>
+									{#if entityIds.includes(String(e.id))}
+										<Badge variant="secondary">Linked</Badge>
+									{/if}
+								</button>
+							{/each}
+						</div>
+					{/if}
+					{#if entityIds.length > 0}
+						<div class="flex flex-wrap gap-1">
+							{#each entityIds as id}
+								<Badge variant="outline" class="gap-1 pr-1">
+									{id.slice(0, 8)}…
+									<button type="button" onclick={() => toggleEntity(id)} aria-label="Remove link">
+										<X class="size-3" />
+									</button>
+								</Badge>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			</div>
+
+			<Dialog.Footer>
+				<Dialog.Close>
+					{#snippet child({ props })}
+						<Button variant="ghost" {...props}>Cancel</Button>
+					{/snippet}
+				</Dialog.Close>
+				<Button type="submit" disabled={saveMemory.pending > 0}>
+					{saveMemory.pending > 0 ? 'Saving…' : memory?.id ? 'Save changes' : 'Create memory'}
+				</Button>
+			</Dialog.Footer>
+		</form>
 	</Dialog.Content>
 </Dialog.Root>

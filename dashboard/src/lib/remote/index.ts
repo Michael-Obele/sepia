@@ -4,18 +4,12 @@
 
 export { getStatsData } from './stats.remote';
 export { getNamespaces, addNamespace, removeNamespace } from './namespaces.remote';
-export {
-	getEntities,
-	getEntityDetail,
-	addEntity,
-	updateEntityData,
-	removeEntity
-} from './entities.remote';
+export { getEntities, getEntityDetail, saveEntity, removeEntity } from './entities.remote';
 export { getBriefingData } from './briefing.remote';
 export {
 	getMemories,
 	getMemoryDetail,
-	addMemory,
+	saveMemory,
 	updateMemoryData,
 	removeMemory,
 	ingestConversationData,

@@ -68,34 +68,20 @@
 		}
 	}
 
-	async function setTtl(ttlDays: number) {
-		saving = true;
-		try {
-			await updateTelemetryTtl(ttlDays);
-			toast.success(`Raw query text kept for ${ttlDays} days`, {
-				description:
-					'Counters are untouched — only the expiry of raw query text and returned ids changed.'
-			});
-			settings?.refresh();
-			report?.refresh();
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Could not change the retention window');
-		} finally {
-			saving = false;
-		}
-	}
-
 	async function runErase() {
 		confirmErase = false;
 		erasing = true;
 		try {
-			const deleted = await eraseTelemetry();
-			toast.success(`Erased ${deleted} telemetry ${deleted === 1 ? 'row' : 'rows'}`, {
-				description:
-					'The setting is unchanged — turn telemetry off as well if you want it to stop collecting.'
-			});
-			report?.refresh();
-			events?.refresh();
+			// The form's default behaviour — invalidating every query on success —
+			// replaces the manual report/events refreshes this used to do.
+			const ok = await eraseTelemetry.submit();
+			if (ok) {
+				const deleted = eraseTelemetry.result ?? 0;
+				toast.success(`Erased ${deleted} telemetry ${deleted === 1 ? 'row' : 'rows'}`, {
+					description:
+						'The setting is unchanged — turn telemetry off as well if you want it to stop collecting.'
+				});
+			}
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Could not erase telemetry');
 		} finally {
@@ -260,8 +246,25 @@
 
 					<!-- Retention is shown whether telemetry is on or off: the current
 					     window is part of what the owner is agreeing to, so it is never
-					     hidden behind a tier. -->
-					<div class="space-y-2">
+					     hidden behind a tier. The presets are the submit buttons of one
+					     remote form, so the choice survives without JavaScript. -->
+					<form
+						{...updateTelemetryTtl.enhance(async (f) => {
+							try {
+								if (await f.submit()) {
+									toast.success(`Raw query text kept for ${f.result?.ttlDays} days`, {
+										description:
+											'Counters are untouched — only the expiry of raw query text and returned ids changed.'
+									});
+								} else {
+									toast.error('Retention must be between 1 and 365 days');
+								}
+							} catch (e) {
+								toast.error((e as Error)?.message ?? 'Could not change the retention window');
+							}
+						})}
+						class="space-y-2"
+					>
 						<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
 							<span class="space-y-0.5">
 								<span class="block text-sm font-medium">
@@ -279,8 +282,8 @@
 									<Button
 										size="sm"
 										variant={s.ttlDays === days ? 'default' : 'outline'}
-										disabled={saving}
-										onclick={() => setTtl(days)}
+										disabled={updateTelemetryTtl.pending > 0}
+										{...updateTelemetryTtl.fields.ttlDays.as('submit', days)}
 									>
 										{days === 365 ? '1 year' : `${days} days`}
 									</Button>
@@ -291,7 +294,7 @@
 							Expired payloads are cleared when this page is next read — this project has no
 							scheduler, so retention is enforced on read rather than pretended.
 						</p>
-					</div>
+					</form>
 				{:catch e}
 					<p class="text-sm text-destructive">
 						{(e as Error)?.message ?? 'Failed to load telemetry settings'}
@@ -465,7 +468,7 @@
 		<Card.Header>
 			<Card.Title class="text-base">Erase</Card.Title>
 			<Card.Description>
-				Deleting is also how you enforce the retention promise early — no waiting for the 30-day
+				Deleting is also how you enforce the retention promise early — no waiting for the configured
 				window.
 			</Card.Description>
 		</Card.Header>
@@ -474,9 +477,12 @@
 				Removes every telemetry row for this account. It does not change the setting above, so if
 				telemetry is still on it will simply start recording again.
 			</p>
-			<Button variant="outline" disabled={erasing} onclick={() => (confirmErase = true)}>
-				{erasing ? 'Erasing…' : 'Erase all telemetry'}
-			</Button>
+			<!-- The form wraps the trigger; confirming in the dialog below submits it. -->
+			<form {...eraseTelemetry} class="contents">
+				<Button variant="outline" disabled={erasing} onclick={() => (confirmErase = true)}>
+					{erasing ? 'Erasing…' : 'Erase all telemetry'}
+				</Button>
+			</form>
 		</Card.Content>
 	</Card.Root>
 </div>

@@ -36,7 +36,6 @@
 
 	let newName = $state('');
 	let newDesc = $state('');
-	let creating = $state(false);
 	let exporting = $state(false);
 
 	// Delete confirmation — the dialog gates the actual delete.
@@ -45,25 +44,6 @@
 		description: string;
 		run: () => void | Promise<void>;
 	} | null>(null);
-
-	async function createNs() {
-		if (!newName.trim()) {
-			toast.error('Namespace name is required');
-			return;
-		}
-		creating = true;
-		try {
-			await addNamespace({ name: newName.trim(), description: newDesc.trim() });
-			toast.success(`Namespace "${newName.trim()}" created`);
-			newName = '';
-			newDesc = '';
-			namespaces?.refresh();
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Failed to create namespace');
-		} finally {
-			creating = false;
-		}
-	}
 
 	async function delNs(id: string, name: string) {
 		if (name === 'personal') {
@@ -158,14 +138,40 @@
 			>
 		</CardHeader>
 		<CardContent class="space-y-4">
-			<div class="flex flex-col gap-2 sm:flex-row">
-				<Input bind:value={newName} placeholder="New namespace name" class="sm:max-w-56" />
-				<Input bind:value={newDesc} placeholder="Description (optional)" class="flex-1" />
-				<Button onclick={createNs} disabled={creating} class="gap-1">
+			<form
+				{...addNamespace.enhance(async (f) => {
+					try {
+						if (await f.submit()) {
+							toast.success(`Namespace "${newName.trim()}" created`);
+							// Clearing the bound state empties the inputs — the form itself
+							// is not reset by enhance.
+							newName = '';
+							newDesc = '';
+						} else {
+							toast.error(f.fields.allIssues()?.[0]?.message ?? 'Check the form fields');
+						}
+					} catch (e) {
+						toast.error((e as Error)?.message ?? 'Failed to create namespace');
+					}
+				})}
+				class="flex flex-col gap-2 sm:flex-row"
+			>
+				<Input
+					bind:value={newName}
+					name="name"
+					placeholder="New namespace name"
+					class="sm:max-w-56"
+				/>
+				<Input
+					bind:value={newDesc}
+					name="description"
+					placeholder="Description (optional)"
+					class="flex-1"
+				/>
+				<Button type="submit" disabled={addNamespace.pending > 0} class="gap-1">
 					<Plus class="size-4" /> Create
 				</Button>
-			</div>
-
+			</form>
 			{#if namespaces}
 				{#await namespaces}
 					<div class="space-y-2">
