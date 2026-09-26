@@ -2,8 +2,13 @@ import type { McpServer } from "tmcp";
 import * as v from "valibot";
 import { RelationToolInput } from "@sepia/shared";
 import { db } from "../db.ts";
-import { createRelation, deleteRelation, listRelations } from "@sepia/shared";
-import { safe, SEPIA_ICON } from "./util.ts";
+import {
+  createRelation,
+  deleteRelation,
+  listRelations,
+  recordTelemetrySafe,
+} from "@sepia/shared";
+import { safe, SEPIA_ICON, telemetrySession } from "./util.ts";
 
 export function registerRelationTools(server: McpServer<any, any>) {
   server.tool(
@@ -19,6 +24,12 @@ export function registerRelationTools(server: McpServer<any, any>) {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
       const sql = db();
+      recordTelemetrySafe(sql, {
+        ownerId: user.id,
+        sessionHash: telemetrySession(server.ctx),
+        tool: "manage_relation",
+        action: args.action,
+      });
       switch (args.action) {
         case "create": {
           if (!args.relation)

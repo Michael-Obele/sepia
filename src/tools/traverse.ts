@@ -2,8 +2,8 @@ import type { McpServer } from "tmcp";
 import * as v from "valibot";
 import { TraverseToolInput } from "@sepia/shared";
 import { db } from "../db.ts";
-import { traverseGraph } from "@sepia/shared";
-import { safe, SEPIA_ICON } from "./util.ts";
+import { recordTelemetrySafe, traverseGraph } from "@sepia/shared";
+import { safe, SEPIA_ICON, telemetrySession } from "./util.ts";
 
 export function registerTraverseTools(server: McpServer<any, any>) {
   server.tool(
@@ -19,12 +19,15 @@ export function registerTraverseTools(server: McpServer<any, any>) {
     safe(async (args: v.InferInput<typeof TraverseToolInput>) => {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
-      const graph = await traverseGraph(
-        db(),
-        user.id,
-        args.start_id,
-        args.depth,
-      );
+      const sql = db();
+      // Read-only walk: counters only — which start node/depth were asked for
+      // is derived from the row, never the entity's name or contents.
+      recordTelemetrySafe(sql, {
+        ownerId: user.id,
+        sessionHash: telemetrySession(server.ctx),
+        tool: "traverse_graph",
+      });
+      const graph = await traverseGraph(sql, user.id, args.start_id, args.depth);
       return {
         start_id: args.start_id,
         ...graph,

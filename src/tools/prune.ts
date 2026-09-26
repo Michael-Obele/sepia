@@ -1,7 +1,11 @@
 import type { McpServer } from "tmcp";
-import { PruneMemoriesToolInput, pruneMemories } from "@sepia/shared";
+import {
+  PruneMemoriesToolInput,
+  pruneMemories,
+  recordTelemetrySafe,
+} from "@sepia/shared";
 import { db } from "../db.ts";
-import { safe, SEPIA_ICON } from "./util.ts";
+import { safe, SEPIA_ICON, telemetrySession } from "./util.ts";
 
 export function registerPruneMemoriesTools(server: McpServer<any, any>) {
   server.tool(
@@ -17,7 +21,15 @@ export function registerPruneMemoriesTools(server: McpServer<any, any>) {
     safe(async () => {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
-      return pruneMemories(db(), user.id);
+      const sql = db();
+      // Counters only. This tool is destructive and content-touching:
+      // telemetry records that it RAN, never what it swept.
+      recordTelemetrySafe(sql, {
+        ownerId: user.id,
+        sessionHash: telemetrySession(server.ctx),
+        tool: "prune_memories",
+      });
+      return pruneMemories(sql, user.id);
     }),
   );
 }

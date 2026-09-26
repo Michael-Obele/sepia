@@ -8,9 +8,10 @@ import {
   deleteEntity,
   findEntities,
   getEntity,
+  recordTelemetrySafe,
   updateEntity,
 } from "@sepia/shared";
-import { safe, SEPIA_ICON } from "./util.ts";
+import { safe, SEPIA_ICON, telemetrySession } from "./util.ts";
 
 export function registerEntityTools(server: McpServer<any, any>) {
   server.tool(
@@ -26,6 +27,12 @@ export function registerEntityTools(server: McpServer<any, any>) {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
       const sql = db();
+      recordTelemetrySafe(sql, {
+        ownerId: user.id,
+        sessionHash: telemetrySession(server.ctx),
+        tool: "manage_entity",
+        action: args.action,
+      });
       switch (args.action) {
         case "create": {
           if (!args.entity) throw new Error("action=create requires entity");
