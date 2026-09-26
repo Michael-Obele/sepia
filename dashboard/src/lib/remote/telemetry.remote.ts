@@ -7,6 +7,7 @@ import {
 	listTelemetry,
 	purgeExpiredTelemetry,
 	setTelemetrySettings,
+	setTelemetryTtl,
 	telemetrySummary
 } from '@sepia/shared';
 import { requireAuth } from '$lib/server/auth';
@@ -51,6 +52,19 @@ export const updateTelemetryTier = command(
 	async ({ tier, ttlDays }) => {
 		const user = await requireAuth();
 		return setTelemetrySettings(db(), user.id, { tier, ttlDays });
+	}
+);
+
+/**
+ * Change retention only. Deliberately separate from the tier command: folding
+ * the TTL into `setTelemetrySettings` would re-stamp `enabledAt` and make
+ * "recording since" claim the switch was just flipped because the TTL moved.
+ */
+export const updateTelemetryTtl = command(
+	v.pipe(v.number(), v.minValue(1), v.maxValue(365)),
+	async (ttlDays) => {
+		const user = await requireAuth();
+		return setTelemetryTtl(db(), user.id, ttlDays);
 	}
 );
 

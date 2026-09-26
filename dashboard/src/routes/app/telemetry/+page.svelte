@@ -14,7 +14,8 @@
 		getTelemetry,
 		getTelemetryEvents,
 		getTelemetryReport,
-		updateTelemetryTier
+		updateTelemetryTier,
+		updateTelemetryTtl
 	} from '$lib/remote/index.js';
 	import type { TelemetryTier } from '@sepia/shared';
 
@@ -31,6 +32,9 @@
 	let saving = $state(false);
 	let erasing = $state(false);
 	let confirmErase = $state(false);
+
+	/** Retention choices offered here — the schema allows any 1–365. */
+	const TTL_PRESETS = [7, 30, 90, 180, 365];
 
 	function pct(n: number, of: number): string {
 		if (!of) return '—';
@@ -59,6 +63,23 @@
 			events?.refresh();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Could not change the telemetry setting');
+		} finally {
+			saving = false;
+		}
+	}
+
+	async function setTtl(ttlDays: number) {
+		saving = true;
+		try {
+			await updateTelemetryTtl(ttlDays);
+			toast.success(`Raw query text kept for ${ttlDays} days`, {
+				description:
+					'Counters are untouched — only the expiry of raw query text and returned ids changed.'
+			});
+			settings?.refresh();
+			report?.refresh();
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Could not change the retention window');
 		} finally {
 			saving = false;
 		}
@@ -157,7 +178,8 @@
 				<ul class="mt-2 space-y-1 text-xs text-muted-foreground">
 					<li>
 						The <strong class="font-medium text-foreground">raw query text</strong> and the ids of what
-						it returned, kept for 30 days and then cleared.
+						it returned, kept only for your retention window (1–365 days, default 30, set under Collecting)
+						and then cleared.
 					</li>
 					<li>
 						This is the tier that turns a real failure into something reproducible, which is why it
@@ -233,13 +255,43 @@
 									onclick={() => setTier('transcripts')}>Counters + query text</Button
 								>
 							</div>
-							<p class="text-xs text-muted-foreground">
-								Raw query text and returned ids are cleared after {s.ttlDays} days, when this page is
-								next opened — this project has no scheduler, so retention is enforced on read rather than
-								pretended.
-							</p>
 						</div>
 					{/if}
+
+					<!-- Retention is shown whether telemetry is on or off: the current
+					     window is part of what the owner is agreeing to, so it is never
+					     hidden behind a tier. -->
+					<div class="space-y-2">
+						<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+							<span class="space-y-0.5">
+								<span class="block text-sm font-medium">
+									Raw query text kept for {s.ttlDays}
+									{s.ttlDays === 1 ? 'day' : 'days'}
+								</span>
+								<span class="block text-xs text-muted-foreground">
+									{s.tier === 'off'
+										? 'Applies to query text once telemetry is on at the query-text tier.'
+										: 'Counters are kept until you erase them — only raw query text and returned ids expire.'}
+								</span>
+							</span>
+							<div class="flex flex-wrap gap-2">
+								{#each TTL_PRESETS as days (days)}
+									<Button
+										size="sm"
+										variant={s.ttlDays === days ? 'default' : 'outline'}
+										disabled={saving}
+										onclick={() => setTtl(days)}
+									>
+										{days === 365 ? '1 year' : `${days} days`}
+									</Button>
+								{/each}
+							</div>
+						</div>
+						<p class="text-xs text-muted-foreground">
+							Expired payloads are cleared when this page is next read — this project has no
+							scheduler, so retention is enforced on read rather than pretended.
+						</p>
+					</div>
 				{:catch e}
 					<p class="text-sm text-destructive">
 						{(e as Error)?.message ?? 'Failed to load telemetry settings'}

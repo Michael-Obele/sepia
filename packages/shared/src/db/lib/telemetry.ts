@@ -98,6 +98,33 @@ export async function setTelemetrySettings(
   return { tier: input.tier, ttlDays, enabledAt };
 }
 
+/**
+ * Retention only. Deliberately NOT a call to `setTelemetrySettings`: that one
+ * re-stamps `enabledAt`, which is right when the tier changes and wrong when
+ * the only thing that changed is how long payloads live — "recording since"
+ * must not claim the switch was just flipped because the TTL moved.
+ *
+ * Upserts, so an account can configure retention before ever enabling
+ * telemetry (a missing row keeps the `off` default).
+ */
+export async function setTelemetryTtl(
+  db: Db,
+  ownerId: string,
+  ttlDays: number,
+) {
+  if (!Number.isFinite(ttlDays))
+    throw new Error("ttl must be a number of days between 1 and 365");
+  const days = Math.min(Math.max(Math.round(ttlDays), 1), 365);
+  await db
+    .insert(telemetrySettings)
+    .values({ ownerId, ttlDays: days })
+    .onConflictDoUpdate({
+      target: telemetrySettings.ownerId,
+      set: { ttlDays: days, updatedAt: sql`now()` },
+    });
+  return { ttlDays: days };
+}
+
 async function resolveTier(db: Db, ownerId: string) {
   const cached = tierCache.get(ownerId);
   if (cached && Date.now() - cached.at < TIER_CACHE_MS) return cached;

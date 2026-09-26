@@ -35,5 +35,6 @@ export {
 	getTelemetryReport,
 	getTelemetryEvents,
 	updateTelemetryTier,
+	updateTelemetryTtl,
 	eraseTelemetry
 } from './telemetry.remote';
