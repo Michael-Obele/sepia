@@ -363,12 +363,16 @@ account starts off.
   dashboard. There is no third-party analytics endpoint, no phone-home, no vendor.
 - **Two tiers**, and you choose one:
   - `signals` — **counters only**: which tool ran, which ranking engine served a search, how
-    many query terms matched, hit count, latency, payload size, and a **salted, day-rotating
+    many query terms matched, hit count, latency, payload size, the **options the search was
+    called with** (page size, precision dial, scope filters, and whether an engine was asked
+    for), and a **salted, day-rotating
     fingerprint** of the query. Equivalent queries can be grouped, but the query text is not
     stored and cannot be recovered, and the daily salt rotation makes cross-day profiling
-    impossible by construction.
+    impossible by construction. The options are what let an *empty* result be told apart from
+    one the caller deliberately narrowed — without them every miss looks identical.
   - `transcripts` — additionally stores the raw **query text and returned ids**, deleted
-    after 30 days. This is the tier that turns a real failure into a reproducible case.
+    after the retention window (1–365 days, default 30). This is the tier that turns a real
+    failure into a reproducible case.
 - **Never recorded, at either tier:** memory content, entity names, agent conversation, or
   credentials.
 - **You stay in control:** view every stored row, or erase all of it, from the dashboard or
@@ -382,9 +386,13 @@ somebody noticing that something felt wrong.
 
 ### What telemetry is _not_
 
-It is not product analytics and not a growth instrument. It answers four operational
-questions the server otherwise cannot: are searches returning nothing; is the agent asking
-the same question twice in one session; did the session-start briefing fire before the agent
-started working; and did latency or payload size regress. The summary reports its own
+It is not product analytics and not a growth instrument. It answers five operational
+questions the server otherwise cannot: are searches returning nothing, and if so was the
+request narrowed by the caller's own filters or precision dial; is the agent asking the same
+question twice in one session; did the session-start briefing fire before the agent
+started working; did a search fill its requested page (so more existed); and did latency or
+payload size regress. The summary reports its own
 **coverage** — how many searches it can actually attribute to an outcome — rather than
-presenting a confident number built on uncorrelated rows.
+presenting a confident number built on uncorrelated rows, and it labels a chained follow-up
+search as context rather than as a failure. Rows that came back empty or thin are listed
+individually on the dashboard with the options each was called with.

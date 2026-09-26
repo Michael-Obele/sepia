@@ -140,10 +140,9 @@ Sepia's docs are the agents' only window into the server. When you add a feature
 Rule: no feature is done until its docs are updated. Check the diff of every always-on file before committing.
 
 <!-- sepia:start -->
-
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
 
-<!-- sepia-docs-version: 1.11.0 -->
+<!-- sepia-docs-version: 1.12.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (any `AGENTS.md`-aware agent: Codex, OpenCode, Copilot, Cursor, Zed). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 

@@ -1,5 +1,5 @@
 ---
-version: "1.11.0"
+version: "1.12.0"
 name: sepia
 description: >-
   Use when the user's AI assistant should recall or persist long-term knowledge
