@@ -108,6 +108,10 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 
 Do NOT start new dev servers (vite, `bun run dev`, `bun --hot`, etc.) and do NOT run builds/deploys on your own initiative. The user always has dev servers running on specific ports. Ask the user which server/port the dev environment is running on, then use it (e.g. for browser preview). If you think a build or deploy is needed, ask first — the user knows the setup.
 
+## Dashboard remote functions — form first
+
+The SvelteKit dashboard (`dashboard/`) prefers remote `form` over `command` for any mutation that has form inputs; `command` is reserved for input-less actions (bare buttons, dialog confirmations, toggles). Full rule, gotchas, and patterns: `dashboard/AGENTS.md` → "Data Fetching & Mutations (Remote Functions)".
+
 ## Sepia docs — keep in sync when adding features
 
 Sepia's docs are the agents' only window into the server. When you add a feature (new tool, action, field, endpoint, or behavior change), update ALL of these before calling it done:

@@ -65,9 +65,16 @@ Default to **Remote Functions** (experimental `@sveltejs/kit` features or standa
 - **Barrel Exports**: Use `src/lib/remote/index.ts` to re-export all functions individually (not `export *`) to allow for better documentation and discovery.
 - **Flavors**:
   - `query`: For reading dynamic data. Supports `refresh()`, `loading`, `error`.
-  - `form`: For mutations via `<form>`. Supports progressive enhancement via `enhance`. Always prefer `form` components with `bind:value` or `.as()` attributes over manual `async handleSubmit` functions.
-  - `command`: For mutations triggered by scripts/buttons without a form.
+  - `form`: For mutations via `<form>`. Supports progressive enhancement via `enhance`. **This is the default for mutations.**
+  - `command`: Only for mutations that are NOT bound to a form — a bare button/dialog/toggle action with no inputs (deletes behind `ConfirmDeleteDialog`, `signOut`, `runPruneMemories`, `createApiKey`, Switch toggles).
   - `prerender`: For data that can be fetched at build time.
+- **Form first, command by exception**: prefer `form` wherever the mutation comes from form inputs. The official docs say *"Prefer `form` where possible, since it gracefully degrades if JavaScript is disabled or fails to load"*, and a form also invalidates all queries on success (replacing manual `query.refresh()` chains) while `command` does nothing by default. Before adding a `command`, ask: does a `<form>` with inputs fit this UI? If yes, it is a form. Patterns that work here:
+  - Inputs keep `bind:value` and gain a `name` attribute — submission reads `FormData` from the DOM, so `.as()` is not strictly required for text/select/textarea fields.
+  - Preset buttons: `form.fields.x.as('submit', value)` (numbers coerce through the generated `n:` prefix). Never put an explicit `type=` next to a spread from `.as()` — `'type' is specified more than once` — `.as('hidden', v)` already includes it.
+  - Non-input controls (Sliders, Switches, custom pickers) mirror their value through a hidden input: `<input {...form.fields.x.as('hidden', x)} />`.
+  - In dialogs, wrap fields + footer in `<form {...f.enhance(...)} class="contents">` as a direct child of `Dialog.Content` — `display:contents` keeps the dialog's grid layout unchanged.
+  - The form schema is the UI shape (strings, comma-separated tags, textarea line blocks); re-validate the built payload with `v.parse(SharedInput, payload)` in the handler so validation parity with `@sepia/shared` is kept.
+  - `enhance` callback shape: try/catch around `if (await f.submit()) { toast + close } else { toast(f.fields.allIssues()?.[0]?.message) }` — server errors throw, validation failures return false.
 - **Validation**: Always validate inputs using a Standard Schema library, preferably **Valibot**.
 - **Form Usage**: Always use the `form` object and its fields (e.g., `form.fields.name.as('text')`) to bind to native HTML elements. Avoid creating custom `handleSubmit` async functions to manually call remote functions; instead, let the form's native submission or `enhance` handle the interaction.
 - **Client-side Validation**: Use `preflight(schema)` for client-side validation before submission where applicable.
