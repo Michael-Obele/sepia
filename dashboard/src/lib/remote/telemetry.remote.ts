@@ -8,6 +8,7 @@ import {
 	purgeExpiredTelemetry,
 	setTelemetrySettings,
 	setTelemetryTtl,
+	telemetryFailures,
 	telemetrySummary
 } from '@sepia/shared';
 import { requireAuth } from '$lib/server/auth';
@@ -41,6 +42,16 @@ export const getTelemetryReport = query(async () => {
 export const getTelemetryEvents = query(v.optional(v.number(), 100), async (limit) => {
 	const user = await requireAuth();
 	return listTelemetry(db(), user.id, limit);
+});
+
+/**
+ * The searches worth a human's attention: empty, or covering under half the
+ * query. Separate from the summary because a row carries raw query text — it
+ * is read only when the owner opens this page, not on every report.
+ */
+export const getTelemetryFailures = query(v.optional(v.number(), 25), async (limit) => {
+	const user = await requireAuth();
+	return telemetryFailures(db(), user.id, WINDOW_DAYS, limit);
 });
 
 /** Change the tier, including turning it off. */

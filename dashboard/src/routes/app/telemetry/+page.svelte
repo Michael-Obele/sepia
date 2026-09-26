@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Activity, ShieldCheck, TriangleAlert } from '@lucide/svelte';
+	import { Activity, SearchX, ShieldCheck, TriangleAlert } from '@lucide/svelte';
 	import { toast } from 'svelte-sonner';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -13,6 +13,7 @@
 		eraseTelemetry,
 		getTelemetry,
 		getTelemetryEvents,
+		getTelemetryFailures,
 		getTelemetryReport,
 		updateTelemetryTier,
 		updateTelemetryTtl
@@ -28,6 +29,7 @@
 	const settings = $derived(isAuthed() ? getTelemetry() : null);
 	const report = $derived(isAuthed() ? getTelemetryReport() : null);
 	const events = $derived(isAuthed() ? getTelemetryEvents(50) : null);
+	const failures = $derived(isAuthed() ? getTelemetryFailures(25) : null);
 
 	let saving = $state(false);
 	let erasing = $state(false);
@@ -145,7 +147,9 @@
 				<ul class="mt-2 space-y-1 text-xs text-muted-foreground">
 					<li>Which tool ran, and which field a setting had.</li>
 					<li>
-						For a search: how many terms matched, how many results came back, latency, payload size.
+						For a search: how many terms matched, how many results came back, latency, payload size,
+						and the options it was called with — page size, precision dial, scope filters. That is
+						what lets an empty result be told apart from one the caller deliberately narrowed.
 					</li>
 					<li>
 						A salted, <strong class="font-medium text-foreground">day-rotating</strong> fingerprint of
@@ -341,6 +345,11 @@
 											>({pct(r.zero_result, r.searches)})</span
 										>
 									</div>
+									<div class="text-[11px] text-muted-foreground tabular-nums">
+										bare {r.zero_bare} · precision {r.zero_precision} · filtered {r.zero_filtered}{r.zero_unknown
+											? ` · unclassifiable ${r.zero_unknown}`
+											: ''}
+									</div>
 								</div>
 								<div class="rounded-lg border p-4">
 									<div class="text-2xl font-semibold tabular-nums">{r.repeated}</div>
@@ -365,9 +374,34 @@
 									</dd>
 								</div>
 								<div class="flex flex-wrap gap-x-2">
-									<dt>Follow-up search within 120s</dt>
+									<dt>Chained — another search within 120 s</dt>
 									<dd class="text-foreground tabular-nums">
 										{r.reformulated} ({pct(r.reformulated, r.correlated_searches)} of attributable searches)
+										<span class="text-muted-foreground">— context, not a failure rate</span>
+									</dd>
+								</div>
+								<div class="flex flex-wrap gap-x-2">
+									<dt>Retried after an empty result</dt>
+									<dd class="text-foreground tabular-nums">
+										{r.retried_after_zero} ({pct(r.retried_after_zero, r.correlated_searches)} of attributable
+										searches)
+										<span class="text-muted-foreground">— the real “that didn’t work” signal</span>
+									</dd>
+								</div>
+								<div class="flex flex-wrap gap-x-2">
+									<dt>Out of page</dt>
+									<dd class="text-foreground tabular-nums">
+										{r.truncated} ({pct(r.truncated, r.searches)}) filled the requested page — more
+										existed
+									</dd>
+								</div>
+								<div class="flex flex-wrap gap-x-2">
+									<dt>Coverage</dt>
+									<dd class="text-foreground tabular-nums">
+										avg {r.avg_coverage ?? '—'} · full {r.full_coverage}/{r.coveraged_searches} ({pct(
+											r.full_coverage,
+											r.coveraged_searches
+										)})
 									</dd>
 								</div>
 								<div class="flex flex-wrap gap-x-2">
@@ -385,7 +419,16 @@
 									<div class="flex flex-wrap gap-x-2">
 										<dt>By engine</dt>
 										<dd class="text-foreground">
-											{r.by_engine.map((e) => `${e.engine}: ${e.searches}`).join(' · ')}
+											{r.by_engine
+												.map(
+													(e) =>
+														`${e.engine}: ${e.searches}${e.explicit ? ` (${e.explicit} asked for)` : ''}`
+												)
+												.join(' · ')}
+											<span class="text-muted-foreground">
+												— rows that asked for an engine are self-selected, so this is an
+												observation, not an A/B
+											</span>
 										</dd>
 									</div>
 								{/if}
@@ -399,6 +442,89 @@
 				{:catch e}
 					<p class="text-sm text-destructive">
 						{(e as Error)?.message ?? 'Failed to load the summary'}
+					</p>
+				{/await}
+			{/if}
+		</Card.Content>
+	</Card.Root>
+
+	<!-- The queue, not the count: a zero-result row is only actionable once you
+	     can see which options it was called with. -->
+	<Card.Root>
+		<Card.Header>
+			<Card.Title class="flex items-center gap-2 text-base">
+				<SearchX class="size-4" />
+				Search failures
+			</Card.Title>
+			<Card.Description>
+				Empty results, or ones covering under half the query, from the last 30 days — with the
+				options each was called with, so the cause is read instead of guessed.
+			</Card.Description>
+		</Card.Header>
+		<Card.Content>
+			{#if failures}
+				{#await failures}
+					<div class="space-y-2">
+						{#each [0, 1, 2] as i (i)}<Skeleton class="h-12 w-full" />{/each}
+					</div>
+				{:then rows}
+					{#if rows.length === 0}
+						<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+							Nothing came back empty or thin in this window.
+						</p>
+					{:else}
+						<ScrollArea class="h-80 rounded-lg border">
+							<ul class="divide-y">
+								{#each rows as row (row.id)}
+									<li class="space-y-1 p-3">
+										<div class="flex flex-wrap items-center gap-2 text-xs">
+											<span class="text-muted-foreground tabular-nums">{fmt(row.createdAt)}</span>
+											<Badge variant="secondary" class="font-mono text-[10px]">search</Badge>
+											{#if row.engine}
+												<Badge variant="outline" class="font-mono text-[10px]">{row.engine}</Badge>
+											{/if}
+											<span class="text-muted-foreground tabular-nums">
+												{row.hitCount === 0
+													? 'empty'
+													: `${row.bestMatchedTerms ?? 0}/${row.terms ?? 0} terms`} · {row.hitCount ??
+													0}
+												hits
+												{#if row.options?.min_terms !== undefined}
+													· min_terms {row.options.min_terms}{/if}
+												{#if row.options?.limit !== undefined}
+													· limit {row.options.limit}{/if}
+												{#if row.options?.namespace}
+													· ns {row.options.namespace}{/if}
+												{#if row.options?.type}
+													· type {row.options.type}{/if}
+												{#if row.options?.engine}
+													· asked for {row.options.engine}{/if}
+												{#if !row.options}
+													· options not recorded (older row){/if}
+											</span>
+										</div>
+										{#if row.queryText}
+											<p class="font-mono text-[11px] wrap-break-word">{row.queryText}</p>
+										{:else if row.queryText === ''}
+											<!-- Empty string, not null: a "show me recent items" call that older
+											     rows recorded with one fake term. Saying "counters-only" here would
+											     be false — this account does store query text. -->
+											<p class="text-[11px] text-muted-foreground">
+												empty query — a recent-items call, not a miss
+											</p>
+										{:else}
+											<p class="text-[11px] text-muted-foreground">
+												query text not stored — this account is on the counters-only tier
+											</p>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						</ScrollArea>
+					{/if}
+				{:catch e}
+					<p class="text-sm text-destructive">
+						{(e as Error)?.message ?? 'Failed to load the failure queue'}
 					</p>
 				{/await}
 			{/if}

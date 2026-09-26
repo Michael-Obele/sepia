@@ -28,6 +28,7 @@ export {
 	getTelemetry,
 	getTelemetryReport,
 	getTelemetryEvents,
+	getTelemetryFailures,
 	updateTelemetryTier,
 	updateTelemetryTtl,
 	eraseTelemetry
