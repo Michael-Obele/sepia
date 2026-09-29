@@ -19,6 +19,7 @@
     "db:baseline": "bun run scripts/db-baseline.ts",
     "smoke": "bun run scripts/smoke.ts",
     "smoke:oauth": "bun run scripts/oauth-smoke.ts",
+    "test": "bun test",
     "check": "tsc --noEmit",
     "install:skill": "bash scripts/install-skill.sh",
     "gen:skill-ref": "bun run scripts/gen-skill-ref.ts"

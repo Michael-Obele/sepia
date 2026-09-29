@@ -21,7 +21,7 @@ export function registerNamespaceTools(server: McpServer<any, any>) {
       icons: [SEPIA_ICON],
       schema: NamespaceToolInput,
     },
-    safe(async (args: v.InferInput<typeof NamespaceToolInput>) => {
+    safe(NamespaceToolInput, async (args: v.InferInput<typeof NamespaceToolInput>) => {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
       const sql = db();

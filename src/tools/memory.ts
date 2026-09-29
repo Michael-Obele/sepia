@@ -6,9 +6,11 @@ import {
   batchUpdateMemories,
   createMemory,
   deleteMemory,
+  echoQueryFilters,
   getBriefing,
   getMemory,
   ingestConversation,
+  MEMORY_QUERY_FILTERS,
   queryMemories,
   recordTelemetrySafe,
   updateMemory,
@@ -25,7 +27,7 @@ export function registerMemoryTools(server: McpServer<any, any>) {
       icons: [SEPIA_ICON],
       schema: MemoryToolInput,
     },
-    safe(async (args: v.InferInput<typeof MemoryToolInput>) => {
+    safe(MemoryToolInput, async (args: v.InferInput<typeof MemoryToolInput>) => {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
       const sql = db();
@@ -82,9 +84,27 @@ export function registerMemoryTools(server: McpServer<any, any>) {
             importance_min: args.importance_min,
             archived: args.archived,
             tags: args.tags,
+            // q + offset forwarded — dropping either here was the 2026-09-29
+            // incident (params accepted by the schema, ignored by the handler).
+            q: args.q,
+            offset: args.offset,
             limit: args.limit,
           });
-          return { action: "query", count: memories.length, memories };
+          // G5: echo keyed by the DECLARED set (filter-sets.ts), so a dropped
+          // filter shows as null instead of looking applied. `ignored` names
+          // present-but-inapplicable params (wrong-action class).
+          const { filters_applied, ignored } = echoQueryFilters(
+            args as Record<string, unknown>,
+            MEMORY_QUERY_FILTERS,
+            MemoryToolInput.entries,
+          );
+          return {
+            action: "query",
+            count: memories.length,
+            filters_applied,
+            ...(ignored.length ? { ignored } : {}),
+            memories,
+          };
         }
         case "briefing": {
           return {

@@ -22,7 +22,7 @@ export function registerSearchTools(server: McpServer<any, any>) {
       schema: SearchToolInput,
       annotations: { readOnlyHint: true },
     },
-    safe(async (args: v.InferInput<typeof SearchToolInput>) => {
+    safe(SearchToolInput, async (args: v.InferInput<typeof SearchToolInput>) => {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
       const startedAt = Date.now();

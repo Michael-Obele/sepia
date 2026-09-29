@@ -148,7 +148,16 @@ export const ingestConversationData = form(
 );
 
 /** Fetch every memory of a conversation (digest + constituents) by conversation_id. */
-export const getConversationData = query(v.string(), async (conversationId) => {
-	const user = await requireAuth();
-	return getConversation(db(), user.id, conversationId);
-});
+// Disposition 9 (silent-arg-drop audit): namespace used to be honored by REST
+// + stdio but silently absent here — same logical query, different scope per
+// surface. Now accepted and forwarded.
+export const getConversationData = query(
+	v.object({
+		conversation_id: v.string(),
+		namespace: v.optional(v.string())
+	}),
+	async ({ conversation_id, namespace }) => {
+		const user = await requireAuth();
+		return getConversation(db(), user.id, conversation_id, namespace);
+	}
+);

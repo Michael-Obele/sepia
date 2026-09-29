@@ -583,6 +583,34 @@ if (hasDb) {
       `${requery.memories.length} at importance ≥ 0.5 (expected 0)`,
     );
 
+    // REGRESSION (2026-09-29 silent-arg-drop): `q` used to be missing from
+    // MemoryToolInput, so it was stripped before the handler and the query
+    // returned the unfiltered top-20 — plausible-looking, so nobody noticed.
+    // A nonsense keyword must yield 0 rows, never the top of the list.
+    const nonsenseQ = (await callTool("manage_memory", {
+      action: "query",
+      namespace: ns,
+      q: "zzzqqqnonexistent987654",
+    })) as { memories: unknown[] };
+    check(
+      "memory query honors q (nonsense keyword → 0 rows)",
+      nonsenseQ.memories.length === 0,
+      `${nonsenseQ.memories.length} rows (expected 0; a nonzero count means q was dropped)`,
+    );
+
+    // A REAL keyword must survive the same path — filtering to zero both ways
+    // would pass if q were wired to match nothing.
+    const realQ = (await callTool("manage_memory", {
+      action: "query",
+      namespace: ns,
+      q: "cold starts",
+    })) as { memories: unknown[] };
+    check(
+      "memory query honors q (real keyword → matches)",
+      realQ.memories.length >= 1,
+      `${realQ.memories.length} rows (expected ≥ 1)`,
+    );
+
     // `prune_memories` is destructive, so `confirm: true` is mandatory —
     // a call without it must be rejected.
     let confirmRejected = false;

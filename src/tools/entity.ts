@@ -23,78 +23,83 @@ export function registerEntityTools(server: McpServer<any, any>) {
       icons: [SEPIA_ICON],
       schema: EntityToolInput,
     },
-    safe(async (args: v.InferInput<typeof EntityToolInput>) => {
-      const user = server.ctx.custom?.user;
-      if (!user) throw new Error("unauthenticated");
-      const sql = db();
-      recordTelemetrySafe(sql, {
-        ownerId: user.id,
-        sessionHash: telemetrySession(server.ctx),
-        tool: "manage_entity",
-        action: args.action,
-      });
-      switch (args.action) {
-        case "create": {
-          if (!args.entity) throw new Error("action=create requires entity");
-          return {
-            action: "create",
-            entity: await createEntity(
+    safe(
+      EntityToolInput,
+      async (args: v.InferInput<typeof EntityToolInput>) => {
+        const user = server.ctx.custom?.user;
+        if (!user) throw new Error("unauthenticated");
+        const sql = db();
+        recordTelemetrySafe(sql, {
+          ownerId: user.id,
+          sessionHash: telemetrySession(server.ctx),
+          tool: "manage_entity",
+          action: args.action,
+        });
+        switch (args.action) {
+          case "create": {
+            if (!args.entity) throw new Error("action=create requires entity");
+            return {
+              action: "create",
+              entity: await createEntity(
+                sql,
+                user.id,
+                args.namespace ?? DEFAULT_NAMESPACE,
+                args.entity,
+              ),
+            };
+          }
+          case "get": {
+            if (!args.id) throw new Error("action=get requires id");
+            return {
+              action: "get",
+              entity: await getEntity(sql, user.id, args.id),
+            };
+          }
+          case "update": {
+            if (!args.id) throw new Error("action=update requires id");
+            if (!args.update) throw new Error("action=update requires update");
+            return {
+              action: "update",
+              entity: await updateEntity(sql, user.id, args.id, args.update),
+            };
+          }
+          case "delete": {
+            if (!args.id) throw new Error("action=delete requires id");
+            return {
+              action: "delete",
+              deleted: await deleteEntity(sql, user.id, args.id),
+            };
+          }
+          case "find": {
+            const entities = await findEntities(
               sql,
               user.id,
-              args.namespace ?? DEFAULT_NAMESPACE,
-              args.entity,
-            ),
-          };
+              args.namespace,
+              args.query,
+              args.type,
+              args.limit,
+              args.offset,
+            );
+            return { action: "find", count: entities.length, entities };
+          }
+          case "batch_update": {
+            if (!args.where)
+              throw new Error("action=batch_update requires where");
+            if (!args.update)
+              throw new Error("action=batch_update requires update");
+            return {
+              action: "batch_update",
+              ...(await batchUpdateEntities(
+                sql,
+                user.id,
+                args.where,
+                args.update,
+                args.batch_limit,
+              )),
+            };
+          }
         }
-        case "get": {
-          if (!args.id) throw new Error("action=get requires id");
-          return {
-            action: "get",
-            entity: await getEntity(sql, user.id, args.id),
-          };
-        }
-        case "update": {
-          if (!args.id) throw new Error("action=update requires id");
-          if (!args.update) throw new Error("action=update requires update");
-          return {
-            action: "update",
-            entity: await updateEntity(sql, user.id, args.id, args.update),
-          };
-        }
-        case "delete": {
-          if (!args.id) throw new Error("action=delete requires id");
-          return {
-            action: "delete",
-            deleted: await deleteEntity(sql, user.id, args.id),
-          };
-        }
-        case "find": {
-          const entities = await findEntities(
-            sql,
-            user.id,
-            args.namespace,
-            args.query,
-            args.type,
-          );
-          return { action: "find", count: entities.length, entities };
-        }
-        case "batch_update": {
-          if (!args.where)
-            throw new Error("action=batch_update requires where");
-          if (!args.update)
-            throw new Error("action=batch_update requires update");
-          return {
-            action: "batch_update",
-            ...(await batchUpdateEntities(
-              sql,
-              user.id,
-              args.where,
-              args.update,
-              args.batch_limit,
-            )),
-          };
-        }
-      }
-    }),
+      },
+    ),
   );
 }

@@ -89,7 +89,7 @@
 		loading = true;
 		error = '';
 		try {
-			memories = await getConversationData(conversationId);
+			memories = await getConversationData({ conversation_id: conversationId });
 			// Fallback: a digest may lack conversation_id (older data or a
 			// direct create) — if the param is a UUID, fetch the digest by id.
 			if (memories.length === 0 && UUID_RE.test(conversationId)) {

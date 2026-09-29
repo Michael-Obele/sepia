@@ -1,5 +1,8 @@
 import type { McpServer } from "tmcp";
 import * as v from "valibot";
+// filter-sets helpers come from the barrel (pure constants; the stdio package
+// already loads it for MEMORY_CONTRACT in index.ts).
+import { echoQueryFilters, MEMORY_QUERY_FILTERS } from "@sepia/shared";
 import { MemoryToolInput } from "@sepia/shared/schemas";
 import type { SepiaClient } from "../client.ts";
 import { safe, SEPIA_ICON } from "./util.ts";
@@ -17,7 +20,7 @@ export function registerMemoryTools(
       icons: [SEPIA_ICON],
       schema: MemoryToolInput,
     },
-    safe(async (args: v.InferInput<typeof MemoryToolInput>) => {
+    safe(MemoryToolInput, async (args: v.InferInput<typeof MemoryToolInput>) => {
       switch (args.action) {
         case "create": {
           if (!args.memory) throw new Error("action=create requires memory");
@@ -55,9 +58,25 @@ export function registerMemoryTools(
             importance_min: args.importance_min,
             archived: args.archived,
             tags: args.tags,
+            // q + offset forwarded — dropping either here was the 2026-09-29
+            // incident (params accepted by the schema, ignored by the handler).
+            q: args.q,
+            offset: args.offset,
             limit: args.limit,
           });
-          return { action: "query", count, memories };
+          // G5: echo keyed by the DECLARED set — same shape as the hub.
+          const { filters_applied, ignored } = echoQueryFilters(
+            args as Record<string, unknown>,
+            MEMORY_QUERY_FILTERS,
+            MemoryToolInput.entries,
+          );
+          return {
+            action: "query",
+            count,
+            filters_applied,
+            ...(ignored.length ? { ignored } : {}),
+            memories,
+          };
         }
         case "briefing": {
           return {

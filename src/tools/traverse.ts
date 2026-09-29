@@ -16,7 +16,7 @@ export function registerTraverseTools(server: McpServer<any, any>) {
       schema: TraverseToolInput,
       annotations: { readOnlyHint: true },
     },
-    safe(async (args: v.InferInput<typeof TraverseToolInput>) => {
+    safe(TraverseToolInput, async (args: v.InferInput<typeof TraverseToolInput>) => {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
       const sql = db();

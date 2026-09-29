@@ -22,11 +22,46 @@ export const SEPIA_ICON: {
  * Wraps a tool handler so business errors (REST API errors, "unauthenticated",
  * missing-arg) become MCP tool errors visible to the model — not JSON-RPC
  * failures — while protocol-level McpErrors still propagate.
+ *
+ * G2 (silent-arg-drop guardrails): tool schemas are `v.looseObject`, so an
+ * unknown key survives tmcp validation instead of being silently stripped
+ * (the 2026-09-29 incident: `q` vanished before the handler ever ran). Diff
+ * the keys the caller sent against the schema's declared entries and report
+ * the extras as `ignored_args` + a hint — the model sees what was dropped
+ * instead of inferring it from plausible-looking output. Boundary: unknown
+ * keys *inside* nested objects (memory/update/where/…) are still stripped by
+ * their `v.object` — top-level only, by design.
  */
-export function safe<T>(handler: (args: T) => Promise<unknown>) {
+export function safe<Schema extends { entries: Record<string, unknown> }, T>(
+  schema: Schema,
+  handler: (args: T) => Promise<unknown>,
+) {
+  const declared = new Set(Object.keys(schema.entries));
   return async (args: T) => {
     try {
-      return tool.text(JSON.stringify(await handler(args), null, 2));
+      const value = await handler(args);
+      const sent =
+        args && typeof args === "object" ? Object.keys(args as object) : [];
+      const ignored = sent.filter((k) => !declared.has(k));
+      if (
+        ignored.length > 0 &&
+        value !== null &&
+        typeof value === "object" &&
+        !Array.isArray(value)
+      ) {
+        return tool.text(
+          JSON.stringify(
+            {
+              ...(value as Record<string, unknown>),
+              ignored_args: ignored,
+              hint: `Unknown argument(s) ignored: ${ignored.join(", ")}. They are not in this tool's input schema and did NOT apply — match arguments to the schema before retrying.`,
+            },
+            null,
+            2,
+          ),
+        );
+      }
+      return tool.text(JSON.stringify(value, null, 2));
     } catch (error) {
       if (error instanceof McpError) throw error;
       if (error instanceof SepiaApiError) {

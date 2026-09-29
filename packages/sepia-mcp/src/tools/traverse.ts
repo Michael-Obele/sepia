@@ -18,7 +18,7 @@ export function registerTraverseTools(
       schema: TraverseToolInput,
       annotations: { readOnlyHint: true },
     },
-    safe(async (args: v.InferInput<typeof TraverseToolInput>) => {
+    safe(TraverseToolInput, async (args: v.InferInput<typeof TraverseToolInput>) => {
       const graph = await client.traverseGraph(args.start_id, args.depth);
       return {
         start_id: args.start_id,

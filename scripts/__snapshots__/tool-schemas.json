@@ -1,0 +1,799 @@
+{
+  "manage_namespace": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "const": "create"
+          },
+          {
+            "const": "list"
+          },
+          {
+            "const": "get"
+          },
+          {
+            "const": "delete"
+          }
+        ],
+        "description": "create (name, description?) | list | get (id or name) | delete (id or name — cascades all contents)"
+      },
+      "name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "Namespace name (1-64 chars)"
+      },
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Namespace UUID (or use name)"
+      },
+      "description": {
+        "type": "string",
+        "description": "Optional description",
+        "default": ""
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "manage_entity": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "const": "create"
+          },
+          {
+            "const": "get"
+          },
+          {
+            "const": "update"
+          },
+          {
+            "const": "delete"
+          },
+          {
+            "const": "find"
+          },
+          {
+            "const": "batch_update"
+          }
+        ],
+        "description": "create (entity) | get (id) | update (id + update) | delete (id — cascades relations, unlinks memories) | find (query, optional type) | batch_update (where + update — updates ALL matching, returns count)"
+      },
+      "namespace": {
+        "type": "string",
+        "description": "Namespace to operate in (default 'personal')",
+        "default": "personal"
+      },
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Entity UUID"
+      },
+      "entity": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Entity name (1-200 chars)"
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "person | project | tool | concept | repo (unknown → concept + tag)"
+          },
+          "summary": {
+            "type": "string",
+            "default": ""
+          },
+          "importance": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "default": 0.5
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "default": {}
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "maxItems": 10,
+            "default": []
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "description": "Entity to create: {name, type, summary?, importance?, metadata?, tags?}. Type is normalized to person|project|tool|concept|repo (unknown → concept + tag)"
+      },
+      "update": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "summary": {
+            "type": "string"
+          },
+          "importance": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [],
+        "description": "Any subset of name/type/summary/importance/metadata/tags"
+      },
+      "query": {
+        "type": "string",
+        "description": "find: name to match (exact or substring)"
+      },
+      "type": {
+        "type": "string",
+        "description": "find: optional type filter"
+      },
+      "limit": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 10000,
+        "description": "find: max results (default 20, max 10000)",
+        "default": 20
+      },
+      "offset": {
+        "type": "number",
+        "minimum": 0,
+        "description": "find: rows to skip (pagination)",
+        "default": 0
+      },
+      "where": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "query": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "description": "batch_update: filters — at least one of type/namespace/query required"
+      },
+      "batch_limit": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 500,
+        "description": "batch_update: max rows to touch (default 100, max 500)",
+        "default": 100
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "manage_relation": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "const": "create"
+          },
+          {
+            "const": "delete"
+          },
+          {
+            "const": "list"
+          }
+        ],
+        "description": "create (relation) | delete (id) | list (by entity_id or namespace)"
+      },
+      "relation": {
+        "type": "object",
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Source entity UUID"
+          },
+          "target_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Target entity UUID"
+          },
+          "relation_type": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Edge label, e.g. 'uses', 'works-on', 'prefers'"
+          },
+          "weight": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Edge weight 0-1 (default 0.5)",
+            "default": 0.5
+          }
+        },
+        "required": [
+          "source_id",
+          "target_id",
+          "relation_type"
+        ],
+        "description": "Relation to create: {source_id, target_id, relation_type, weight?} — updates weight if the same relation exists"
+      },
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Relation UUID"
+      },
+      "entity_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "list: filter by entity (in + out)"
+      },
+      "namespace": {
+        "type": "string",
+        "description": "list: filter by namespace"
+      },
+      "limit": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 10000,
+        "description": "list: max rows (default 200, max 10000)",
+        "default": 200
+      },
+      "offset": {
+        "type": "number",
+        "minimum": 0,
+        "description": "list: rows to skip (pagination)",
+        "default": 0
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "manage_memory": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "anyOf": [
+          {
+            "const": "create"
+          },
+          {
+            "const": "get"
+          },
+          {
+            "const": "update"
+          },
+          {
+            "const": "delete"
+          },
+          {
+            "const": "query"
+          },
+          {
+            "const": "briefing"
+          },
+          {
+            "const": "batch_update"
+          },
+          {
+            "const": "ingest"
+          }
+        ],
+        "description": "briefing (call ONCE at the start of a session — takes no other args) | create (memory) | get (id) | update (id + update) | delete (id) | query (filters: type|namespace|importance_min|archived|tags|q|offset|limit — `q` is a keyword filter; for ranked search use the `search` tool) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)"
+      },
+      "id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Memory UUID"
+      },
+      "memory": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The memory content (1-4000 chars)"
+          },
+          "type": {
+            "enum": [
+              "fact",
+              "observation",
+              "preference",
+              "instruction"
+            ],
+            "type": "string",
+            "description": "fact | observation | preference | instruction (default fact)",
+            "default": "fact"
+          },
+          "importance": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "0-1: 0.9+ core identity/preferences, 0.6-0.8 project facts, 0.3-0.5 observations, ≤0.2 transient",
+            "default": 0.5
+          },
+          "namespace": {
+            "type": "string",
+            "default": "personal"
+          },
+          "entity_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 3,
+            "description": "Link 0-3 entities (UUIDs)",
+            "default": []
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {},
+            "default": {}
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "maxItems": 10,
+            "default": []
+          }
+        },
+        "required": [
+          "content"
+        ],
+        "description": "Memory to create: {content, type? fact|observation|preference|instruction, importance? 0-1, namespace?, entity_ids? [0-3], metadata?, tags?} — source auto-set to client name"
+      },
+      "update": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "type": {
+            "enum": [
+              "fact",
+              "observation",
+              "preference",
+              "instruction"
+            ],
+            "type": "string"
+          },
+          "importance": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "metadata": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "archived": {
+            "type": "boolean"
+          },
+          "entity_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 3
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "maxItems": 10
+          }
+        },
+        "required": [],
+        "description": "Any subset of content/type/importance/metadata/archived/tags — entity_ids REPLACES the link set, tags REPLACES the tag set"
+      },
+      "conversation": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "description": "The digest — structured markdown, ≤4000 chars (anti-dump: split into more digests, don't pad)"
+          },
+          "conversation_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Groups digests of the same conversation (one per major topic)"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "status": {
+            "enum": [
+              "active",
+              "paused",
+              "done"
+            ],
+            "type": "string",
+            "description": "Lifecycle state: active (resume me) | paused | done. Default active",
+            "default": "active"
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "default": []
+          },
+          "preferences": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "default": []
+          },
+          "instructions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "default": []
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "default": []
+          },
+          "open_questions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 4000
+            },
+            "default": []
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                "type": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "summary": {
+                  "type": "string",
+                  "default": ""
+                }
+              },
+              "required": [
+                "name",
+                "type"
+              ]
+            },
+            "default": []
+          },
+          "source": {
+            "type": "object",
+            "properties": {
+              "ai": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "ref": {
+                "type": "string",
+                "maxLength": 1000,
+                "default": ""
+              }
+            },
+            "required": [
+              "ai"
+            ],
+            "description": "Source AI + pointer to the raw session (session log path or share URL)"
+          },
+          "transcript": {
+            "type": "string",
+            "maxLength": 100000
+          },
+          "namespace": {
+            "type": "string",
+            "default": "personal"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "maxItems": 10,
+            "default": []
+          }
+        },
+        "required": [
+          "summary",
+          "conversation_id"
+        ],
+        "description": "ingest: distilled conversation {summary ≤4000, conversation_id, title?, status? active|paused|done, decisions?, preferences?, instructions?, observations?, open_questions?, entities?, source? {ai, ref?}, transcript? ≤100k, namespace?, tags?} — atomically saves a digest (tag 'conversation', importance 0.85) + constituent memories + entities. Use when the user says 'save this conversation' or is switching AIs mid-task"
+      },
+      "type": {
+        "enum": [
+          "fact",
+          "observation",
+          "preference",
+          "instruction"
+        ],
+        "type": "string",
+        "description": "query: memory type filter"
+      },
+      "namespace": {
+        "type": "string",
+        "description": "query: namespace filter (default 'personal')",
+        "default": "personal"
+      },
+      "importance_min": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "query: minimum importance (0-1)"
+      },
+      "archived": {
+        "type": "boolean",
+        "description": "query: include archived (default false)",
+        "default": false
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "maxItems": 10,
+        "description": "query: match memories carrying ALL of these tags"
+      },
+      "q": {
+        "type": "string",
+        "maxLength": 500,
+        "description": "query: keyword filter — matches content, all terms, any order (e.g. q=\"aiven opensearch\"). Empty/omitted = no keyword filtering. For ranked full-text search across memories AND entities, use the `search` tool instead."
+      },
+      "offset": {
+        "type": "number",
+        "minimum": 0,
+        "description": "query: rows to skip after filtering (pagination)"
+      },
+      "limit": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 50,
+        "description": "query: max results (default 20, max 50)",
+        "default": 20
+      },
+      "detail": {
+        "enum": [
+          "core",
+          "all"
+        ],
+        "type": "string",
+        "description": "briefing: \"core\" (default) = the never-dropped standing rules; \"all\" = also return the tail of situational rules (max_chars applies only then). On a ~1M-token context window, request \"all\" on the first session-start call.",
+        "default": "core"
+      },
+      "max_chars": {
+        "type": "number",
+        "minimum": 1000,
+        "maximum": 200000,
+        "description": "briefing (detail=\"all\" only): total character budget (default 8000, max 200000 — the physical maximum a briefing can return: FETCH_MAX rows x ITEM_CHARS). If truncated: true, raise it or fetch the ids.",
+        "default": 8000
+      },
+      "where": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "enum": [
+              "fact",
+              "observation",
+              "preference",
+              "instruction"
+            ],
+            "type": "string"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "maxItems": 10
+          },
+          "importance_min": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "q": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "description": "batch_update: filters — at least one of type/namespace/tags/importance_min/q required"
+      },
+      "batch_limit": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 500,
+        "description": "batch_update: max rows to touch (default 100, max 500)",
+        "default": 100
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "search": {
+    "type": "object",
+    "properties": {
+      "q": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "Search query (required; empty returns recent items). Multi-word = best-effort: rows matching MORE of your words rank first, so a result set is never emptied by one absent word. Verbatim phrases rank highest. Check `partial` in the result (+ each hit's `matched_terms`) before concluding nothing exists."
+      },
+      "namespace": {
+        "type": "string",
+        "description": "Restrict to a namespace"
+      },
+      "type": {
+        "type": "string",
+        "maxLength": 64,
+        "description": "Memory type (fact/observation/preference/instruction) OR entity type (person/project/tool/concept/repo)"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "maxItems": 10,
+        "description": "Match memories/entities carrying ALL of these tags"
+      },
+      "limit": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 25,
+        "description": "Max results (default 10, max 25)",
+        "default": 10
+      },
+      "min_terms": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 50,
+        "description": "Drop hits covering fewer than this many query terms (precision dial; absent = best-effort recall). Too high returns 0 with `terms` present — that is the filter, not a missing memory."
+      },
+      "engine": {
+        "enum": [
+          "coverage",
+          "bm25"
+        ],
+        "type": "string",
+        "description": "Ranking engine: \"coverage\" (substring, coverage-first) or \"bm25\" (tokenised, BM25-ranked). Omit to use the server default."
+      }
+    },
+    "required": [
+      "q"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "traverse_graph": {
+    "type": "object",
+    "properties": {
+      "start_id": {
+        "type": "string",
+        "format": "uuid",
+        "description": "Entity UUID to start the BFS walk from"
+      },
+      "depth": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 3,
+        "description": "Walk depth (default 1, max 3)",
+        "default": 1
+      }
+    },
+    "required": [
+      "start_id"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "prune_memories": {
+    "type": "object",
+    "properties": {
+      "confirm": {
+        "const": true,
+        "description": "Must be true. Acknowledges that this archives stale memories and permanently deletes rows archived more than 30 days ago. Set it only after the user explicitly asked for the sweep."
+      }
+    },
+    "required": [
+      "confirm"
+    ],
+    "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+}

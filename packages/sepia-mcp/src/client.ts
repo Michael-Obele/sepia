@@ -103,12 +103,14 @@ export class SepiaClient {
     q?: string;
     type?: string;
     limit?: number;
+    offset?: number;
   }) {
     const qs = new URLSearchParams();
     if (params.namespace !== undefined) qs.set("namespace", params.namespace);
     if (params.q !== undefined) qs.set("q", params.q);
     if (params.type !== undefined) qs.set("type", params.type);
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
     const suffix = qs.size ? `?${qs.toString()}` : "";
     return this.request<{ count: number; entities: unknown[] }>(
       "GET",
@@ -149,6 +151,8 @@ export class SepiaClient {
     importance_min?: number;
     archived?: boolean;
     tags?: string[];
+    q?: string;
+    offset?: number;
     limit?: number;
   }) {
     const qs = new URLSearchParams();
@@ -160,6 +164,9 @@ export class SepiaClient {
       qs.set("archived", String(params.archived));
     if (params.tags !== undefined && params.tags.length)
       qs.set("tags", params.tags.join(","));
+    if (params.q !== undefined && params.q !== "") qs.set("q", params.q);
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
     if (params.limit !== undefined) qs.set("limit", String(params.limit));
     const suffix = qs.size ? `?${qs.toString()}` : "";
     return this.request<{ count: number; memories: unknown[] }>(
@@ -233,10 +240,18 @@ export class SepiaClient {
   }
 
   // ── Relations ───────────────────────────────────────────────────────────
-  listRelations(params: { entity_id?: string; namespace?: string }) {
+  listRelations(params: {
+    entity_id?: string;
+    namespace?: string;
+    limit?: number;
+    offset?: number;
+  }) {
     const qs = new URLSearchParams();
     if (params.entity_id !== undefined) qs.set("entity_id", params.entity_id);
     if (params.namespace !== undefined) qs.set("namespace", params.namespace);
+    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (params.offset !== undefined) qs.set("offset", String(params.offset));
+
     const suffix = qs.size ? `?${qs.toString()}` : "";
     return this.request<{ count: number; relations: unknown[] }>(
       "GET",
@@ -262,10 +277,12 @@ export class SepiaClient {
     tags?: string[];
     limit?: number;
     min_terms?: number;
+    engine?: string;
   }) {
     const qs = new URLSearchParams({ q: params.q });
     if (params.namespace !== undefined) qs.set("namespace", params.namespace);
     if (params.type !== undefined) qs.set("type", params.type);
+    if (params.engine !== undefined) qs.set("engine", params.engine);
     if (params.tags !== undefined && params.tags.length)
       qs.set("tags", params.tags.join(","));
     if (params.limit !== undefined) qs.set("limit", String(params.limit));

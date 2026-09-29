@@ -17,7 +17,7 @@ export function registerPruneMemoriesTools(
       schema: PruneMemoriesToolInput,
       annotations: { destructiveHint: true },
     },
-    safe(async () => {
+    safe(PruneMemoriesToolInput, async () => {
       return (await client.pruneMemories()).result;
     }),
   );

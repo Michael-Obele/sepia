@@ -86,6 +86,7 @@ FIRST — once per session, before your first substantive action (NOT keyword-dr
 THEN — before you answer (every turn except trivial chitchat):
 1. Call "search" with 2-5 keywords from the user's current message + task (e.g. query="auth rate limiting"). If sparse, also call "traverse_graph" from the top entity.
    Search is best-effort: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits or partial: true, retry with ONE distinctive keyword or a looser filter BEFORE concluding nothing exists.
+   DIAGNOSTIC: identical results for different q values = the filter was NOT applied — wrong tool, or a parameter the schema lacks. Check the schema and the response's filters_applied/ignored_args before theorizing about ranking or tokenization. Ranked keyword search lives ONLY in the search tool.
 2. Weave hits into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
 AFTER you answer (every turn where you learned something):
@@ -187,7 +188,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * one froze VS Code / Cursor / SKILL.md at 1.0.0 while every other marker
  * advanced.
  */
-export const DOCS_VERSION = "1.12.0";
+export const DOCS_VERSION = "1.13.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [

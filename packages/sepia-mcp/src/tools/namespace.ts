@@ -17,7 +17,7 @@ export function registerNamespaceTools(
       icons: [SEPIA_ICON],
       schema: NamespaceToolInput,
     },
-    safe(async (args: v.InferInput<typeof NamespaceToolInput>) => {
+    safe(NamespaceToolInput, async (args: v.InferInput<typeof NamespaceToolInput>) => {
       switch (args.action) {
         case "create": {
           if (!args.name) throw new Error("action=create requires name");

@@ -55,6 +55,8 @@ import {
   RelationInput,
   SearchInput,
   TraverseInput,
+  echoQueryFilters,
+  MEMORY_QUERY_FILTERS,
 } from "@sepia/shared";
 
 /**
@@ -266,6 +268,7 @@ export async function handleApi(
         url.searchParams.get("q") ?? undefined,
         url.searchParams.get("type") ?? undefined,
         numParam(url.searchParams.get("limit"), 20),
+        Math.max(0, numParam(url.searchParams.get("offset"), 0)),
       );
       return json({ count: entities.length, entities }, 200, cors);
     }
@@ -322,23 +325,55 @@ export async function handleApi(
     // ── Memories ──────────────────────────────────────────────────────────
     if (path === "/api/memories" && method === "GET") {
       const typeParam = url.searchParams.get("type");
-      const memories = await queryMemories(sql, ownerId, {
-        type:
-          (typeParam as
-            | "fact"
-            | "observation"
-            | "preference"
-            | "instruction"
-            | null) ?? undefined,
+      // DISPOSITION 12: validate instead of casting — a bogus type used to
+      // pass through and silently empty the result (plausible-wrong output).
+      const validTypes = [
+        "fact",
+        "observation",
+        "preference",
+        "instruction",
+      ] as const;
+      if (typeParam !== null && !validTypes.includes(typeParam as never)) {
+        return error(
+          "invalid_input",
+          `type must be one of: ${validTypes.join(", ")}`,
+          422,
+        );
+      }
+      const filters = {
+        type: (typeParam as (typeof validTypes)[number] | null) ?? undefined,
         namespace: url.searchParams.get("namespace") ?? undefined,
         importance_min: url.searchParams.has("importance_min")
           ? numParam(url.searchParams.get("importance_min"), 0)
           : undefined,
         archived: boolParam(url.searchParams.get("archived"), false),
         tags: tagsParam(url.searchParams.get("tags")),
+        // q + offset — the stdio MCP package reaches the tool surface through
+        // this route, so dropping them here reproduced the 2026-09-29 incident
+        // for every stdio client even after the direct handler was fixed.
+        q: url.searchParams.get("q") ?? undefined,
+        offset: url.searchParams.has("offset")
+          ? Math.max(0, numParam(url.searchParams.get("offset"), 0))
+          : undefined,
         limit: numParam(url.searchParams.get("limit"), 20),
-      });
-      return json({ count: memories.length, memories }, 200, cors);
+      };
+      const memories = await queryMemories(sql, ownerId, filters);
+      // G5: echo keyed by the DECLARED set (filter-sets.ts) — matches the MCP
+      // handlers, so every surface says what it actually honored.
+      const { filters_applied, ignored } = echoQueryFilters(
+        filters as Record<string, unknown>,
+        MEMORY_QUERY_FILTERS,
+      );
+      return json(
+        {
+          count: memories.length,
+          filters_applied,
+          ...(ignored.length ? { ignored } : {}),
+          memories,
+        },
+        200,
+        cors,
+      );
     }
     if (path === "/api/memories" && method === "POST") {
       const body = (await readBody(request)) as Record<string, unknown>;
@@ -485,6 +520,9 @@ export async function handleApi(
         type: url.searchParams.get("type") ?? undefined,
         tags: tagsParam(url.searchParams.get("tags")),
         limit: numParam(url.searchParams.get("limit"), 10),
+        // engine (disposition 8): SearchInput declared it; this branch used to
+        // drop it, so ?engine=bm25 was silently ignored on REST.
+        engine: (url.searchParams.get("engine") as "coverage" | "bm25" | null) ?? undefined,
         min_terms: url.searchParams.has("min_terms")
           ? numParam(url.searchParams.get("min_terms"), 1)
           : undefined,
@@ -595,6 +633,16 @@ export async function handleApi(
       (path === "/api/prune-memories" || path === "/api/consolidate") &&
       method === "POST"
     ) {
+      // DISPOSITION 10 (safety-gate parity): the MCP schema requires
+      // confirm:true on this destructive sweep; REST used to run it bare.
+      const body = (await readBody(request)) as { confirm?: unknown };
+      if (body.confirm !== true) {
+        return error(
+          "invalid_input",
+          "prune_memories is destructive — send { confirm: true }",
+          422,
+        );
+      }
       return json({ result: await pruneMemories(sql, ownerId) }, 200, cors);
     }
     if (path === "/api/stats" && method === "GET") {

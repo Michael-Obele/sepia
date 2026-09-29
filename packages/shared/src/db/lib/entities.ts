@@ -222,7 +222,7 @@ export async function findEntities(
   namespaceName: string | undefined,
   query: string | undefined,
   type: string | undefined,
-  limit = 10,
+  limit = 20,
   offset = 0,
 ) {
   const conditions = [eq(namespaces.ownerId, ownerId)];

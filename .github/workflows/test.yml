@@ -1,0 +1,68 @@
+name: Tests
+
+# The verification plumbing the guardrail plan called for (forge-contract
+# HIGH: "a guardrail with no runner is a paragraph"). Two jobs:
+#
+# - unit: DB-free. Type-checks every package and runs the parity/snapshot
+#   tests that must never need infrastructure (G3 schema parity, G7 schema
+#   snapshot, G8 docs↔schema parity, docs manifest).
+# - integration: live Postgres service container. The behavioral suite —
+#   G4's "every filter must filter" table, the named silent-arg-drop
+#   regression, search/filters/briefing/telemetry/stats against real SQL.
+#
+# DATABASE_URL is a secret (Neon branch or a ephemeral service DB); the
+# integration job skips its DB-dependent suites cleanly when it's absent,
+# so forks without the secret still get the unit gate.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - name: Type-check (root, shared, sepia-mcp)
+        run: |
+          bun run check
+          (cd packages/sepia-mcp && bun run check)
+
+      # DB-free suites: schema parity (G3), docs parity (G8), schema
+      # snapshot (G7), severity policy. No DATABASE_URL by design.
+      - name: Parity + snapshot + docs tests
+        run: bun test scripts/filter-parity.test.ts scripts/docs-manifest.test.ts scripts/tool-schema-snapshot.test.ts
+
+  integration:
+    runs-on: ubuntu-latest
+    needs: unit
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: sepia
+          POSTGRES_DB: sepia_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Falls back to the service container; overridden by the repo secret
+      # when a Neon test branch is configured instead.
+      DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgres://postgres:sepia@localhost:5432/sepia_test' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+
+      - name: Apply schema
+        run: bun run db:migrate
+
+      - name: Full behavioral suite (G4 regression + filter table)
+        run: bun test

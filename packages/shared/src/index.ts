@@ -15,6 +15,9 @@
  */
 export * from "./types.ts";
 export * from "./schemas.ts";
+// Declared filter sets (surface-parity source of truth) — constants only,
+// safe anywhere; see filter-sets.ts for the G3 contract.
+export * from "./filter-sets.ts";
 export * from "./db/schema.ts";
 export * from "./db/errors.ts";
 export * from "./db/client.ts";

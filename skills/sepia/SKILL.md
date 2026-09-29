@@ -1,5 +1,5 @@
 ---
-version: "1.12.0"
+version: "1.13.0"
 name: sepia
 description: >-
   Use when the user's AI assistant should recall or persist long-term knowledge
@@ -78,6 +78,8 @@ Default to `search` on every turn — only skip for trivial chitchat ("hi", "tha
 3. If results are sparse, also `traverse_graph` from the most relevant entity to pull its neighborhood.
 4. Weave recalled facts into your answer naturally. Cite what came from memory when it matters ("From your memory: ...").
 5. Search is **best-effort**: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits, or the result says `partial: true`, retry with ONE distinctive keyword (or drop filters) BEFORE concluding nothing exists — then say so. Never fabricate memories. The result also reports `best_matched_terms` (the best coverage any hit achieved): when a broad query is drowning in common-word noise, re-ask with `min_terms` set to it to keep only that coverage class.
+
+   **Diagnostic (the 2026-09-29 silent-arg-drop):** identical results for different `q` values = the filter was NOT applied. Wrong tool, or a parameter the schema lacks. Check the schema and the response's `filters_applied` / `ignored_args` before theorizing about ranking or tokenization. Ranked keyword search lives ONLY in `search`.
 
 > Two Sepia calls per turn is normal and expected: `search` before you answer, persist after you answer.
 

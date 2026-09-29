@@ -288,7 +288,7 @@ export const ConversationInput = v.object({
 });
 
 /** Unified search input. */
-export const SearchInput = v.object({
+export const SearchInput = v.looseObject({
   // Empty q is allowed — it returns recent items (see search tool docs).
   q: v.pipe(
     v.string(),
@@ -361,7 +361,7 @@ export const SearchInput = v.object({
 });
 
 /** Graph traversal input. */
-export const TraverseInput = v.object({
+export const TraverseInput = v.looseObject({
   start_id: v.pipe(
     uuidSchema,
     v.description("Entity UUID to start the BFS walk from"),
@@ -383,7 +383,7 @@ export const TraverseInput = v.object({
  * keeping the LLM-facing tool surface to 7 while covering every capability.
  */
 
-export const NamespaceToolInput = v.object({
+export const NamespaceToolInput = v.looseObject({
   action: v.pipe(
     v.union([
       v.literal("create"),
@@ -412,7 +412,7 @@ export const NamespaceToolInput = v.object({
   ),
 });
 
-export const EntityToolInput = v.object({
+export const EntityToolInput = v.looseObject({
   action: v.pipe(
     v.union([
       v.literal("create"),
@@ -459,6 +459,25 @@ export const EntityToolInput = v.object({
   type: v.optional(
     v.pipe(v.string(), v.description("find: optional type filter")),
   ),
+  /** find: max rows — unified default 20 across MCP/REST/dashboard */
+  limit: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(1),
+      v.maxValue(10000),
+      v.description("find: max results (default 20, max 10000)"),
+    ),
+    20,
+  ),
+  /** find: rows to skip after matching — pagination */
+  offset: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(0),
+      v.description("find: rows to skip (pagination)"),
+    ),
+    0,
+  ),
   /** batch_update: update all entities matching these filters (at least one required) */
   where: v.optional(
     v.pipe(
@@ -484,7 +503,7 @@ export const EntityToolInput = v.object({
   ),
 });
 
-export const RelationToolInput = v.object({
+export const RelationToolInput = v.looseObject({
   action: v.pipe(
     v.union([v.literal("create"), v.literal("delete"), v.literal("list")]),
     v.description(
@@ -507,9 +526,28 @@ export const RelationToolInput = v.object({
   namespace: v.optional(
     v.pipe(v.string(), v.description("list: filter by namespace")),
   ),
+  /** list: page size — every listRelations branch is capped (default 200) */
+  limit: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(1),
+      v.maxValue(10000),
+      v.description("list: max rows (default 200, max 10000)"),
+    ),
+    200,
+  ),
+  /** list: rows to skip — pair with limit for pagination */
+  offset: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(0),
+      v.description("list: rows to skip (pagination)"),
+    ),
+    0,
+  ),
 });
 
-export const MemoryToolInput = v.object({
+export const MemoryToolInput = v.looseObject({
   action: v.pipe(
     v.union([
       v.literal("create"),
@@ -522,7 +560,7 @@ export const MemoryToolInput = v.object({
       v.literal("ingest"),
     ]),
     v.description(
-      "briefing (call ONCE at the start of a session — takes no other args) | create (memory) | get (id) | update (id + update) | delete (id) | query (filters) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)",
+      "briefing (call ONCE at the start of a session — takes no other args) | create (memory) | get (id) | update (id + update) | delete (id) | query (filters: type|namespace|importance_min|archived|tags|q|offset|limit — `q` is a keyword filter; for ranked search use the `search` tool) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)",
     ),
   ),
   id: v.optional(v.pipe(uuidSchema, v.description("Memory UUID"))),
@@ -580,6 +618,31 @@ export const MemoryToolInput = v.object({
     v.pipe(
       tagsSchema,
       v.description("query: match memories carrying ALL of these tags"),
+    ),
+  ),
+  /**
+   * query: keyword filter — all terms, any order, against content. This is the
+   * parameter that was missing during the 2026-09-29 incident: agents passed
+   * `q`, valibot stripped it silently, and the query returned unfiltered rows
+   * that looked plausibly ranked. It is declared here AND forwarded by every
+   * surface (both handlers, REST, stdio client) — the surface-parity test (G3)
+   * fails the build if any surface drops it again.
+   */
+  q: v.optional(
+    v.pipe(
+      v.string(),
+      v.maxLength(500),
+      v.description(
+        "query: keyword filter — matches content, all terms, any order (e.g. q=\"aiven opensearch\"). Empty/omitted = no keyword filtering. For ranked full-text search across memories AND entities, use the `search` tool instead.",
+      ),
+    ),
+  ),
+  /** query: skip N rows after filtering — pair with limit for pagination */
+  offset: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(0),
+      v.description("query: rows to skip after filtering (pagination)"),
     ),
   ),
   limit: v.optional(
@@ -660,7 +723,7 @@ export const TraverseToolInput = TraverseInput;
  * call, and weak models reached for it as a default "save memory" action.
  * Renamed + gated 2026-09-18 after that was observed in VS Code.
  */
-export const PruneMemoriesToolInput = v.object({
+export const PruneMemoriesToolInput = v.looseObject({
   confirm: v.pipe(
     v.literal(true),
     v.description(

@@ -100,11 +100,22 @@
 	}
 
 	async function pruneMemories() {
-		const res = await runPruneMemories();
+		const res = await runPruneMemories({ confirm: true });
 		toast.success('Memories pruned', {
 			description: `${res.archived_stale} stale, ${res.archived_duplicates} duplicates archived, ${res.purged} purged`
 		});
 		stats?.refresh();
+	}
+
+	// DISPOSITION 10: a destructive sweep behind a bare button — route it
+	// through the same ConfirmDeleteDialog every other delete uses.
+	function confirmPrune() {
+		pendingDelete = {
+			title: 'Prune memories?',
+			description:
+				'Archives stale and duplicate memories, then permanently purges anything archived over 30 days.',
+			run: pruneMemories
+		};
 	}
 
 	function resultHref(r: { kind: string; id: string }) {
@@ -311,7 +322,7 @@
 		<Button variant="outline" onclick={() => goto('/app/entities?new=1')}>
 			<Plus class="size-4" /> New entity
 		</Button>
-		<Button variant="outline" onclick={pruneMemories}>
+		<Button variant="outline" onclick={confirmPrune}>
 			<RefreshCw class="size-4" /> Prune memories
 		</Button>
 		{#if recentHidden.current}

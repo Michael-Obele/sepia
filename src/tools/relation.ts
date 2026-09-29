@@ -20,41 +20,46 @@ export function registerRelationTools(server: McpServer<any, any>) {
       icons: [SEPIA_ICON],
       schema: RelationToolInput,
     },
-    safe(async (args: v.InferInput<typeof RelationToolInput>) => {
-      const user = server.ctx.custom?.user;
-      if (!user) throw new Error("unauthenticated");
-      const sql = db();
-      recordTelemetrySafe(sql, {
-        ownerId: user.id,
-        sessionHash: telemetrySession(server.ctx),
-        tool: "manage_relation",
-        action: args.action,
-      });
-      switch (args.action) {
-        case "create": {
-          if (!args.relation)
-            throw new Error("action=create requires relation");
-          return {
-            action: "create",
-            relation: await createRelation(sql, user.id, args.relation),
-          };
+    safe(
+      RelationToolInput,
+      async (args: v.InferInput<typeof RelationToolInput>) => {
+        const user = server.ctx.custom?.user;
+        if (!user) throw new Error("unauthenticated");
+        const sql = db();
+        recordTelemetrySafe(sql, {
+          ownerId: user.id,
+          sessionHash: telemetrySession(server.ctx),
+          tool: "manage_relation",
+          action: args.action,
+        });
+        switch (args.action) {
+          case "create": {
+            if (!args.relation)
+              throw new Error("action=create requires relation");
+            return {
+              action: "create",
+              relation: await createRelation(sql, user.id, args.relation),
+            };
+          }
+          case "delete": {
+            if (!args.id) throw new Error("action=delete requires id");
+            return {
+              action: "delete",
+              deleted: await deleteRelation(sql, user.id, args.id),
+            };
+          }
+          case "list":
+            return {
+              action: "list",
+              relations: await listRelations(sql, user.id, {
+                entity_id: args.entity_id,
+                namespace: args.namespace,
+                limit: args.limit,
+                offset: args.offset,
+              }),
+            };
         }
-        case "delete": {
-          if (!args.id) throw new Error("action=delete requires id");
-          return {
-            action: "delete",
-            deleted: await deleteRelation(sql, user.id, args.id),
-          };
-        }
-        case "list":
-          return {
-            action: "list",
-            relations: await listRelations(sql, user.id, {
-              entity_id: args.entity_id,
-              namespace: args.namespace,
-            }),
-          };
-      }
-    }),
+      },
+    ),
   );
 }

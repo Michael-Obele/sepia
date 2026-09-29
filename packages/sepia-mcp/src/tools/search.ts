@@ -18,7 +18,7 @@ export function registerSearchTools(
       schema: SearchToolInput,
       annotations: { readOnlyHint: true },
     },
-    safe(async (args: v.InferInput<typeof SearchToolInput>) => {
+    safe(SearchToolInput, async (args: v.InferInput<typeof SearchToolInput>) => {
       const { count, results, terms, best_matched_terms, partial } =
         await client.search({
           q: args.q,
@@ -27,6 +27,7 @@ export function registerSearchTools(
           tags: args.tags,
           limit: args.limit,
           min_terms: args.min_terms,
+          engine: args.engine,
         });
       return { count, terms, best_matched_terms, partial, hits: results };
     }),

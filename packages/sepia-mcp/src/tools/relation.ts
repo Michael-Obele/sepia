@@ -17,34 +17,39 @@ export function registerRelationTools(
       icons: [SEPIA_ICON],
       schema: RelationToolInput,
     },
-    safe(async (args: v.InferInput<typeof RelationToolInput>) => {
-      switch (args.action) {
-        case "create": {
-          if (!args.relation)
-            throw new Error("action=create requires relation");
-          return {
-            action: "create",
-            relation: await client.createRelation(args.relation),
-          };
+    safe(
+      RelationToolInput,
+      async (args: v.InferInput<typeof RelationToolInput>) => {
+        switch (args.action) {
+          case "create": {
+            if (!args.relation)
+              throw new Error("action=create requires relation");
+            return {
+              action: "create",
+              relation: await client.createRelation(args.relation),
+            };
+          }
+          case "delete": {
+            if (!args.id) throw new Error("action=delete requires id");
+            return {
+              action: "delete",
+              deleted: await client.deleteRelation(args.id),
+            };
+          }
+          case "list":
+            return {
+              action: "list",
+              relations: (
+                await client.listRelations({
+                  entity_id: args.entity_id,
+                  namespace: args.namespace,
+                  limit: args.limit,
+                  offset: args.offset,
+                })
+              ).relations,
+            };
         }
-        case "delete": {
-          if (!args.id) throw new Error("action=delete requires id");
-          return {
-            action: "delete",
-            deleted: await client.deleteRelation(args.id),
-          };
-        }
-        case "list":
-          return {
-            action: "list",
-            relations: (
-              await client.listRelations({
-                entity_id: args.entity_id,
-                namespace: args.namespace,
-              })
-            ).relations,
-          };
-      }
-    }),
+      },
+    ),
   );
 }

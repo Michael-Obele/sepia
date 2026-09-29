@@ -70,16 +70,16 @@ If you're re-explaining preferences every chat or paying SaaS per memory, you're
 ```mermaid
 flowchart LR
     subgraph Clients
-        L[Local editors<br/>Cursor · Zed · Claude Code<br/>Copilot · OpenCode]
-        W[Online AIs<br/>Grok · ChatGPT · Claude<br/>Gemini · Perplexity]
+        L["Local editors<br>Cursor · Zed · Claude Code<br>Copilot · OpenCode"]
+        W["Online AIs<br>Grok · ChatGPT · Claude<br>Gemini · Perplexity"]
     end
-    subgraph Fly["Fly.io (scale-to-zero)"]
-        B[Bun.serve]
-        M["/mcp — TMCP server<br/>7 tools + instructions"]
-        A["/api/* — REST<br/>CORS allowlist"]
+    subgraph Fly ["Fly.io (scale-to-zero)"]
+        B["Bun.serve"]
+        M["/mcp — TMCP server<br>7 tools + instructions"]
+        A["/api/* — REST<br>CORS allowlist"]
     end
-    N[(Neon Postgres<br/>free tier)]
-    D[Netlify<br/>Dashboard app]
+    N[("Neon Postgres<br>free tier")]
+    D["Netlify<br>Dashboard app"]
     L --> M
     W --> M
     B --> N

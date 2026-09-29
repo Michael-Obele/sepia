@@ -18,7 +18,7 @@ export function registerPruneMemoriesTools(server: McpServer<any, any>) {
       schema: PruneMemoriesToolInput,
       annotations: { destructiveHint: true },
     },
-    safe(async () => {
+    safe(PruneMemoriesToolInput, async () => {
       const user = server.ctx.custom?.user;
       if (!user) throw new Error("unauthenticated");
       const sql = db();
