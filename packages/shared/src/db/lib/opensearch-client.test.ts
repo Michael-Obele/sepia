@@ -79,7 +79,7 @@ beforeEach(() => {
   calls.length = 0;
   __setEnvForTest({
     url: BASE,
-    user: "avnadmin",
+    user: "osuser",
     password: "sekret",
     index: "sepia_test",
   });
@@ -108,7 +108,7 @@ describe("opensearch-client", () => {
     const auth = (calls[0]!.init.headers as Record<string, string>)[
       "authorization"
     ];
-    expect(auth).toBe(`Basic ${btoa("avnadmin:sekret")}`);
+    expect(auth).toBe(`Basic ${btoa("osuser:sekret")}`);
     expect(calls[0]!.url).not.toContain("sekret");
     expect(calls[0]!.url).toBe(`${BASE}/_cluster/health`);
   });
