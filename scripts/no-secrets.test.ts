@@ -48,14 +48,40 @@ const ROOT = join(import.meta.dir, "..");
  *  excluded by extension and by size — the point is to audit source, not blobs
  *  nobody can review anyway. */
 const TEXT_EXT = new Set([
-  ".ts", ".tsx", ".js", ".mjs", ".cjs", ".json", ".jsonc", ".md", ".mdx",
-  ".txt", ".yml", ".yaml", ".toml", ".sql", ".sh", ".bash", ".html", ".css",
-  ".env", ".example", ".ini", ".cfg", ".lock",
+  ".ts",
+  ".tsx",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".jsonc",
+  ".md",
+  ".mdx",
+  ".txt",
+  ".yml",
+  ".yaml",
+  ".toml",
+  ".sql",
+  ".sh",
+  ".bash",
+  ".html",
+  ".css",
+  ".env",
+  ".example",
+  ".ini",
+  ".cfg",
+  ".lock",
 ]);
 /** Extension-less files that are still text and still matter. */
 const TEXT_BASENAMES = new Set([
-  "Dockerfile", "LICENSE", "Procfile", "Makefile", ".npmrc", ".dockerignore",
-  ".gitignore", ".env.example",
+  "Dockerfile",
+  "LICENSE",
+  "Procfile",
+  "Makefile",
+  ".npmrc",
+  ".dockerignore",
+  ".gitignore",
+  ".env.example",
 ]);
 const MAX_BYTES = 1_000_000;
 
@@ -118,7 +144,9 @@ const URL_CREDENTIAL =
 const isPlaceholderUrl = (hostAndPort: string) => {
   const host = hostAndPort.replace(/:\d+$/, "");
   return (
-    /^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|host\.docker\.internal)$/i.test(host) ||
+    /^(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|host\.docker\.internal)$/i.test(
+      host,
+    ) ||
     /(?:^|[.\-_])(?:xxx|example|invalid|test|local)(?:[.\-_]|$)/i.test(host)
   );
 };
@@ -246,7 +274,10 @@ function envEntries(path: string): Array<[string, string]> {
     .filter((l) => l && !l.startsWith("#") && l.includes("="))
     .map((l) => {
       const eq = l.indexOf("=");
-      return [l.slice(0, eq).trim(), l.slice(eq + 1).trim()] as [string, string];
+      return [l.slice(0, eq).trim(), l.slice(eq + 1).trim()] as [
+        string,
+        string,
+      ];
     })
     .filter(([k, v]) => v.length >= 8 && !PUBLIC_KEY.test(k));
 }
@@ -307,7 +338,9 @@ describe("G9: the scanners actually catch things", () => {
   test("catches a hex signing key bound to SECRET (the 2026-09-29 shape)", () => {
     const key = SYNTH_KEY;
     const text = scanFixture("leak.ts", `const SECRET = "${key}";`);
-    expect(findSecretAssignments(text)).toEqual([`SECRET = ${key.slice(0, 8)}…`]);
+    expect(findSecretAssignments(text)).toEqual([
+      `SECRET = ${key.slice(0, 8)}…`,
+    ]);
   });
 
   test("catches a 40-hex key bound to a NON-secret-ish name (the gap that hid it here)", () => {
@@ -319,7 +352,10 @@ describe("G9: the scanners actually catch things", () => {
   });
 
   test("catches a password bound to a camelCase name", () => {
-    const text = scanFixture("pw.ts", `const dbPassword = "hunter2-correct-horse";`);
+    const text = scanFixture(
+      "pw.ts",
+      `const dbPassword = "hunter2-correct-horse";`,
+    );
     expect(findSecretAssignments(text)).toEqual(["dbPassword = hunter2-…"]);
   });
 
@@ -343,7 +379,9 @@ describe("G9: the scanners actually catch things", () => {
       `"<your-key-here>"`,
       `"xxxxxxxxxxxxxxxxxxxxxx"`,
     ]) {
-      expect(findSecretAssignments(scanFixture("ph.ts", `const SECRET = ${fake};`))).toEqual([]);
+      expect(
+        findSecretAssignments(scanFixture("ph.ts", `const SECRET = ${fake};`)),
+      ).toEqual([]);
     }
   });
 
@@ -352,17 +390,30 @@ describe("G9: the scanners actually catch things", () => {
       findProviderShapes(scanFixture("sk.ts", `const k = "${SYNTH_STRIPE}";`)),
     ).toHaveLength(1);
     expect(
-      findProviderShapes(scanFixture("a.txt", `postgresql://user:password@ep-xxx-pooler.aws.neon.tech/db`)),
+      findProviderShapes(
+        scanFixture(
+          "a.txt",
+          `postgresql://user:password@ep-xxx-pooler.aws.neon.tech/db`,
+        ),
+      ),
     ).toEqual([]);
     expect(
-      findProviderShapes(scanFixture("b.txt", `postgres://postgres:sepia@localhost:5432/sepia_test`)),
+      findProviderShapes(
+        scanFixture(
+          "b.txt",
+          `postgres://postgres:sepia@localhost:5432/sepia_test`,
+        ),
+      ),
     ).toEqual([]);
   });
 
   test("flags a production DSN carrying a real password", () => {
     expect(
       findProviderShapes(
-        scanFixture("dsn.txt", `DATABASE_URL=postgres://appuser:Xy9qRealPass@db.acmecorp.internal:5432/app`),
+        scanFixture(
+          "dsn.txt",
+          `DATABASE_URL=postgres://appuser:Xy9qRealPass@db.acmecorp.internal:5432/app`,
+        ),
       ),
     ).toHaveLength(1);
   });
@@ -388,7 +439,8 @@ describe("G9: repo-wide sweep", () => {
   test("no provider token shapes in tracked files (minus own fixtures)", () => {
     const hits: string[] = [];
     for (const [path, text] of SWEEP) {
-      for (const found of findProviderShapes(text)) hits.push(`${path}: ${found}`);
+      for (const found of findProviderShapes(text))
+        hits.push(`${path}: ${found}`);
     }
     expect(hits).toEqual([]);
   });
@@ -396,7 +448,8 @@ describe("G9: repo-wide sweep", () => {
   test("no real literal bound to a secret-ish name in tracked files (minus own fixtures)", () => {
     const hits: string[] = [];
     for (const [path, text] of SWEEP) {
-      for (const found of findSecretAssignments(text)) hits.push(`${path}: ${found}`);
+      for (const found of findSecretAssignments(text))
+        hits.push(`${path}: ${found}`);
     }
     expect(hits).toEqual([]);
   });
@@ -410,14 +463,11 @@ describe("G9: no .env value appears in a tracked file", () => {
   // CI has no .env, so this layer is a no-op there. That is fine — it is the
   // exhaustive layer, and it earns its keep on a developer machine. Layers 2
   // and 3 are what CI actually runs.
-  test.skipIf(present.length === 0)(
-    "no env file is committed",
-    () => {
-      for (const f of ENV_FILES) {
-        expect(trackedFiles()).not.toContain(f);
-      }
-    },
-  );
+  test.skipIf(present.length === 0)("no env file is committed", () => {
+    for (const f of ENV_FILES) {
+      expect(trackedFiles()).not.toContain(f);
+    }
+  });
 
   test.skipIf(present.length === 0)(
     "no literal from .env leaks into tracked source",

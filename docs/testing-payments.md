@@ -24,14 +24,14 @@ afterwards (see [Reset](#reset-after-testing)).
 Use these on the checkout. **Never use a real card** — LS treats real card
 details entered for testing as fraud and can suspend the store.
 
-| Card | Number | Use it to test |
-| --- | --- | --- |
-| Visa | `4242 4242 4242 4242` | the happy path |
-| Mastercard | `5555 5555 5555 4444` | a second brand |
-| American Express | `3782 822463 10005` | Amex flow |
+| Card               | Number                | Use it to test                |
+| ------------------ | --------------------- | ----------------------------- |
+| Visa               | `4242 4242 4242 4242` | the happy path                |
+| Mastercard         | `5555 5555 5555 4444` | a second brand                |
+| American Express   | `3782 822463 10005`   | Amex flow                     |
 | Insufficient funds | `4000 0000 0000 9995` | `subscription_payment_failed` |
-| Expired card | `4000 0000 0000 0069` | declined renewal |
-| 3D Secure | `4000 0027 6000 3184` | the 3DS challenge step |
+| Expired card       | `4000 0000 0000 0069` | declined renewal              |
+| 3D Secure          | `4000 0027 6000 3184` | the 3DS challenge step        |
 
 Other fields:
 
@@ -46,20 +46,20 @@ Other fields:
 2. Go to **Pricing** → click **Get Pro** (or Account → **Upgrade to Pro**).
    The checkout opens as an overlay; you stay on the page.
 3. Fill in a test card above and pay.
-4. The overlay closes and the page shows *"You're on Pro"*.
+4. The overlay closes and the page shows _"You're on Pro"_.
 
 If the overlay is blocked by the browser, LS redirects to
 `/app/account?checkout=success` instead — same test, different delivery.
 
 ## 3. Confirm each stage
 
-| Stage | Where to look | Passing |
-| --- | --- | --- |
-| Payment | LS → **Orders** | order listed, status paid, `test_mode` on |
-| Webhook fired | LS → **Settings » Webhooks** → your webhook | recent delivery, `2xx`, payload shown |
-| Webhook verified + applied | Fly logs (`fly logs`) | `[billing] subscription_created → user=… plan=pro` |
-| Plan flipped | Account page, or `select plan from users where email=…` | `pro` |
-| Limits raised | Account usage meters | 100 namespaces / 1,000,000 memories |
+| Stage                      | Where to look                                           | Passing                                            |
+| -------------------------- | ------------------------------------------------------- | -------------------------------------------------- |
+| Payment                    | LS → **Orders**                                         | order listed, status paid, `test_mode` on          |
+| Webhook fired              | LS → **Settings » Webhooks** → your webhook             | recent delivery, `2xx`, payload shown              |
+| Webhook verified + applied | Fly logs (`fly logs`)                                   | `[billing] subscription_created → user=… plan=pro` |
+| Plan flipped               | Account page, or `select plan from users where email=…` | `pro`                                              |
+| Limits raised              | Account usage meters                                    | 100 namespaces / 1,000,000 memories                |
 
 **If the order exists but the plan didn't flip**, the webhook is the suspect.
 In LS → Webhooks, expand the delivery:
@@ -68,7 +68,7 @@ In LS → Webhooks, expand the delivery:
   `https://sepia.fly.dev/api/webhooks/lemonsqueezy`) or the webhook isn't
   created yet.
 - **`401 invalid_signature`** → the secret in `.env` / `fly secrets` differs
-  from the one typed into the webhook's *Signing secret* field.
+  from the one typed into the webhook's _Signing secret_ field.
 - **`503 billing_not_configured`** → `LEMONSQUEEZY_WEBHOOK_SECRET` isn't set
   on Fly.
 - **`200` but no change** → check the log line's reason; most often
@@ -111,7 +111,7 @@ back to `pro`.
 ## Before going live
 
 1. Activate the store (LS → Settings).
-2. **Copy to Live Mode** the *Sepia Pro* product (⋮ on the product row) —
+2. **Copy to Live Mode** the _Sepia Pro_ product (⋮ on the product row) —
    test-mode products do not transfer automatically.
 3. Create a **live** API key (Settings » API) and replace
    `LEMONSQUEEZY_API_KEY`.
