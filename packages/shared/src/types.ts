@@ -188,7 +188,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * one froze VS Code / Cursor / SKILL.md at 1.0.0 while every other marker
  * advanced.
  */
-export const DOCS_VERSION = "1.13.0";
+export const DOCS_VERSION = "1.14.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [
@@ -287,8 +287,12 @@ export const ALWAYS_TAG = "always";
  * because the dashboard uses it as the promote/demote step boundary.
  */
 export const CORE_IMPORTANCE = 0.9;
-/** Which ranking engine `search` uses. `coverage` is the default (see search.ts). */
-export const SEARCH_ENGINES = ["coverage", "bm25"] as const;
+/**
+ * Which ranking engine `search` uses. `coverage` is the default (see search.ts).
+ * `opensearch` queries an external cluster and falls back to coverage on
+ * failure or empty results — it can only reorder, never lose, results.
+ */
+export const SEARCH_ENGINES = ["coverage", "bm25", "opensearch"] as const;
 export type SearchEngine = (typeof SEARCH_ENGINES)[number];
 
 /** Memory types the briefing covers. An `always`-tagged row of any type is included too. */

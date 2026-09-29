@@ -5,6 +5,7 @@ import { namespaces } from "../schema.ts";
 import { DEFAULT_NAMESPACE } from "../../types.ts";
 import { getNamespaceByIdOrName } from "./util.ts";
 import { assertNamespaceQuota } from "./plans.ts";
+import { unsyncByNamespace } from "./index-sync.ts";
 
 export interface NamespaceStats {
   id: string;
@@ -88,5 +89,8 @@ export async function deleteNamespace(
     .delete(namespaces)
     .where(and(eq(namespaces.id, id), eq(namespaces.ownerId, ownerId)))
     .returning({ id: namespaces.id, name: namespaces.name });
+  // FK cascade removes the rows in Postgres; purge the index too so no ghost
+  // docs survive under the dead namespace id (no-op when unconfigured).
+  await unsyncByNamespace(id);
   return res[0];
 }

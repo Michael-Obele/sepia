@@ -6,6 +6,7 @@ import {
   STALE_AFTER_DAYS,
   STALE_IMPORTANCE,
 } from "../../types.ts";
+import { syncMemoryIds, unsyncMemory } from "./index-sync.ts";
 
 export interface PruneMemoriesResult {
   archived_stale: number;
@@ -63,6 +64,15 @@ export async function pruneMemories(
       AND namespace_id IN (SELECT id FROM ${namespaces} WHERE owner_id = ${ownerId})
     RETURNING id
   `);
+
+  // Index sync: freshly-archived rows get their `archived` flag refreshed
+  // (coverage hides them either way — this keeps the two engines agreeing);
+  // purged rows leave the index entirely.
+  await syncMemoryIds(db, [
+    ...stale.rows.map((r) => String(r.id)),
+    ...duplicates.rows.map((r) => String(r.id)),
+  ]);
+  await Promise.all(purged.rows.map((r) => unsyncMemory(db, String(r.id))));
 
   return {
     archived_stale: stale.rows.length,

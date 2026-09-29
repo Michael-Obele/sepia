@@ -31,6 +31,7 @@ import {
 } from "../../types.ts";
 import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
 import { assertMemoryQuota } from "./plans.ts";
+import { syncMemory, syncMemoryIds, unsyncMemory } from "./index-sync.ts";
 
 export interface MemoryCreate {
   content: string;
@@ -130,6 +131,9 @@ export async function createMemory(
     .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
     .where(eq(memories.id, id))
     .limit(1);
+  // Write-through index sync (no-op when OpenSearch is unconfigured;
+  // never throws — Postgres already holds the truth).
+  await syncMemory(db, id);
   return rows[0];
 }
 
@@ -225,6 +229,7 @@ export async function updateMemory(
     throw new MemoryError("invalid_input", "no fields to update");
   }
   await db.batch(queries as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
+  await syncMemory(db, id);
   return getMemory(db, ownerId, id);
 }
 
@@ -239,6 +244,7 @@ export async function deleteMemory(db: Db, ownerId: string, id: string) {
     .returning({ id: memories.id });
   const row = res[0];
   if (!row) throw new MemoryError("not_found", `memory '${id}' not found`);
+  await unsyncMemory(db, id);
   return row;
 }
 
@@ -572,5 +578,9 @@ export async function batchUpdateMemories(
       ),
     )
     .returning({ id: memories.id });
+  await syncMemoryIds(
+    db,
+    res.map((r) => String(r.id)),
+  );
   return { count: res.length };
 }

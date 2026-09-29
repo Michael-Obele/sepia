@@ -522,7 +522,12 @@ export async function handleApi(
         limit: numParam(url.searchParams.get("limit"), 10),
         // engine (disposition 8): SearchInput declared it; this branch used to
         // drop it, so ?engine=bm25 was silently ignored on REST.
-        engine: (url.searchParams.get("engine") as "coverage" | "bm25" | null) ?? undefined,
+        engine:
+          (url.searchParams.get("engine") as
+            | "coverage"
+            | "bm25"
+            | "opensearch"
+            | null) ?? undefined,
         min_terms: url.searchParams.has("min_terms")
           ? numParam(url.searchParams.get("min_terms"), 1)
           : undefined,

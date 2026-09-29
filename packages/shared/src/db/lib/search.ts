@@ -10,6 +10,8 @@ import {
   resolveNamespaceId,
   textArray,
 } from "./util.ts";
+import { opensearchEnabled } from "./opensearch-client.ts";
+import { searchOpenSearch } from "./search-opensearch.ts";
 
 /**
  * Which ranking engine to use.
@@ -21,16 +23,18 @@ import {
  * Resolution: the explicit option, then `SEARCH_ENGINE`, then `coverage`. The
  * default is deliberately NOT bm25 — it is a different ranking model rather than
  * a tweak, so it is measured against real traffic first (telemetry records the
- * engine per search) instead of being switched on and hoped for.
+ * engine per search) instead of being switched on and hoped for. `opensearch`
+ * additionally requires `OPENSEARCH_URL`; without it (or on cluster failure)
+ * search falls back to coverage — an engine flag can reorder results, never
+ * lose them.
  */
 export function resolveSearchEngine(
   opts: {
     engine?: SearchEngine;
   } = {},
 ): SearchEngine {
-  return (opts.engine ?? process.env.SEARCH_ENGINE) === "bm25"
-    ? "bm25"
-    : "coverage";
+  const wanted = opts.engine ?? process.env.SEARCH_ENGINE;
+  return wanted === "bm25" || wanted === "opensearch" ? wanted : "coverage";
 }
 
 export interface SearchOptions {
@@ -364,6 +368,32 @@ export async function search(
     }
     return hits;
   };
+
+  // ── OpenSearch engine ────────────────────────────────────────────────
+  // The external cluster may only change the ORDER of results — errors AND
+  // empty results fall through to the SQL paths below, so a dead cluster,
+  // a Saturday maintenance window, or missing config can never produce a
+  // false "nothing exists" (the failure class this project has fixed twice).
+  if (resolveSearchEngine(opts) === "opensearch") {
+    if (opensearchEnabled()) {
+      try {
+        const osHits = await searchOpenSearch(db, ownerId, opts);
+        if (osHits.length) return finish(osHits);
+        // NB: query TEXT is deliberately not logged (content can be sensitive).
+        console.warn("[opensearch] 0 hits — falling through to coverage");
+      } catch (err) {
+        console.warn(
+          `[opensearch] unavailable — falling through to coverage: ${
+            err instanceof Error ? err.message : err
+          }`,
+        );
+      }
+    } else {
+      console.warn(
+        "[opensearch] engine=opensearch but OPENSEARCH_URL is unset — using coverage",
+      );
+    }
+  }
 
   // ── BM25 engine ───────────────────────────────────────────────────────
   // Two guards before taking this path:

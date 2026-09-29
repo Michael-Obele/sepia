@@ -27,7 +27,7 @@ All tools are registered on the MCP server at `/mcp`. Every `manage_*` tool uses
 
    **Diagnostic (the 2026-09-29 silent-arg-drop):** if two different `q` values return *identical* results, the filter was NOT applied — you are on the wrong tool, or the parameter does not exist in that tool's schema. Check the schema (and the response's `filters_applied` / `ignored_args`) before theorizing about ranking, tokenization, or index freshness. Ranked keyword search lives ONLY in `search`.
 
-   Two ranking engines exist and the default is `coverage`. `engine: "bm25"` (or `SEARCH_ENGINE=bm25` server-side) switches to a tokenised BM25 index over generated `tsvector` columns: it matches prefixes — `migr` still finds `migration`, `svelte` still finds `SvelteKit` — and **falls back to substring matching whenever it finds nothing**, so it changes the order of results, never what is findable. `score` always points the same way (higher = better) whichever engine ran. Telemetry records the engine that served each search **and whether the caller asked for it or the server default did** — traffic is not randomised, so comparing engines from telemetry is an observation about self-selected usage, not an A/B.
+   Three ranking engines exist and the default is `coverage`. `engine: "bm25"` (or `SEARCH_ENGINE=bm25` server-side) switches to a tokenised BM25 index over generated `tsvector` columns: it matches prefixes — `migr` still finds `migration`, `svelte` still finds `SvelteKit` — and **falls back to substring matching whenever it finds nothing**, so it changes the order of results, never what is findable. `engine: "opensearch"` (or `SEARCH_ENGINE=opensearch`) queries an external OpenSearch cluster (prefix recall via an edge-ngram index, 2s timeout): it **falls back to coverage on cluster failure, missing configuration, or zero hits**, so again only the order can change — a dead cluster or maintenance window can never empty a result set. `score` always points the same way (higher = better) whichever engine ran. Telemetry records the engine that served each search **and whether the caller asked for it or the server default did** — traffic is not randomised, so comparing engines from telemetry is an observation about self-selected usage, not an A/B.
 6. **`traverse_graph`** — BFS walk from a start entity (depth 1-3), returns nodes + edges in the neighborhood.
 7. **`prune_memories`** — requires `confirm: true`. The destructive maintenance sweep; **never call it to save or remember anything** (that is `manage_memory`) and never call it proactively — only when the user explicitly asks. Returns counts of archived/purged rows.
 
@@ -111,4 +111,4 @@ Rules the distilling agent must follow:
 - [Project repository](https://github.com/Michael-Obele/sepia)
 - [Product overview](https://github.com/Michael-Obele/sepia/blob/master/PRODUCT.md)
 
-Docs version: 1.13.0
+Docs version: 1.14.0

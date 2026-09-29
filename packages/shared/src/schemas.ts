@@ -354,7 +354,7 @@ export const SearchInput = v.looseObject({
     v.pipe(
       v.picklist([...SEARCH_ENGINES]),
       v.description(
-        'Ranking engine: "coverage" (substring, coverage-first) or "bm25" (tokenised, BM25-ranked). Omit to use the server default.',
+        'Ranking engine: "coverage" (substring, coverage-first), "bm25" (tokenised, BM25-ranked), or "opensearch" (external cluster; falls back to coverage when unavailable or empty). Omit to use the server default.',
       ),
     ),
   ),
@@ -633,7 +633,7 @@ export const MemoryToolInput = v.looseObject({
       v.string(),
       v.maxLength(500),
       v.description(
-        "query: keyword filter — matches content, all terms, any order (e.g. q=\"aiven opensearch\"). Empty/omitted = no keyword filtering. For ranked full-text search across memories AND entities, use the `search` tool instead.",
+        'query: keyword filter — matches content, all terms, any order (e.g. q="aiven opensearch"). Empty/omitted = no keyword filtering. For ranked full-text search across memories AND entities, use the `search` tool instead.',
       ),
     ),
   ),

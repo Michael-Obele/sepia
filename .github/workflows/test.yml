@@ -52,10 +52,30 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # OpenSearch engine #3 integration suites (search-opensearch). They skip
+      # cleanly when OPENSEARCH_URL is absent (forks), same contract as
+      # DATABASE_URL. Security plugin disabled — throwaway CI cluster only.
+      opensearch:
+        image: opensearchproject/opensearch:3.6
+        env:
+          discovery.type: single-node
+          DISABLE_SECURITY_PLUGIN: "true"
+          DISABLE_INSTALL_DEMO_CONFIG: "true"
+          OPENSEARCH_JAVA_OPTS: "-Xms512m -Xmx512m"
+        ports:
+          - 9200:9200
+        options: >-
+          --health-cmd "curl -s http://localhost:9200 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 12
     env:
       # Falls back to the service container; overridden by the repo secret
       # when a Neon test branch is configured instead.
       DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgres://postgres:sepia@localhost:5432/sepia_test' }}
+      OPENSEARCH_URL: http://localhost:9200
+      OPENSEARCH_INDEX: sepia_test
+      OPENSEARCH_TEST_REFRESH: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2

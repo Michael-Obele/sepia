@@ -19,6 +19,7 @@
     "db:baseline": "bun run scripts/db-baseline.ts",
     "smoke": "bun run scripts/smoke.ts",
     "smoke:oauth": "bun run scripts/oauth-smoke.ts",
+    "os:backfill": "bun run scripts/opensearch-backfill.ts",
     "test": "bun test",
     "check": "tsc --noEmit",
     "install:skill": "bash scripts/install-skill.sh",

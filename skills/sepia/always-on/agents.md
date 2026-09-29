@@ -1,6 +1,6 @@
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
 
-<!-- sepia-docs-version: 1.13.0 -->
+<!-- sepia-docs-version: 1.14.0 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (any `AGENTS.md`-aware agent: Codex, OpenCode, Copilot, Cursor, Zed). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
