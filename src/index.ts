@@ -7,6 +7,7 @@ import { SERVER_VERSION } from "./version.ts";
 import { auth, authEnabled, ensureAdmin, requireAuth } from "./auth.ts";
 import { handleOAuthRequest, oauthEnabled } from "./oauth.ts";
 import { handleApi } from "./api.ts";
+import { handleLemonWebhook } from "./billing/webhook.ts";
 import { registerNamespaceTools } from "./tools/namespace.ts";
 import { registerEntityTools } from "./tools/entity.ts";
 import { registerRelationTools } from "./tools/relation.ts";
@@ -273,6 +274,21 @@ Bun.serve({
         });
       }
       return response;
+    }
+
+    // Lemon Squeezy webhook — PUBLIC (LS can't authenticate) and mounted
+    // before the /api/* guard below, which 401s every route without a user.
+    // Signature-verified inside the handler (HMAC-SHA256 over the raw body),
+    // so "public" means unauthenticated, not unverified. Both spellings are
+    // accepted — the registered URL may have been typed either way.
+    if (
+      url.pathname === "/api/webhooks/lemonsqueezy" ||
+      url.pathname === "/api/webhooks/lemon-squeezy"
+    ) {
+      if (request.method !== "POST") {
+        return Response.json({ error: "method_not_allowed" }, { status: 405 });
+      }
+      return await handleLemonWebhook(request);
     }
 
     // /api/* (dashboard REST) — same process, same auth, CORS allowlist.

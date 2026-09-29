@@ -14,15 +14,28 @@
 		Code,
 		Globe,
 		Monitor,
-		Info
+		Info,
+		LoaderCircle
 	} from '@lucide/svelte';
 	import { buttonVariants } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
+	import { toast } from 'svelte-sonner';
+	import { createCheckout } from '$lib/remote/index.js';
+	import { openCheckout } from '$lib/lemon';
+	import { invalidateAll } from '$app/navigation';
+
+	let { data } = $props();
+	/** Signed-in visitors get the overlay; everyone else signs up first.
+	 *  `$derived` (not `const`) so a sign-in or invalidateAll() on this page
+	 *  re-renders the CTA instead of leaving a captured first value. */
+	const authed = $derived(Boolean(data.user));
 
 	let billing = $state<'annual' | 'monthly'>('annual');
+	/** Period currently opening a checkout — drives the spinner on that button. */
+	let starting: 'annual' | 'monthly' | null = $state(null);
 
 	const plans = [
 		{
@@ -116,6 +129,32 @@
 		{ name: 'Zep', price: 'from $104/mo' },
 		{ name: 'Sepia Hosted', price: '$4.17/mo', us: true }
 	];
+
+	/**
+	 * Start the Lemon Squeezy checkout for the billing period currently shown.
+	 * The URL is created server-side (the API key never reaches the browser)
+	 * and opened in an overlay, so the visitor never leaves the pricing page.
+	 * On success the webhook has already flipped the plan by the time we
+	 * revalidate — hence `invalidateAll()` rather than an optimistic update.
+	 */
+	async function startCheckout(period: 'annual' | 'monthly') {
+		if (starting) return; // one checkout at a time
+		starting = period;
+		try {
+			const { url } = await createCheckout(period);
+			const { completed } = await openCheckout(url);
+			if (completed) {
+				await invalidateAll();
+				toast.success("You're on Pro — welcome aboard", {
+					description: 'Refreshed from the payment webhook. Everything is unlocked.'
+				});
+			}
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Could not start checkout');
+		} finally {
+			starting = null;
+		}
+	}
 
 	const faqs = [
 		{
@@ -302,13 +341,34 @@
 				</ul>
 
 				<div class="mt-8 flex flex-1 flex-col justify-end">
-					<a
-						href="/signup"
-						class={buttonVariants({ variant: plan.variant, size: 'lg' }) + ' w-full gap-2'}
-					>
-						{plan.cta}
-						<ArrowRight class="size-4" />
-					</a>
+					{#if plan.highlight && authed}
+						<!-- Signed in → real checkout overlay (the Free CTA always
+						     goes to /signup; there's nothing to buy there). -->
+						<button
+							type="button"
+							disabled={starting !== null}
+							onclick={() => startCheckout(billing)}
+							class={buttonVariants({ variant: plan.variant, size: 'lg' }) +
+								' w-full gap-2'}
+						>
+							{#if starting === billing}
+								<LoaderCircle class="size-4 animate-spin" />
+								Starting…
+							{:else}
+								{plan.cta}
+								<ArrowRight class="size-4" />
+							{/if}
+						</button>
+					{:else}
+						<a
+							href="/signup"
+							class={buttonVariants({ variant: plan.variant, size: 'lg' }) +
+								' w-full gap-2'}
+						>
+							{plan.cta}
+							<ArrowRight class="size-4" />
+						</a>
+					{/if}
 					{#if plan.highlight}
 						<p class="mt-3 text-center text-xs text-muted-foreground">
 							Save $46/yr vs monthly · cancel anytime

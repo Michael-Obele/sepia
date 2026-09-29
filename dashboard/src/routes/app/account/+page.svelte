@@ -13,7 +13,8 @@
 		Terminal,
 		Unlink,
 		PlugZap,
-		Clock3
+		Clock3,
+		LoaderCircle
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
@@ -38,9 +39,12 @@
 		listConnections,
 		disconnectConnection,
 		signOut,
-		signOutOtherSessions
+		signOutOtherSessions,
+		createCheckout
 	} from '$lib/remote/index.js';
+	import { openCheckout } from '$lib/lemon';
 	import { goto, invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 
 	let { data } = $props();
 	const isAuthed = () => Boolean(data.user);
@@ -65,11 +69,45 @@
 		return '';
 	}
 
-	/** Payment portal is coming — until then, the upgrade button toasts. */
-	function upgrade() {
-		toast.info('Payment portal coming soon', {
-			description: "We're wiring up billing — you'll be able to upgrade right here shortly."
-		});
+	/**
+	 * Upgrade: open the Lemon Squeezy checkout overlay. The plan itself is
+	 * flipped by the webhook (source of truth), so the only local feedback we
+	 * owe is a re-read of /api/me — hence invalidateAll().
+	 *
+	 * "Manage plan" (already Pro) still toasts: the customer portal is a
+	 * deliberate follow-up, not an oversight (docs/plans/2026-09-29-
+	 * lemon-squeezy-billing-design.md → Out of scope).
+	 */
+	let upgrading = $state(false);
+	async function upgrade() {
+		// `account` is template-scoped ({@const}); the script reads the same
+		// resource. `current` is undefined only while loading — and the button
+		// isn't reachable then.
+		const plan = me?.current?.user.plan ?? 'free';
+		if (plan !== 'free') {
+			toast.info('Billing portal coming soon', {
+				description: 'Cancel or change your plan here once the portal lands.'
+			});
+			return;
+		}
+		if (upgrading) return;
+		upgrading = true;
+		try {
+			// Annual is the default here (the pricing page's toggle defaults
+			// to annual too, and it's the plan we advertise).
+			const { url } = await createCheckout('annual');
+			const { completed } = await openCheckout(url);
+			if (completed) {
+				await invalidateAll();
+				toast.success("You're on Pro — welcome aboard", {
+					description: 'Plan updated from the payment webhook.'
+				});
+			}
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Could not start checkout');
+		} finally {
+			upgrading = false;
+		}
 	}
 
 	let copied = $state('');
@@ -235,6 +273,29 @@
 	});
 	$effect(() => {
 		if (isAuthed() && !connectionsLoaded) loadConnections();
+	});
+
+	/**
+	 * Fallback path when the overlay is blocked (popup/iframe policies): LS
+	 * redirects here with ?checkout=success. The webhook may still be in
+	 * flight, so re-read /api/me and let the plan render as it lands — no
+	 * optimistic flip.
+	 */
+	let checkoutHandled = $state(false);
+	$effect(() => {
+		if (checkoutHandled) return;
+		if (page.url.searchParams.get('checkout') !== 'success') return;
+		checkoutHandled = true;
+		void (async () => {
+			await invalidateAll();
+			toast.success('Payment received', {
+				description: 'Activating your plan — this only takes a moment.'
+			});
+			// Drop the query param so a refresh doesn't re-toast.
+			const url = new URL(page.url);
+			url.searchParams.delete('checkout');
+			await goto(url, { replaceState: true, keepFocus: true });
+		})();
 	});
 </script>
 
@@ -537,7 +598,8 @@
 					Reads, search, and export are never blocked. Only new writes pause at the limits.
 				</p>
 
-				<!-- Upgrade CTA — payment portal is coming, so the button toasts -->
+				<!-- Upgrade CTA — free opens the checkout overlay; pro opens the
+				     portal (toast until the portal lands) -->
 				<div
 					class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-4"
 				>
@@ -558,12 +620,17 @@
 							{/if}
 						</p>
 					</div>
-					<Button onclick={upgrade} class="gap-1.5">
-						<CreditCard class="size-4" />
-						{#if account.user.plan === 'free'}
-							Upgrade to Pro
+					<Button onclick={upgrade} disabled={upgrading} class="gap-1.5">
+						{#if upgrading}
+							<LoaderCircle class="size-4 animate-spin" />
+							Starting…
 						{:else}
-							Manage plan
+							<CreditCard class="size-4" />
+							{#if account.user.plan === 'free'}
+								Upgrade to Pro
+							{:else}
+								Manage plan
+							{/if}
 						{/if}
 					</Button>
 				</div>

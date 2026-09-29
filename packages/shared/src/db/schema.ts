@@ -39,7 +39,11 @@ const tsvector = customType<{ data: string }>({
 
 // ── Accounts (Better Auth) ──────────────────────────────────────────────────
 // Multi-tenant identity. `users.plan` is the billing tier (free | pro), set
-// server-side only (manual assignment today, billing webhooks later).
+// server-side ONLY by the Lemon Squeezy webhook (src/billing/webhook.ts) or
+// manual assignment — never user-editable.
+// `lemon_customer_id` / `lemon_subscription_id` are the merchant-of-record
+// handles, stored so a later billing-portal pass can act on the subscription
+// without another migration. Nullable: existing rows predate billing.
 // Ids are uuids via Better Auth's `advanced.database.generateId`.
 
 export const users = pgTable(
@@ -51,6 +55,8 @@ export const users = pgTable(
     emailVerified: boolean("email_verified").notNull().default(false),
     image: text(),
     plan: text().notNull().default("free"),
+    lemonCustomerId: text("lemon_customer_id"),
+    lemonSubscriptionId: text("lemon_subscription_id"),
     createdAt: timestamp("created_at", {
       withTimezone: true,
       mode: "date",

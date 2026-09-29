@@ -122,8 +122,8 @@ export const auth = betterAuth({
   },
   user: {
     additionalFields: {
-      // Billing tier — set server-side only (manual assignment today,
-      // billing webhooks later). Not user-editable.
+      // Billing tier — set server-side only: by the Lemon Squeezy webhook
+      // (src/billing/webhook.ts) or manual assignment. Not user-editable.
       plan: { type: "string", defaultValue: "free", input: false },
     },
   },
@@ -216,6 +216,11 @@ function toUserRow(user: {
   emailVerified: boolean;
   image?: string | null;
   plan?: string;
+  // Billing handles are set only by the Lemon Squeezy webhook; Better Auth's
+  // own user object doesn't carry them, so they default to null here. The
+  // webhook writes them straight to the `users` row (src/billing/webhook.ts).
+  lemonCustomerId?: string | null;
+  lemonSubscriptionId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): UserRow {
@@ -226,6 +231,8 @@ function toUserRow(user: {
     emailVerified: user.emailVerified,
     image: user.image ?? null,
     plan: user.plan ?? "free",
+    lemonCustomerId: user.lemonCustomerId ?? null,
+    lemonSubscriptionId: user.lemonSubscriptionId ?? null,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
