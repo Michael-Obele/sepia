@@ -27,6 +27,15 @@ on:
       - ".changeset/**"
       - ".github/workflows/release.yml"
 
+# Serialize releases. Without this, two pushes to master fire two release
+# runs that both compute the same next version: the loser 409s on npm, or
+# has its bump commit rejected by the winner's push. That rejection is how
+# master ended up permanently behind the registry (git 0.9.0, npm 0.9.1)
+# and every subsequent run died re-publishing a version that already existed.
+concurrency:
+  group: release-sepia-mcp
+  cancel-in-progress: false
+
 permissions:
   contents: write
   id-token: write
@@ -36,7 +45,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
+      # ref: master — validate the same tip the release job will publish,
+      # not the SHA that triggered the run (a queued run would otherwise
+      # type-check one commit and publish another).
       - uses: actions/checkout@v4
+        with:
+          ref: master
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
       - name: Type-check
@@ -56,8 +70,14 @@ jobs:
       id-token: write
       pull-requests: write
     steps:
+      # Check out master's tip, not the triggering SHA. Concurrency
+      # serializes these runs, but each run still rebases onto master — if it
+      # started from a stale SHA it would recompute a version an earlier run
+      # already committed and conflict on package.json. Starting from the tip
+      # means each run bumps from the previous run's bump.
       - uses: actions/checkout@v4
         with:
+          ref: master
           fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
@@ -95,24 +115,62 @@ jobs:
       - name: Build
         run: cd packages/sepia-mcp && bun run build
 
-      # Publish via npm directly — simpler than changeset publish in CI.
-      # The setup-node step has configured npm for OIDC, so this
-      # authenticates automatically and attaches provenance.
-      - name: Publish to npm (OIDC trusted publishing)
-        run: |
-          cd packages/sepia-mcp
-          npm publish --access public
-        env:
-          NPM_CONFIG_PROVENANCE: "true"
-
-      # Commit the version bump + changelog back to master so package.json
-      # stays in sync with what was published.
+      # Commit the version bump + changelog BEFORE publishing. Publishing
+      # first is what wedged the pipeline: npm accepted 0.9.1, the
+      # subsequent push was rejected because master had moved, and git never
+      # learned that 0.9.1 existed — so every later run recomputed 0.9.0 →
+      # 0.9.1 and died on "cannot publish over". Recording the version first
+      # means a rejected push fails loudly before npm is touched, and the
+      # publish step below skips versions npm already has, so a re-run
+      # self-heals the drift instead of looping on it.
       - name: Commit version bump
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(release): bump sepia-mcp"
-            git push
+          if git diff --cached --quiet; then
+            echo "No version bump to commit."
+            exit 0
           fi
+          git commit -m "chore(release): bump sepia-mcp"
+          for attempt in 1 2 3; do
+            if git push origin HEAD:master; then
+              echo "Version bump pushed."
+              exit 0
+            fi
+            echo "Push rejected (attempt $attempt) — rebasing onto origin/master"
+            if ! git pull --rebase origin master; then
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+              continue
+            fi
+          done
+          echo "::error::Could not push the version bump after 3 attempts."
+          exit 1
+
+      # Publish via npm directly — simpler than changeset publish in CI.
+      # The setup-node step has configured npm for OIDC, so this
+      # authenticates automatically and attaches provenance.
+      #
+      # Guard: skip versions npm already holds. This makes the job
+      # idempotent — a re-run after a partial failure, or a repo that has
+      # drifted behind the registry, converges instead of erroring.
+      - name: Publish to npm (OIDC trusted publishing)
+        run: |
+          cd packages/sepia-mcp
+          # `npm pkg get version` prints a JSON object keyed by package name,
+          # not a bare scalar — read package.json directly instead.
+          VERSION=$(node -p "require('./package.json').version")
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read package version."
+            exit 1
+          fi
+          echo "Computed version: $VERSION"
+          if npm view "sepia-mcp@$VERSION" version >/dev/null 2>&1; then
+            echo "sepia-mcp@$VERSION is already published on npm — skipping."
+            echo "git has been synced to the published version; next run publishes the next one."
+            exit 0
+          fi
+          npm publish --access public
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
