@@ -33,8 +33,12 @@ jobs:
 
       # DB-free suites: schema parity (G3), docs parity (G8), schema
       # snapshot (G7), severity policy. No DATABASE_URL by design.
-      - name: Parity + snapshot + docs tests
-        run: bun test scripts/filter-parity.test.ts scripts/docs-manifest.test.ts scripts/tool-schema-snapshot.test.ts
+      # G9 (no-secrets) scans tracked source for credentials. It needs no .env
+      # in CI, so its exhaustive env-literal layer no-ops there and its
+      # pattern layers do the work — which is exactly the layer that would have
+      # caught the 2026-09-29 LEMONSQUEEZY_WEBHOOK_SECRET paste.
+      - name: Parity + snapshot + docs + secret-leak tests
+        run: bun test scripts/filter-parity.test.ts scripts/docs-manifest.test.ts scripts/tool-schema-snapshot.test.ts scripts/no-secrets.test.ts
 
   integration:
     runs-on: ubuntu-latest
