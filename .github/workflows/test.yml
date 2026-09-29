@@ -55,8 +55,10 @@ jobs:
       # OpenSearch engine #3 integration suites (search-opensearch). They skip
       # cleanly when OPENSEARCH_URL is absent (forks), same contract as
       # DATABASE_URL. Security plugin disabled — throwaway CI cluster only.
+      # NB: Docker Hub tags are full semver — 3.6.0 exists, "3.6" does NOT
+      # (that is the server version Aiven reports).
       opensearch:
-        image: opensearchproject/opensearch:3.6
+        image: opensearchproject/opensearch:3.6.0
         env:
           discovery.type: single-node
           DISABLE_SECURITY_PLUGIN: "true"
