@@ -6,10 +6,16 @@ import { requireAuth } from '$lib/server/auth';
 
 const RelationFilters = v.object({
 	entity_id: v.optional(v.string()),
-	namespace: v.optional(v.string())
+	namespace: v.optional(v.string()),
+	limit: v.optional(v.number(), 10000),
+	offset: v.optional(v.number(), 0)
 });
 
-/** List relations (by entity or namespace). */
+/**
+ * List relations (by entity or namespace). The UI lists a whole namespace —
+ * cap at 10000 (lib max) rather than the 200 default, so the graph/list view
+ * isn't silently truncated like the old export was.
+ */
 export const getRelations = query(RelationFilters, async (filters) => {
 	const user = await requireAuth();
 	return listRelations(db(), user.id, filters);

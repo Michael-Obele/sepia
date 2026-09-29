@@ -97,12 +97,25 @@ export async function deleteRelation(db: Db, ownerId: string, id: string) {
   return row;
 }
 
-/** List relations: in + out for one entity, or all relations in a namespace. */
+/**
+ * List relations: in + out for one entity, or all relations in a namespace.
+ * Every branch is capped by `limit` (default 200, max 10000) — an unbounded
+ * branch can stream an entire namespace into one response, and a shared cap
+ * is what makes `truncated` computable by callers (rows.length === limit).
+ * `id` is a final ORDER BY tiebreaker so LIMIT/OFFSET paging is deterministic.
+ */
 export async function listRelations(
   db: Db,
   ownerId: string,
-  opts: { entity_id?: string; namespace?: string } = {},
+  opts: {
+    entity_id?: string;
+    namespace?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
 ) {
+  const limit = Math.max(1, Math.min(opts.limit ?? 200, 10000));
+  const offset = Math.max(0, opts.offset ?? 0);
   // Joins entities twice (source + target) — query builder can't express a
   // double self-join, so use the sql template tag.
   const cols = sql`
@@ -118,7 +131,8 @@ export async function listRelations(
       JOIN ${entities} t ON t.id = r.target_id
       WHERE (r.source_id = ${opts.entity_id} OR r.target_id = ${opts.entity_id})
         AND n.owner_id = ${ownerId}
-      ORDER BY r.weight DESC, r.created_at DESC
+      ORDER BY r.weight DESC, r.created_at DESC, r.id DESC
+      LIMIT ${limit} OFFSET ${offset}
     `);
     return res.rows;
   }
@@ -130,7 +144,8 @@ export async function listRelations(
       JOIN ${entities} s ON s.id = r.source_id
       JOIN ${entities} t ON t.id = r.target_id
       WHERE n.name = ${opts.namespace} AND n.owner_id = ${ownerId}
-      ORDER BY r.weight DESC, r.created_at DESC
+      ORDER BY r.weight DESC, r.created_at DESC, r.id DESC
+      LIMIT ${limit} OFFSET ${offset}
     `);
     return res.rows;
   }
@@ -141,8 +156,8 @@ export async function listRelations(
     JOIN ${entities} s ON s.id = r.source_id
     JOIN ${entities} t ON t.id = r.target_id
     WHERE n.owner_id = ${ownerId}
-    ORDER BY r.weight DESC, r.created_at DESC
-    LIMIT 200
+    ORDER BY r.weight DESC, r.created_at DESC, r.id DESC
+    LIMIT ${limit} OFFSET ${offset}
   `);
   return res.rows;
 }

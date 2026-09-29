@@ -436,11 +436,27 @@ export async function handleApi(
 
     // ── Relations ─────────────────────────────────────────────────────────
     if (path === "/api/relations" && method === "GET") {
+      const limitParam = numParam(url.searchParams.get("limit"), 200);
+      // Same clamp as listRelations — `truncated` must compare against the
+      // EFFECTIVE limit, or a caller-supplied limit>10000 flips it false.
+      const limit = Math.max(1, Math.min(limitParam, 10000));
       const relations = await listRelations(sql, ownerId, {
         entity_id: url.searchParams.get("entity_id") ?? undefined,
         namespace: url.searchParams.get("namespace") ?? undefined,
+        limit,
+        offset: Math.max(0, numParam(url.searchParams.get("offset"), 0)),
       });
-      return json({ count: relations.length, relations }, 200, cors);
+      return json(
+        {
+          count: relations.length,
+          // count = RETURNED rows; truncated = there may be more (rows hit the
+          // cap). Never a silent cap — see docs/plans/2026-09-29-silent-arg-drop-guardrails.md
+          truncated: relations.length >= limit,
+          relations,
+        },
+        200,
+        cors,
+      );
     }
     if (path === "/api/relations" && method === "POST") {
       const input = validate(RelationInput, await readBody(request));
