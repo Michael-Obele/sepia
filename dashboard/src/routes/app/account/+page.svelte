@@ -43,6 +43,7 @@
 		createCheckout
 	} from '$lib/remote/index.js';
 	import { openCheckout } from '$lib/lemon';
+	import { confirmPayment } from '$lib/payment-confirm';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
 
@@ -72,7 +73,8 @@
 	/**
 	 * Upgrade: open the Lemon Squeezy checkout overlay. The plan itself is
 	 * flipped by the webhook (source of truth), so the only local feedback we
-	 * owe is a re-read of /api/me — hence invalidateAll().
+	 * owe is a VERIFIED re-read of the plan — hence `confirmPayment()`, which
+	 * polls until the flip is visible instead of asserting it (U1).
 	 *
 	 * "Manage plan" (already Pro) still toasts: the customer portal is a
 	 * deliberate follow-up, not an oversight (docs/plans/2026-09-29-
@@ -96,12 +98,23 @@
 			// Annual is the default here (the pricing page's toggle defaults
 			// to annual too, and it's the plan we advertise).
 			const { url } = await createCheckout('annual');
-			const { completed } = await openCheckout(url);
-			if (completed) {
-				await invalidateAll();
-				toast.success("You're on Pro — welcome aboard", {
-					description: 'Plan updated from the payment webhook.'
-				});
+			const outcome = await openCheckout(url);
+			switch (outcome.status) {
+				case 'completed':
+					// Poll until the webhook's flip is actually visible; the
+					// success toast is only shown on a confirmed read (U1).
+					await confirmPayment();
+					break;
+				case 'dismissed':
+					// Normal — they changed their mind. Say nothing.
+					break;
+				case 'redirected':
+					// Navigating to LS's hosted checkout; the page is going away.
+					toast.loading('Taking you to secure checkout…');
+					break;
+				case 'failed':
+					toast.error(outcome.reason || 'Could not start checkout');
+					break;
 			}
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Could not start checkout');
@@ -278,8 +291,8 @@
 	/**
 	 * Fallback path when the overlay is blocked (popup/iframe policies): LS
 	 * redirects here with ?checkout=success. The webhook may still be in
-	 * flight, so re-read /api/me and let the plan render as it lands — no
-	 * optimistic flip.
+	 * flight — `confirmPayment()` polls until the plan actually flips and
+	 * only claims success on a confirmed server read (U1).
 	 */
 	let checkoutHandled = $state(false);
 	$effect(() => {
@@ -287,10 +300,7 @@
 		if (page.url.searchParams.get('checkout') !== 'success') return;
 		checkoutHandled = true;
 		void (async () => {
-			await invalidateAll();
-			toast.success('Payment received', {
-				description: 'Activating your plan — this only takes a moment.'
-			});
+			await confirmPayment();
 			// Drop the query param so a refresh doesn't re-toast.
 			const url = new URL(page.url);
 			url.searchParams.delete('checkout');

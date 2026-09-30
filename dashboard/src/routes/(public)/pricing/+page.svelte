@@ -25,7 +25,9 @@
 	import { toast } from 'svelte-sonner';
 	import { createCheckout } from '$lib/remote/index.js';
 	import { openCheckout } from '$lib/lemon';
-	import { invalidateAll } from '$app/navigation';
+	import { confirmPayment } from '$lib/payment-confirm';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 
 	let { data } = $props();
 	/** Signed-in visitors get the overlay; everyone else signs up first.
@@ -134,20 +136,37 @@
 	 * Start the Lemon Squeezy checkout for the billing period currently shown.
 	 * The URL is created server-side (the API key never reaches the browser)
 	 * and opened in an overlay, so the visitor never leaves the pricing page.
-	 * On success the webhook has already flipped the plan by the time we
-	 * revalidate — hence `invalidateAll()` rather than an optimistic update.
+	 * On success the webhook may still be in flight — `confirmPayment()` polls
+	 * until a fresh server read shows the flip, rather than claiming a plan
+	 * change the client cannot verify.
+	 *
+	 * Every branch of `openCheckout` is handled on purpose. The old code only
+	 * branched on `completed`, so a customer who dismissed the overlay and a
+	 * customer whose overlay never opened looked identical — and the second
+	 * case produced no feedback whatsoever.
 	 */
 	async function startCheckout(period: 'annual' | 'monthly') {
 		if (starting) return; // one checkout at a time
 		starting = period;
 		try {
 			const { url } = await createCheckout(period);
-			const { completed } = await openCheckout(url);
-			if (completed) {
-				await invalidateAll();
-				toast.success("You're on Pro — welcome aboard", {
-					description: 'Refreshed from the payment webhook. Everything is unlocked.'
-				});
+			const outcome = await openCheckout(url);
+			switch (outcome.status) {
+				case 'completed':
+					// Honest confirmation: only toast success once a server
+					// read actually shows the flipped plan (U1).
+					await confirmPayment();
+					break;
+				case 'dismissed':
+					// Normal — they changed their mind. Say nothing.
+					break;
+				case 'redirected':
+					// Navigating to LS's hosted checkout; the page is going away.
+					toast.loading('Taking you to secure checkout…');
+					break;
+				case 'failed':
+					toast.error(outcome.reason || 'Could not start checkout');
+					break;
 			}
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Could not start checkout');
@@ -155,6 +174,26 @@
 			starting = null;
 		}
 	}
+
+	/**
+	 * U3: `/app/account` handles LS's `?checkout=success` redirect, but any
+	 * fallback path that lands on the pricing page showed nothing at all.
+	 * Confirm through the same webhook poll, then drop the param so a refresh
+	 * doesn't re-toast.
+	 */
+	let checkoutHandled = $state(false);
+	$effect(() => {
+		if (checkoutHandled) return;
+		if (!authed) return;
+		if (page.url.searchParams.get('checkout') !== 'success') return;
+		checkoutHandled = true;
+		void (async () => {
+			await confirmPayment();
+			const url = new URL(page.url);
+			url.searchParams.delete('checkout');
+			await goto(url, { replaceState: true, keepFocus: true });
+		})();
+	});
 
 	const faqs = [
 		{
@@ -348,8 +387,7 @@
 							type="button"
 							disabled={starting !== null}
 							onclick={() => startCheckout(billing)}
-							class={buttonVariants({ variant: plan.variant, size: 'lg' }) +
-								' w-full gap-2'}
+							class={buttonVariants({ variant: plan.variant, size: 'lg' }) + ' w-full gap-2'}
 						>
 							{#if starting === billing}
 								<LoaderCircle class="size-4 animate-spin" />
@@ -362,8 +400,7 @@
 					{:else}
 						<a
 							href="/signup"
-							class={buttonVariants({ variant: plan.variant, size: 'lg' }) +
-								' w-full gap-2'}
+							class={buttonVariants({ variant: plan.variant, size: 'lg' }) + ' w-full gap-2'}
 						>
 							{plan.cta}
 							<ArrowRight class="size-4" />
