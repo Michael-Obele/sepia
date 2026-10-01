@@ -22,7 +22,9 @@
 		Trash2,
 		Pencil,
 		PartyPopper,
-		Trophy
+		Trophy,
+		Clock3,
+		Unlink
 	} from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import {
@@ -35,11 +37,14 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import {
 		listApiKeys as fetchApiKeys,
 		regenerateApiKey as regenerateApiKeyRemote,
-		deleteApiKey as deleteApiKeyRemote
+		deleteApiKey as deleteApiKeyRemote,
+		listConnections,
+		disconnectConnection
 	} from '$lib/remote/index.js';
 	import ApiKeyDialog from '$lib/components/api-key-form-dialog.svelte';
 	import { API_KEY_PREFIX, MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared/types';
@@ -358,6 +363,89 @@
 			apiKeysLoaded = true;
 		}
 	}
+
+	// ── Web AI connections (OAuth) — the counted plane ──────────────────────
+	// This page is the single home for BOTH credential planes: the API keys
+	// above (bearer, never counted) and the OAuth connections below (counted
+	// against the plan). They were previously split across this page and
+	// /app/account, which meant two loaders and two explanations of the same
+	// rule; "what counts" itself is summarised on Settings → Plan & usage.
+	let connections = $state<
+		Array<{
+			id: string;
+			clientId: string;
+			name: string;
+			redirectUris: string[];
+			createdAt: string;
+			lastUsedAt: string | null;
+			active: boolean;
+			local: boolean;
+		}>
+	>([]);
+	let connectionsLoaded = $state(false);
+	let disconnectingId = $state<string | null>(null);
+	let pendingDisconnect: { clientId: string; name: string } | null = $state(null);
+
+	async function loadConnections() {
+		if (!isAuthed()) return;
+		connectionsLoaded = false;
+		try {
+			connections = await listConnections();
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Failed to load Web AI connections');
+		} finally {
+			connectionsLoaded = true;
+		}
+	}
+
+	async function confirmDisconnect() {
+		if (!pendingDisconnect) return;
+		const { clientId, name } = pendingDisconnect;
+		pendingDisconnect = null;
+		disconnectingId = clientId;
+		try {
+			await disconnectConnection(clientId);
+			toast.success(`Disconnected ${name}`);
+			// The usage meter counts live connections, so both lists have to
+			// re-read. A full reload is the honest way to do that — the
+			// `getMe` query on the plan page is memoised per navigation.
+			await loadConnections();
+			await loadApiKeys();
+			window.location.reload();
+		} catch (e) {
+			toast.error((e as Error)?.message ?? 'Failed to disconnect');
+		} finally {
+			disconnectingId = null;
+		}
+	}
+
+	function hostFromUris(uris: string[]): string {
+		for (const u of uris) {
+			try {
+				return new URL(u).hostname;
+			} catch {
+				// ignore
+			}
+		}
+		return 'unknown';
+	}
+
+	function formatDate(iso: string | null): string {
+		if (!iso) return '—';
+		try {
+			return new Date(iso).toLocaleDateString(undefined, {
+				year: 'numeric',
+				month: 'short',
+				day: 'numeric'
+			});
+		} catch {
+			return iso;
+		}
+	}
+
+	$effect(() => {
+		if (isAuthed() && !connectionsLoaded) void loadConnections();
+	});
 
 	/** Rotate = mint a replacement that keeps the same name, then drop the old key. */
 	async function regenerateApiKey(id: string) {
@@ -1247,6 +1335,127 @@
 			{/if}
 		</CardContent>
 	</Card>
+
+	<!-- Web AI connections — the OTHER plane. OAuth 2.1, counted against the
+	     plan, unlike the API keys above which never count. -->
+	<Card>
+		<CardHeader>
+			<CardTitle class="flex items-center gap-2 text-base">
+				<Globe class="size-4" /> Web AI connections
+				<Badge
+					variant="outline"
+					class="border-violet-500/30 bg-violet-500/10 font-mono text-[11px] tracking-wider text-violet-700 uppercase dark:text-violet-300"
+					>Counts toward limit</Badge
+				>
+			</CardTitle>
+			<CardDescription>
+				Web AIs connect over OAuth 2.1 — ChatGPT, Claude (web), Grok, Gemini, Perplexity, Le Chat.
+				Each account you authorize counts as one. The API keys above are a separate system and never
+				count.
+			</CardDescription>
+		</CardHeader>
+		<CardContent class="space-y-4">
+			{#if !connectionsLoaded}
+				<Skeleton class="h-16 w-full" />
+			{:else if connections.length === 0}
+				<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+					No Web AI connections yet. Connect one with step 1 above — paste the MCP URL into your AI
+					and authorize it.
+				</p>
+			{:else}
+				<ul class="space-y-2">
+					{#each connections as c (c.clientId)}
+						<li class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+							<div class="min-w-0 flex-1">
+								<div class="flex flex-wrap items-center gap-2">
+									<span
+										class="inline-flex size-6 items-center justify-center rounded-md bg-violet-500/15 text-violet-600 dark:text-violet-400"
+									>
+										<Globe class="size-3.5" />
+									</span>
+									<span class="text-sm font-medium">{c.name}</span>
+									{#if c.local}
+										<Badge variant="outline" class="text-muted-foreground"
+											>Local — doesn’t count</Badge
+										>
+									{/if}
+									<Badge variant="secondary" class="font-mono text-[11px] font-normal"
+										>{hostFromUris(c.redirectUris)}</Badge
+									>
+									{#if c.active}
+										<Badge
+											class="gap-1 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300"
+										>
+											<span class="size-1.5 rounded-full bg-emerald-500"></span> Active
+										</Badge>
+									{:else}
+										<Badge variant="outline" class="gap-1 text-muted-foreground">
+											<Clock3 class="size-3" /> Inactive
+										</Badge>
+									{/if}
+								</div>
+								<p class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+									<span class="inline-flex items-center gap-1"
+										><Clock3 class="size-3" /> Connected {formatDate(c.createdAt)}</span
+									>
+									{#if c.lastUsedAt}
+										<span>· Last used {formatDate(c.lastUsedAt)}</span>
+									{/if}
+									<span
+										class="font-mono underline decoration-dotted underline-offset-2"
+										title={c.clientId}>{c.clientId.slice(0, 8)}…</span
+									>
+								</p>
+							</div>
+							<Button
+								size="sm"
+								variant="outline"
+								class="gap-1.5 text-destructive hover:bg-destructive/10 hover:text-destructive"
+								disabled={disconnectingId === c.clientId}
+								onclick={() => (pendingDisconnect = { clientId: c.clientId, name: c.name })}
+							>
+								<Unlink class="size-3.5" />
+								{disconnectingId === c.clientId ? 'Disconnecting…' : 'Disconnect'}
+							</Button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		</CardContent>
+	</Card>
+
+	<!-- Disconnect confirmation — revoking tokens frees the counted slot. -->
+	<AlertDialog.Root
+		open={!!pendingDisconnect}
+		onOpenChange={(o) => {
+			if (!o) pendingDisconnect = null;
+		}}
+	>
+		<AlertDialog.Content>
+			<AlertDialog.Header>
+				<AlertDialog.Title>Disconnect {pendingDisconnect?.name ?? 'Web AI'}?</AlertDialog.Title>
+				<AlertDialog.Description>
+					This will revoke all tokens for this connection and free the slot. The Web AI will need to
+					re-authorize to reconnect. This cannot be undone.
+					{#if pendingDisconnect}
+						<!-- Two accounts of one provider share a name, so identify the exact row. -->
+						<span class="mt-2 block font-mono text-xs">
+							{pendingDisconnect.clientId.slice(0, 8)}…
+						</span>
+					{/if}
+				</AlertDialog.Description>
+			</AlertDialog.Header>
+			<AlertDialog.Footer>
+				<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+				<AlertDialog.Action
+					class="text-destructive-foreground bg-destructive hover:bg-destructive/90"
+					onclick={confirmDisconnect}
+				>
+					Disconnect
+				</AlertDialog.Action>
+			</AlertDialog.Footer>
+		</AlertDialog.Content>
+	</AlertDialog.Root>
 
 	<!-- Always-on memory -->
 	<Card>
