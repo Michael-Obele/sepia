@@ -23,12 +23,26 @@ const ENTITY_TYPE_OPTIONS = ['', ...ENTITY_TYPES] as const;
 const CONVERSATION_STATUS_OPTIONS = ['all', ...CONVERSATION_STATUSES] as const;
 
 /**
+ * Memory list views. `briefing` is the standing-rules set, which is a slice of
+ * memories (see the design note on `briefing-panel.svelte`) — not its own route.
+ * Defaults are omitted from the URL by runed (`showDefaults` is false), so
+ * `/app/memories` stays clean and only `?view=briefing` appears.
+ */
+export const MEMORY_VIEWS = ['all', 'briefing'] as const;
+export type MemoryView = (typeof MEMORY_VIEWS)[number];
+
+/** Entity views — the graph is a rendering of the same nodes as the list. */
+export const ENTITY_VIEWS = ['list', 'graph'] as const;
+export type EntityView = (typeof ENTITY_VIEWS)[number];
+
+/**
  * `/app/memories` filters. Every field has a default so the schema validates
  * an empty URL (`{}`) — runed uses that to derive defaults and type hints.
  * `fallback` covers invalid values (e.g. `?minImportance=abc`), `optional`
  * covers missing ones.
  */
 export const memoriesSearchSchema = v.object({
+	view: v.optional(v.fallback(v.picklist(MEMORY_VIEWS), 'all'), 'all'),
 	q: v.optional(v.fallback(v.string(), ''), ''),
 	type: v.optional(v.fallback(v.picklist(MEMORY_TYPE_OPTIONS), 'all'), 'all'),
 	namespace: v.optional(v.fallback(v.string(), 'all'), 'all'),
@@ -38,6 +52,7 @@ export const memoriesSearchSchema = v.object({
 
 /** `/app/entities` filters. */
 export const entitiesSearchSchema = v.object({
+	view: v.optional(v.fallback(v.picklist(ENTITY_VIEWS), 'list'), 'list'),
 	q: v.optional(v.fallback(v.string(), ''), ''),
 	namespace: v.optional(v.fallback(v.string(), 'all'), 'all'),
 	type: v.optional(v.fallback(v.picklist(ENTITY_TYPE_OPTIONS), ''), '')

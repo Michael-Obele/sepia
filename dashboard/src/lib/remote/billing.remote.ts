@@ -146,7 +146,11 @@ export const createCheckout = command(BillingPeriod, async (period): Promise<Che
 	const storeId = requireEnv('LEMONSQUEEZY_STORE_ID');
 	const variantId = variantIdFor(period);
 	const appOrigin = requireAppOrigin();
-	const checkoutUrl = `${appOrigin}/app/account?checkout=success`;
+	// MUST point at the route that owns the `?checkout=success` handler, which
+	// is now `/app/settings/plan` (Plan & usage). It used to be `/app/account`;
+	// that route is a 308 redirect, and a 308 to a fixed path DROPS the query
+	// string — so the "payment confirmed" banner would silently never appear.
+	const checkoutUrl = `${appOrigin}/app/settings/plan?checkout=success`;
 
 	let res: Response;
 	try {

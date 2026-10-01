@@ -1,7 +1,6 @@
 <script lang="ts">
-	import { Plus, Trash2, Download, FileJson, FileText, KeyRound, Database } from '@lucide/svelte';
+	import { ShieldCheck, Sparkles, LogOut, KeyRound } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import {
 		Card,
 		CardContent,
@@ -10,272 +9,87 @@
 		CardTitle
 	} from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
-	import { toast } from 'svelte-sonner';
-	import {
-		getNamespaces,
-		addNamespace,
-		removeNamespace,
-		exportAll,
-		signOut
-	} from '$lib/remote/index.js';
-	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
+	import { Separator } from '$lib/components/ui/separator/index.js';
 	import UserAvatar from '$lib/components/user-avatar.svelte';
+	import AvatarShareCard from '$lib/components/avatar-share-card.svelte';
+	import { toast } from 'svelte-sonner';
+	import { signOut, signOutOtherSessions } from '$lib/remote/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 
 	let { data } = $props();
-	const isAuthed = () => Boolean(data.user);
 
-	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
-
-	/** Sign out on the server (revokes the session + clears the cookie), then re-run loads. */
-	async function handleSignOut() {
+	/** Sign out of THIS browser — the everyday action. */
+	async function handleLogout() {
 		await signOut();
 		await invalidateAll();
 		await goto('/');
 	}
 
-	let newName = $state('');
-	let newDesc = $state('');
-	let exporting = $state(false);
-
-	// Delete confirmation — the dialog gates the actual delete.
-	let pendingDelete = $state<{
-		title: string;
-		description: string;
-		run: () => void | Promise<void>;
-	} | null>(null);
-
-	async function delNs(id: string, name: string) {
-		if (name === 'personal') {
-			toast.error('The default "personal" namespace cannot be deleted');
-			return;
-		}
+	/** Revoke every other session for this account — the post-leak escape hatch. */
+	let signingOutOthers = $state(false);
+	async function handleSignOutOthers() {
+		signingOutOthers = true;
 		try {
-			await removeNamespace(id);
-			toast.success(`Namespace "${name}" deleted`);
-			namespaces?.refresh();
+			await signOutOtherSessions();
+			toast.success('Signed out of all other sessions');
 		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Failed to delete namespace');
-		}
-	}
-
-	async function downloadJson() {
-		exporting = true;
-		try {
-			const data = await exportAll();
-			const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = `sepia-export-${new Date().toISOString().slice(0, 10)}.json`;
-			a.click();
-			URL.revokeObjectURL(url);
-			toast.success('JSON export downloaded');
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Export failed');
+			toast.error((e as Error)?.message ?? 'Failed to sign out other sessions');
 		} finally {
-			exporting = false;
-		}
-	}
-
-	async function downloadMarkdown() {
-		exporting = true;
-		try {
-			const data = await exportAll();
-			let md = `# Sepia Memory Export\n\n_Generated ${new Date().toISOString()}_\n\n`;
-			for (const ns of data.namespaces) {
-				md += `\n## Namespace: ${ns.name}\n\n`;
-				md += `Entities: ${ns.entity_count} · Memories: ${ns.memory_count} · Relations: ${ns.relation_count}\n\n`;
-				const nsEntities = data.entities.filter((e) => e.namespace === ns.name);
-				if (nsEntities.length) {
-					md += `### Entities\n\n`;
-					for (const e of nsEntities) {
-						md += `- **${e.name}** (${e.type}, importance ${Math.round((e.importance ?? 0.5) * 100)}%)\n`;
-						if (e.summary) md += `  - ${e.summary}\n`;
-					}
-					md += '\n';
-				}
-				const nsMemories = data.memories.filter((m) => m.namespace === ns.name);
-				if (nsMemories.length) {
-					md += `### Memories\n\n`;
-					for (const m of nsMemories) {
-						md += `- [${m.type}] ${m.content}\n`;
-					}
-					md += '\n';
-				}
-			}
-			const blob = new Blob([md], { type: 'text/markdown' });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement('a');
-			a.href = url;
-			a.download = `sepia-export-${new Date().toISOString().slice(0, 10)}.md`;
-			a.click();
-			URL.revokeObjectURL(url);
-			toast.success('Markdown export downloaded');
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Export failed');
-		} finally {
-			exporting = false;
+			signingOutOthers = false;
 		}
 	}
 </script>
 
-<svelte:head><title>Sepia — Settings</title></svelte:head>
-
 <div class="space-y-6">
-	<div>
-		<h1 class="text-2xl font-semibold tracking-tight">Settings</h1>
-		<p class="text-sm text-muted-foreground">Namespaces, access, and data export.</p>
-	</div>
-
 	<Card>
 		<CardHeader>
-			<CardTitle class="flex items-center gap-2 text-base">
-				<Database class="size-4" /> Namespaces
+			<CardTitle class="flex items-center gap-3 text-base">
+				<UserAvatar user={data.user} class="size-10" />
+				<span>{data.user?.name ?? 'Not signed in'}</span>
+				{#if data.user?.plan === 'pro'}
+					<Badge class="gap-1 bg-primary text-primary-foreground">
+						<Sparkles class="size-3" /> Pro
+					</Badge>
+				{:else}
+					<Badge variant="secondary">Free</Badge>
+				{/if}
 			</CardTitle>
-			<CardDescription
-				>Isolated containers for memory. Deleting a namespace removes everything inside it.</CardDescription
-			>
+			<CardDescription>{data.user?.email ?? '—'}</CardDescription>
 		</CardHeader>
-		<CardContent class="space-y-4">
-			<form
-				{...addNamespace.enhance(async (f) => {
-					try {
-						if (await f.submit()) {
-							toast.success(`Namespace "${newName.trim()}" created`);
-							// Clearing the bound state empties the inputs — the form itself
-							// is not reset by enhance.
-							newName = '';
-							newDesc = '';
-						} else {
-							toast.error(f.fields.allIssues()?.[0]?.message ?? 'Check the form fields');
-						}
-					} catch (e) {
-						toast.error((e as Error)?.message ?? 'Failed to create namespace');
-					}
-				})}
-				class="flex flex-col gap-2 sm:flex-row"
-			>
-				<Input
-					bind:value={newName}
-					name="name"
-					placeholder="New namespace name"
-					class="sm:max-w-56"
-				/>
-				<Input
-					bind:value={newDesc}
-					name="description"
-					placeholder="Description (optional)"
-					class="flex-1"
-				/>
-				<Button type="submit" disabled={addNamespace.pending > 0} class="gap-1">
-					<Plus class="size-4" /> Create
-				</Button>
-			</form>
-			{#if namespaces}
-				{#await namespaces}
-					<div class="space-y-2">
-						{#each [0, 1] as i (i)}
-							<Skeleton class="h-14 w-full" />
-						{/each}
-					</div>
-				{:then ns}
-					<div class="space-y-2">
-						{#each ns as n (n.id)}
-							<div class="flex items-center justify-between gap-3 rounded-md border p-3">
-								<div class="min-w-0">
-									<div class="flex items-center gap-2">
-										<p class="font-medium">{n.name}</p>
-										{#if n.name === 'personal'}
-											<Badge variant="secondary">default</Badge>
-										{/if}
-									</div>
-									{#if n.description}
-										<p class="truncate text-xs text-muted-foreground">{n.description}</p>
-									{/if}
-									<p class="text-xs text-muted-foreground">
-										{n.entity_count} entities · {n.memory_count} memories · {n.relation_count} relations
-									</p>
-								</div>
-								<Button
-									variant="ghost"
-									size="icon"
-									onclick={() =>
-										(pendingDelete = {
-											title: `Delete namespace "${n.name}"?`,
-											description:
-												'This permanently removes all its entities, relations, and memories. This cannot be undone.',
-											run: () => delNs(String(n.id), n.name)
-										})}
-									disabled={n.name === 'personal'}
-									aria-label={`Delete namespace ${n.name}`}
-								>
-									<Trash2 class="size-4 text-destructive" />
-								</Button>
-							</div>
-						{/each}
-					</div>
-				{:catch e}
-					<p class="text-sm text-destructive">
-						{(e as Error)?.message ?? 'Failed to load namespaces'}
-					</p>
-				{/await}
-			{/if}
-		</CardContent>
 	</Card>
 
+	<!-- The big, shareable portrait — see avatar-share-card.svelte -->
+	<AvatarShareCard user={data.user} plan={data.user?.plan} />
+
+	<!-- Both sign-out actions live here and nowhere else, with labels that say
+	     which one you are about to do: this browser, or every other one. -->
 	<Card>
 		<CardHeader>
 			<CardTitle class="flex items-center gap-2 text-base">
-				<KeyRound class="size-4" /> Access
+				<ShieldCheck class="size-4" /> Sessions
 			</CardTitle>
 			<CardDescription>How this browser is signed in.</CardDescription>
 		</CardHeader>
-		<CardContent class="space-y-3">
-			<div class="flex items-center gap-3 rounded-md border p-3">
-				<UserAvatar user={data.user} class="size-10" />
-				<div class="min-w-0 flex-1">
-					<p class="truncate text-sm font-medium">{data.user?.name ?? 'Not signed in'}</p>
-					<code class="block truncate text-xs text-muted-foreground">
-						{data.user?.email ?? '—'}
-					</code>
-				</div>
-				<Button variant="outline" onclick={handleSignOut}>Sign out</Button>
+		<CardContent class="space-y-4">
+			<div class="flex flex-wrap items-center gap-2">
+				<Button variant="outline" onclick={handleLogout}>
+					<LogOut class="size-4" /> Sign out
+				</Button>
+				<Button variant="ghost" onclick={handleSignOutOthers} disabled={signingOutOthers}>
+					{signingOutOthers ? 'Signing out…' : 'Sign out other sessions'}
+				</Button>
 			</div>
+			<Separator />
 			<p class="text-xs text-muted-foreground">
 				Your session is held in an HTTP-only cookie and renewed as you work — it is never exposed to
-				page scripts. Need a long-lived credential for an editor or MCP client? Create an API key on
-				the
-				<a href="/app/connect" class="underline">Connect an AI</a> page.
+				page scripts. <strong class="font-medium text-foreground">Sign out</strong> ends it in this
+				browser only. <strong class="font-medium text-foreground">Sign out other sessions</strong>
+				revokes every other browser and device signed in to this account.
+			</p>
+			<p class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+				<KeyRound class="size-3" /> Need a long-lived credential for an editor or MCP client? Create an
+				API key on the <a href="/app/connect" class="underline underline-offset-2">Connect</a> page.
 			</p>
 		</CardContent>
 	</Card>
-
-	<Card>
-		<CardHeader>
-			<CardTitle class="flex items-center gap-2 text-base">
-				<Download class="size-4" /> Data export
-			</CardTitle>
-			<CardDescription
-				>Download everything in memory as JSON or human-readable Markdown.</CardDescription
-			>
-		</CardHeader>
-		<CardContent class="flex flex-wrap gap-2">
-			<Button variant="outline" onclick={downloadJson} disabled={exporting} class="gap-1">
-				<FileJson class="size-4" /> Export JSON
-			</Button>
-			<Button variant="outline" onclick={downloadMarkdown} disabled={exporting} class="gap-1">
-				<FileText class="size-4" /> Export Markdown
-			</Button>
-		</CardContent>
-	</Card>
-
-	<ConfirmDeleteDialog
-		open={pendingDelete !== null}
-		onClose={() => (pendingDelete = null)}
-		title={pendingDelete?.title ?? 'Delete this item?'}
-		description={pendingDelete?.description ?? ''}
-		onConfirm={pendingDelete?.run}
-	/>
 </div>

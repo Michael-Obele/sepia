@@ -186,8 +186,8 @@
 	}
 
 	/**
-	 * U3: `/app/account` handles LS's `?checkout=success` redirect, but any
-	 * fallback path that lands on the pricing page showed nothing at all.
+	 * U3: `/app/settings/plan` handles LS's `?checkout=success` redirect, but
+	 * any fallback path that lands on the pricing page showed nothing at all.
 	 * Confirm through the same webhook poll, then drop the param so a refresh
 	 * doesn't re-toast.
 	 */
@@ -270,8 +270,9 @@
 			<Alert.Description>
 				100 namespaces, 1,000,000 memories and unlimited Web AI connections are live on your
 				account.
-				<a href="/app/account" class="font-medium text-foreground underline underline-offset-4"
-					>Manage your plan</a
+				<a
+					href="/app/settings/plan"
+					class="font-medium text-foreground underline underline-offset-4">Manage your plan</a
 				>
 			</Alert.Description>
 		</Alert.Root>
