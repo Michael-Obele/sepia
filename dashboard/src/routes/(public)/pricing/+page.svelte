@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		Check,
+		CircleCheck,
 		Minus,
 		Plus,
 		Sparkles,
@@ -19,6 +20,7 @@
 	} from '@lucide/svelte';
 	import { buttonVariants } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
@@ -34,10 +36,17 @@
 	 *  `$derived` (not `const`) so a sign-in or invalidateAll() on this page
 	 *  re-renders the CTA instead of leaving a captured first value. */
 	const authed = $derived(Boolean(data.user));
+	/** The visitor's actual plan — pricing must never sell Pro to a Pro (critique HIGH-1). */
+	const myPlan = $derived(data.user?.plan ?? 'free');
 
 	let billing = $state<'annual' | 'monthly'>('annual');
 	/** Period currently opening a checkout — drives the spinner on that button. */
 	let starting: 'annual' | 'monthly' | null = $state(null);
+	/**
+	 * Durable payment confirmation. A 4-second toast is not proof the money
+	 * worked (critique HIGH-2) — this banner stays for the page's lifetime.
+	 */
+	let paymentConfirmed = $state(false);
 
 	const plans = [
 		{
@@ -65,7 +74,7 @@
 		{
 			name: 'Pro',
 			bestFor: 'For everyday AI users',
-			tagline: 'One graph for every AI you use. Locked in at beta pricing.',
+			tagline: 'One graph for every AI you use.',
 			price: '$50',
 			period: 'billed annually',
 			monthlyPrice: '$8',
@@ -154,8 +163,9 @@
 			switch (outcome.status) {
 				case 'completed':
 					// Honest confirmation: only toast success once a server
-					// read actually shows the flipped plan (U1).
-					await confirmPayment();
+					// read actually shows the flipped plan (U1) — and keep a
+					// durable banner after the toast fades (HIGH-2).
+					paymentConfirmed = await confirmPayment();
 					break;
 				case 'dismissed':
 					// Normal — they changed their mind. Say nothing.
@@ -188,7 +198,7 @@
 		if (page.url.searchParams.get('checkout') !== 'success') return;
 		checkoutHandled = true;
 		void (async () => {
-			await confirmPayment();
+			paymentConfirmed = await confirmPayment();
 			const url = new URL(page.url);
 			url.searchParams.delete('checkout');
 			await goto(url, { replaceState: true, keepFocus: true });
@@ -198,7 +208,7 @@
 	const faqs = [
 		{
 			q: 'What is a Web AI connection?',
-			a: 'A Web AI connection is a web-based AI provider you connect to Sepia via OAuth — like ChatGPT, Claude (web), Grok, Gemini, Perplexity, or Le Chat. Each connected provider counts as one Web AI connection. Free includes 2, Pro is unlimited.'
+			a: 'A Web AI connection is one AI account you connect to Sepia via OAuth — like ChatGPT, Claude (web), Grok, Gemini, Perplexity, or Le Chat. Each account you authorize counts as one connection, so two accounts of the same provider (a personal and a work Grok, say) count as two. Free includes 2, Pro is unlimited.'
 		},
 		{
 			q: 'Do AI editors count toward my connection limit?',
@@ -250,6 +260,23 @@
 		content="Sepia Hosted — one memory graph for every AI you use. Free: 2 Web AI connections (editors unlimited), 1,000 memories. Pro at $50/yr (≈ $4.17/mo) — unlimited Web AI connections. Locked-in beta pricing, export everything, cancel anytime. Self-host free forever."
 	/>
 </svelte:head>
+
+{#if paymentConfirmed}
+	<!-- Durable proof of purchase — outlives the success toast (critique HIGH-2). -->
+	<div class="mx-auto max-w-5xl px-4 pt-6">
+		<Alert.Root class="border-emerald-500/30 bg-emerald-500/10">
+			<CircleCheck />
+			<Alert.Title>You’re on Pro — payment confirmed</Alert.Title>
+			<Alert.Description>
+				100 namespaces, 1,000,000 memories and unlimited Web AI connections are live on your
+				account.
+				<a href="/app/account" class="font-medium text-foreground underline underline-offset-4"
+					>Manage your plan</a
+				>
+			</Alert.Description>
+		</Alert.Root>
+	</div>
+{/if}
 
 <!-- Hero + toggle -->
 <section class="relative overflow-hidden px-4 pt-20 pb-12 sm:pt-28">
@@ -325,9 +352,9 @@
 				<div class="flex items-center gap-2">
 					<h2 class="text-lg font-semibold tracking-tight">{plan.name}</h2>
 					{#if plan.highlight}
-						<Infinity class="size-4 text-brand" />
+						<Infinity class="size-4 text-brand" role="img" aria-label="Unlimited" />
 					{/if}
-					<Badge variant="outline" class="ml-auto font-mono text-[10px] tracking-wider uppercase"
+					<Badge variant="outline" class="ml-auto font-mono text-[11px] tracking-wider uppercase"
 						>{plan.bestFor}</Badge
 					>
 				</div>
@@ -345,7 +372,7 @@
 						>
 						<span class="text-muted-foreground">/year</span>
 					{:else}
-						<span class="font-mono text-5xl font-semibold tracking-tight tabular-nums"
+						<span class="font-mono text-4xl font-semibold tracking-tight tabular-nums"
 							>{plan.price}</span
 						>
 						<span class="text-muted-foreground">{plan.period}</span>
@@ -380,7 +407,24 @@
 				</ul>
 
 				<div class="mt-8 flex flex-1 flex-col justify-end">
-					{#if plan.highlight && authed}
+					{#if plan.highlight && myPlan !== 'free'}
+						<!-- Already Pro: never invite a second purchase (critique HIGH-1). -->
+						<div
+							class="flex flex-col items-center gap-2.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3.5"
+						>
+							<Badge
+								class="gap-1.5 bg-emerald-500/15 text-emerald-700 ring-1 ring-emerald-500/25 dark:text-emerald-400"
+							>
+								<BadgeCheck class="size-3.5" /> Your current plan
+							</Badge>
+							<a
+								href="/app/account"
+								class={buttonVariants({ variant: 'outline', size: 'lg' }) + ' w-full gap-2'}
+							>
+								Manage plan <ArrowRight class="size-4" />
+							</a>
+						</div>
+					{:else if plan.highlight && authed}
 						<!-- Signed in → real checkout overlay (the Free CTA always
 						     goes to /signup; there's nothing to buy there). -->
 						<button
@@ -428,10 +472,10 @@
 			><Download class="size-4 text-brand" /> Export everything</span
 		>
 		<span class="flex items-center gap-2"
-			><ShieldCheck class="size-4 text-emerald-400" /> Private — no third-party analytics</span
+			><ShieldCheck class="size-4 text-brand" /> Private — no third-party analytics</span
 		>
 		<span class="flex items-center gap-2"
-			><RefreshCw class="size-4 text-amber-400" /> Cancel anytime</span
+			><RefreshCw class="size-4 text-brand" /> Cancel anytime</span
 		>
 	</div>
 </section>
@@ -441,7 +485,7 @@
 	<div class="mx-auto max-w-5xl">
 		<div class="rounded-2xl border border-border/60 bg-card/30 p-6 sm:p-7">
 			<div class="flex items-center gap-2">
-				<Badge variant="outline" class="font-mono text-[10px] tracking-wider uppercase"
+				<Badge variant="outline" class="font-mono text-[11px] tracking-wider uppercase"
 					>What counts?</Badge
 				>
 				<span class="text-xs text-muted-foreground">Web AI vs AI editor — the only distinction</span
@@ -449,10 +493,10 @@
 			</div>
 			<h3 class="mt-3 text-lg font-semibold tracking-tight">What counts as a Web AI connection?</h3>
 			<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
-				A <span class="font-medium text-foreground">Web AI connection</span> is a web-based AI you
-				connect via OAuth — ChatGPT, Claude (web), Grok, Gemini, Perplexity, Le Chat. Each provider
-				you connect counts as one. Free includes <span class="font-medium text-foreground">1</span>,
-				Pro is
+				A <span class="font-medium text-foreground">Web AI connection</span> is one AI account you
+				connect via OAuth — ChatGPT, Claude (web), Grok, Gemini, Perplexity, Le Chat. Each account
+				you authorize counts as one. Free includes
+				<span class="font-medium text-foreground">2</span>, Pro is
 				<span class="font-medium text-foreground">unlimited</span>.
 			</p>
 			<div class="mt-5 grid gap-4 sm:grid-cols-2">
@@ -463,7 +507,7 @@
 						>
 					</div>
 					<p class="mt-2 text-xs leading-relaxed text-muted-foreground">
-						Connected via OAuth. Each provider = 1 connection. Local apps (LM Studio, Cursor) are
+						Connected via OAuth. Each account = 1 connection. Local apps (LM Studio, Cursor) are
 						free. Shown in your dashboard and enforced at the plan limit.
 					</p>
 					<div class="mt-3 flex flex-wrap gap-1.5">
