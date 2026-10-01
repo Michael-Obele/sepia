@@ -173,7 +173,7 @@
 		<!-- The graph filters by entity type through its OWN control, so the
 		     list's filter card is hidden here rather than shown inert. Its
 		     state stays in the URL and is untouched when you switch back. -->
-		<EntityGraph />
+		<EntityGraph focus={params.focus} />
 	{:else}
 		<Card>
 			<CardHeader>

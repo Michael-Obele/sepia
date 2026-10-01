@@ -50,12 +50,22 @@ export const memoriesSearchSchema = v.object({
 	archived: v.optional(v.fallback(v.boolean(), false), false)
 });
 
-/** `/app/entities` filters. */
+/**
+ * `/app/entities` filters.
+ *
+ * `focus` is not a filter — it is the entity id the graph view should centre
+ * on, which is why an entity detail page links to
+ * `/app/entities?view=graph&focus=<id>`. It belongs in the schema rather than
+ * being read ad hoc from `page.url`, because `useSearchParams` owns the URL
+ * for the keys it knows: a param it does not know about is not guaranteed to
+ * survive a tab change.
+ */
 export const entitiesSearchSchema = v.object({
 	view: v.optional(v.fallback(v.picklist(ENTITY_VIEWS), 'list'), 'list'),
 	q: v.optional(v.fallback(v.string(), ''), ''),
 	namespace: v.optional(v.fallback(v.string(), 'all'), 'all'),
-	type: v.optional(v.fallback(v.picklist(ENTITY_TYPE_OPTIONS), ''), '')
+	type: v.optional(v.fallback(v.picklist(ENTITY_TYPE_OPTIONS), ''), ''),
+	focus: v.optional(v.fallback(v.string(), ''), '')
 });
 
 /** `/app/conversations` filters. */

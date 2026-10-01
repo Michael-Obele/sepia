@@ -419,7 +419,7 @@
 								<BadgeCheck class="size-3.5" /> Your current plan
 							</Badge>
 							<a
-								href="/app/account"
+								href="/app/settings/plan"
 								class={buttonVariants({ variant: 'outline', size: 'lg' }) + ' w-full gap-2'}
 							>
 								Manage plan <ArrowRight class="size-4" />

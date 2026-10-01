@@ -2,21 +2,15 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
 	import {
-		Search,
+		LayoutDashboard,
 		Layers,
-		ScrollText,
 		Boxes,
-		Network,
 		MessagesSquare,
 		Plug,
 		Settings,
 		LogOut,
 		UserRound,
-		Activity,
-		BrainCircuit,
-		House,
-		CreditCard,
-		ExternalLink
+		BrainCircuit
 	} from '@lucide/svelte';
 	import { signOut } from '$lib/remote/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
@@ -26,43 +20,32 @@
 	/** The signed-in user, so the footer can show their face + name. */
 	let { user }: { user: UserRow | null } = $props();
 
-	type NavItem = { href: string; label: string; icon: typeof Search; external?: boolean };
+	type NavItem = { href: string; label: string; icon: typeof LayoutDashboard };
 
-	/** Primary in-app routes (grouped — full IA rethink tracked separately) */
-	const workspace: NavItem[] = [
-		{ href: '/app', label: 'Search', icon: Search },
+	/**
+	 * Two groups, six items. The split is the user's own: the data their AIs
+	 * wrote, and how it is wired up. Home, Pricing and GitHub were here until
+	 * 2026-10-01 — the brand already covers "home", and the other two are
+	 * reachable from Settings → About and Settings → Plan & usage. Mixing
+	 * external links into an app nav is its own anti-pattern, and at 13 items
+	 * in 3 groups the nav was carrying destinations it had no business owning.
+	 */
+	const memory: NavItem[] = [
+		{ href: '/app', label: 'Overview', icon: LayoutDashboard },
 		{ href: '/app/memories', label: 'Memories', icon: Layers },
-		{ href: '/app/briefing', label: 'Briefing', icon: ScrollText },
-		{ href: '/app/conversations', label: 'Conversations', icon: MessagesSquare },
 		{ href: '/app/entities', label: 'Entities', icon: Boxes },
-		{ href: '/app/graph', label: 'Graph', icon: Network },
-		{ href: '/app/connect', label: 'Connect an AI', icon: Plug }
+		{ href: '/app/conversations', label: 'Conversations', icon: MessagesSquare }
 	];
 
-	/** Personal config routes */
-	const account: NavItem[] = [
-		{ href: '/app/settings', label: 'Settings', icon: Settings },
-		{ href: '/app/account', label: 'Account', icon: UserRound },
-		{ href: '/app/telemetry', label: 'Telemetry', icon: Activity }
+	const configure: NavItem[] = [
+		{ href: '/app/connect', label: 'Connect', icon: Plug },
+		{ href: '/app/settings', label: 'Settings', icon: Settings }
 	];
 
-	/** Public/marketing routes so logged-in users can reach them without going home first */
-	const site: NavItem[] = [
-		{ href: '/', label: 'Home', icon: House },
-		{ href: '/pricing', label: 'Pricing', icon: CreditCard },
-		{
-			href: 'https://github.com/Michael-Obele/sepia',
-			label: 'GitHub',
-			icon: ExternalLink,
-			external: true
-		}
-	];
-
+	// `/app` must match EXACTLY — a prefix match would light up Overview on
+	// every /app/* page, since they all share that prefix.
 	function isActive(href: string) {
-		if (href === '/') return page.url.pathname === '/';
-		if (href === '/app') return page.url.pathname === '/app';
-		if (href.startsWith('http')) return false;
-		return page.url.pathname.startsWith(href);
+		return href === '/app' ? page.url.pathname === '/app' : page.url.pathname.startsWith(href);
 	}
 
 	async function handleLogout() {
@@ -96,9 +79,9 @@
 	</Sidebar.Header>
 	<Sidebar.Content>
 		<Sidebar.Group>
-			<Sidebar.GroupLabel>Workspace</Sidebar.GroupLabel>
+			<Sidebar.GroupLabel>Your memory</Sidebar.GroupLabel>
 			<Sidebar.Menu>
-				{#each workspace as item (item.href)}
+				{#each memory as item (item.href)}
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton isActive={isActive(item.href)} tooltipContent={item.label}>
 							{#snippet child({ props })}
@@ -113,9 +96,9 @@
 			</Sidebar.Menu>
 		</Sidebar.Group>
 		<Sidebar.Group>
-			<Sidebar.GroupLabel>Account</Sidebar.GroupLabel>
+			<Sidebar.GroupLabel>Configure</Sidebar.GroupLabel>
 			<Sidebar.Menu>
-				{#each account as item (item.href)}
+				{#each configure as item (item.href)}
 					<Sidebar.MenuItem>
 						<Sidebar.MenuButton isActive={isActive(item.href)} tooltipContent={item.label}>
 							{#snippet child({ props })}
@@ -123,30 +106,6 @@
 									<item.icon />
 									<span>{item.label}</span>
 								</a>
-							{/snippet}
-						</Sidebar.MenuButton>
-					</Sidebar.MenuItem>
-				{/each}
-			</Sidebar.Menu>
-		</Sidebar.Group>
-		<Sidebar.Group>
-			<Sidebar.GroupLabel>Sepia</Sidebar.GroupLabel>
-			<Sidebar.Menu>
-				{#each site as item (item.href)}
-					<Sidebar.MenuItem>
-						<Sidebar.MenuButton tooltipContent={item.label}>
-							{#snippet child({ props })}
-								{#if item.external}
-									<a href={item.href} target="_blank" rel="noopener noreferrer" {...props}>
-										<item.icon />
-										<span>{item.label}</span>
-									</a>
-								{:else}
-									<a href={item.href} {...props}>
-										<item.icon />
-										<span>{item.label}</span>
-									</a>
-								{/if}
 							{/snippet}
 						</Sidebar.MenuButton>
 					</Sidebar.MenuItem>
@@ -157,10 +116,12 @@
 	<Sidebar.Footer>
 		<Sidebar.Menu>
 			<Sidebar.MenuItem>
-				<!-- Identity row: the avatar is the fastest "who am I signed in as" -->
-				<Sidebar.MenuButton onclick={() => goto('/app/account')} tooltipContent="Account">
+				<!-- Identity row: the avatar is the fastest "who am I signed in as".
+				     It goes to Settings → Profile, the one place account changes
+				     are made — this used to be a separate /app/account route. -->
+				<Sidebar.MenuButton onclick={() => goto('/app/settings')} tooltipContent="Settings">
 					{#snippet child({ props })}
-						<a href="/app/account" {...props}>
+						<a href="/app/settings" {...props}>
 							{#if user}
 								<UserAvatar {user} class="size-8" />
 								<div class="grid flex-1 text-left leading-tight">

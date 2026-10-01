@@ -8,7 +8,6 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { getGraph, getFullGraph, getEntities, getStatsData } from '$lib/remote/index.js';
 	import { importancePct } from '$lib/format.js';
-	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import type { GraphResult } from '@sepia/shared';
 
@@ -31,6 +30,13 @@
 
 	type GraphNode = { id: string; label: string; type: string; importance: number };
 	type GraphEdge = { id: string; source: string; target: string; label: string; weight: number };
+
+	let {
+		focus = ''
+	}: {
+		/** Entity id to centre on (focus mode). Empty = full graph. */
+		focus?: string;
+	} = $props();
 
 	type SimNode = Prettify<GraphNode & SimulationNodeDatum>;
 	// Omit source/target from GraphEdge so the SimulationLinkDatum's
@@ -87,10 +93,9 @@
 	let typeFilter = $state<Set<string>>(new Set());
 	let legendOpen = $state(false);
 
-	// Pick a default root: the ?focus= param (→ focus mode), else the
+	// Pick a default root: the focus prop (→ focus mode), else the
 	// most-accessed entity (used if the user switches to focus mode).
 	$effect(() => {
-		const focus = page.url.searchParams.get('focus');
 		if (focus) {
 			mode = 'focus';
 			rootId = focus;

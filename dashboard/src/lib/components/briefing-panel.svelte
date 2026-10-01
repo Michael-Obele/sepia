@@ -16,6 +16,7 @@
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 	import { ALWAYS_TAG, CORE_IMPORTANCE, BRIEFING_ITEM_CHARS } from '@sepia/shared/types';
+	import { untrack } from 'svelte';
 
 	/**
 	 * The standing rules, as an AI reads them.
@@ -75,10 +76,18 @@
 		}
 	}
 
-	// Reload whenever the namespace filter changes (the tab owns no local state).
+	/**
+	 * Reload whenever the namespace filter changes.
+	 *
+	 * `untrack` matters here: `load()` reads `showAll` synchronously, so
+	 * without it the effect would depend on `showAll` too — and the "Show
+	 * all" button sets that flag AND calls `load()` itself, which would fire
+	 * the request twice. Only the namespace filter is meant to auto-reload;
+	 * every other path calls `load()` explicitly.
+	 */
 	$effect(() => {
 		void namespace;
-		void load();
+		untrack(() => void load());
 	});
 
 	/** ≈ tokens the default (core) briefing costs — chars ÷ 4, deliberately rough. */
