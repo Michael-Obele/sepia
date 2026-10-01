@@ -1,5 +1,5 @@
 import type { Db } from "../client.ts";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { oauthClients, oauthTokens } from "../schema.ts";
 
 /**
@@ -84,6 +84,25 @@ export function connectionIdentity(
 }
 
 /**
+ * True when this client still holds a usable credential.
+ *
+ * A connection with no non-revoked, unexpired refresh token can never be used
+ * again, so retiring it costs the user nothing. This is the discriminator that
+ * tells a stale re-registration from a second, live account of the same app.
+ */
+export async function hasLiveToken(db: Db, clientId: string): Promise<boolean> {
+  const rows = await db
+    .select({ expiresAt: oauthTokens.refreshExpiresAt })
+    .from(oauthTokens)
+    .where(
+      and(eq(oauthTokens.clientId, clientId), isNull(oauthTokens.revokedAt)),
+    )
+    .limit(1);
+  const expiresAt = rows[0]?.expiresAt;
+  return Boolean(expiresAt) && new Date(expiresAt!).getTime() > Date.now();
+}
+
+/**
  * The user's existing connection for the same app, if any — matched by stable
  * identity rather than `client_id`, so re-authorization finds it.
  */
@@ -122,18 +141,56 @@ export interface OAuthClientInput {
 }
 
 /**
+ * Whether `previous` is a SUPERSEDED registration that may be retired, rather
+ * than a second live account of the same app that must be left alone.
+ *
+ * App identity (`name@host`) cannot tell one ACCOUNT of an app from another:
+ * both Grok logins are `Grok@grok.com`. Treating every same-app collision as a
+ * re-authorization meant binding a second Grok account revoked the first one's
+ * tokens and deleted its row — a destructive, irreversible loss of a working
+ * connection, with nothing left in the dashboard to show it happened.
+ *
+ * So a collision is only a re-registration when we can show the old row is not
+ * doing any work:
+ *
+ *   - DEAD (no live token). It can never authorize again, so retiring it loses
+ *     nothing. This is the stale-registration case that must not leak quota.
+ *   - LOCAL (loopback-only redirect). A local editor has exactly one identity —
+ *     one LM Studio, one machine — so two loopback rows for the same app are
+ *     re-registrations by definition, and the quota exempts them anyway. This
+ *     is the case commit 2be9c32 was written for, unchanged.
+ *
+ * Anything else is presumed to be a DIFFERENT account, because the asymmetry is
+ * lopsided: destroying a working connection is unrecoverable, while an extra row
+ * the user did not ask for is visible, removable, and bounded by the quota.
+ */
+export async function isSupersededRegistration(
+  db: Db,
+  previous: OAuthClientRow,
+  nextClientId: string,
+): Promise<boolean> {
+  // The same client re-authorizing is never a supersession.
+  if (previous.clientId === nextClientId) return false;
+  if (isLocalClient(previous.redirectUris)) return true;
+  return !(await hasLiveToken(db, previous.clientId));
+}
+
+/**
  * Bind a client to its authorizing user, reusing the row when the same app is
  * already connected.
  *
  * `previous` is the user's existing connection for this app (from
  * `findOwnedConnection`) — passing it in avoids a second lookup and lets the
- * caller make the quota decision first.
+ * caller make the quota decision first. `superseded` is that caller's
+ * `isSupersededRegistration` verdict; when omitted it is computed here so the
+ * two can never disagree.
  */
 export async function bindClientToUser(
   db: Db,
   client: OAuthClientInput,
   userId: string,
   previous?: OAuthClientRow,
+  superseded?: boolean,
 ): Promise<void> {
   const registration = await findClientRegistration(db, client.client_id);
 
@@ -160,14 +217,19 @@ export async function bindClientToUser(
       .onConflictDoNothing();
   }
 
-  // Retire the superseded registration so the app counts once and the
-  // dashboard lists one row. Its tokens are revoked with it: the client has
-  // already moved on to the credential it just obtained.
-  if (previous && previous.clientId !== client.client_id) {
+  // Retire the superseded registration so a stale re-registration counts once
+  // and the dashboard lists one row. Its tokens are revoked with it: the client
+  // has already moved on to the credential it just obtained.
+  const retire =
+    previous !== undefined &&
+    (superseded ??
+      (await isSupersededRegistration(db, previous, client.client_id)));
+
+  if (retire && previous!.clientId !== client.client_id) {
     await db
       .update(oauthTokens)
       .set({ revokedAt: new Date() })
-      .where(eq(oauthTokens.clientId, previous.clientId));
-    await db.delete(oauthClients).where(eq(oauthClients.id, previous.id));
+      .where(eq(oauthTokens.clientId, previous!.clientId));
+    await db.delete(oauthClients).where(eq(oauthClients.id, previous!.id));
   }
 }

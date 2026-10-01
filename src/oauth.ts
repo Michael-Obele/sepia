@@ -34,6 +34,7 @@ import {
   findOwnedConnection,
   getPlanLimits,
   getUserById,
+  isSupersededRegistration,
   oauthClients,
   oauthCodes,
   oauthTokens,
@@ -611,6 +612,13 @@ const handlers = {
       // every authorization, so keying on it counted each re-authorization as
       // a new connection and duplicated the user's dashboard rows.
       //
+      // A same-app collision is only a RE-AUTHORIZATION when the existing row
+      // is dead or a local editor (see isSupersededRegistration). Otherwise it
+      // is a second account of the same app — a real, countable connection —
+      // so it must be charged against the quota. Deriving the flag once and
+      // sharing it with bindClientToUser keeps "did this cost a slot?" and
+      // "did we insert a row?" from ever disagreeing.
+      //
       // Local (loopback) clients are excluded from the count entirely — they
       // are local editors, which the plan leaves unlimited.
       const user = await getUserById(db(), userId);
@@ -620,14 +628,18 @@ const handlers = {
         client.client_name,
         client.redirect_uris,
       );
-      if (!previous) {
+      const superseded = previous
+        ? await isSupersededRegistration(db(), previous, client.client_id)
+        : false;
+
+      if (!previous || !superseded) {
         try {
           await assertAiConnectionQuota(db(), userId, user?.plan);
         } catch {
           return renderPlanLimitPage(client, user?.plan);
         }
       }
-      await bindClientToUser(db(), client, userId, previous);
+      await bindClientToUser(db(), client, userId, previous, superseded);
 
       const code = randomToken(48);
       await db()
