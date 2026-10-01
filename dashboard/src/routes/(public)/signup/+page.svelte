@@ -26,7 +26,8 @@
 	<title>Create account — Sepia</title>
 </svelte:head>
 
-<div class="flex min-h-svh items-center justify-center bg-background p-4">
+<!-- min-h leaves room for the shared (public) header this page now renders under. -->
+<div class="flex min-h-[calc(100svh-61px)] items-center justify-center bg-background p-4">
 	<Card class="w-full max-w-sm">
 		<CardHeader class="text-center">
 			<div
@@ -36,7 +37,7 @@
 			</div>
 			<CardTitle class="text-xl">Create your account</CardTitle>
 			<CardDescription
-				>Free forever — 1 namespace, 1,000 memories, 1 Web AI connection. AI editors unlimited.</CardDescription
+				>Free forever — 1 namespace, 1,000 memories, 2 Web AI connections. AI editors unlimited.</CardDescription
 			>
 		</CardHeader>
 		<CardContent>
@@ -61,7 +62,7 @@
 						<User class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 						<input
 							id="name"
-							placeholder="Ada Lovelace"
+							placeholder="e.g. Ada Lovelace"
 							class="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 pl-9 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 							{...signUp.fields.name.as('text')}
 						/>
