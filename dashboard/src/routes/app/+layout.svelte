@@ -14,7 +14,7 @@
 
 {#if isAuthed()}
 	<Sidebar.Provider class="overflow-x-hidden">
-		<AppSidebar />
+		<AppSidebar user={data.user} />
 		<main class="flex min-h-svh min-w-0 flex-1 flex-col overflow-x-hidden">
 			<Sidebar.Trigger class="mt-2 ml-2 shrink-0" />
 			<div class="min-w-0 flex-1 overflow-hidden p-4 md:p-6 lg:p-8">

@@ -20,6 +20,7 @@
 		signOut
 	} from '$lib/remote/index.js';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
+	import UserAvatar from '$lib/components/user-avatar.svelte';
 	import { goto, invalidateAll } from '$app/navigation';
 
 	let { data } = $props();
@@ -232,10 +233,14 @@
 			<CardDescription>How this browser is signed in.</CardDescription>
 		</CardHeader>
 		<CardContent class="space-y-3">
-			<div class="flex items-center gap-2">
-				<code class="flex-1 truncate rounded-md bg-muted px-3 py-2 text-sm">
-					{data.user?.email ?? 'Not signed in'}
-				</code>
+			<div class="flex items-center gap-3 rounded-md border p-3">
+				<UserAvatar user={data.user} class="size-10" />
+				<div class="min-w-0 flex-1">
+					<p class="truncate text-sm font-medium">{data.user?.name ?? 'Not signed in'}</p>
+					<code class="block truncate text-xs text-muted-foreground">
+						{data.user?.email ?? '—'}
+					</code>
+				</div>
 				<Button variant="outline" onclick={handleSignOut}>Sign out</Button>
 			</div>
 			<p class="text-xs text-muted-foreground">

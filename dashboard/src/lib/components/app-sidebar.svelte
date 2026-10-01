@@ -20,6 +20,11 @@
 	} from '@lucide/svelte';
 	import { signOut } from '$lib/remote/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
+	import UserAvatar from '$lib/components/user-avatar.svelte';
+	import type { UserRow } from '@sepia/shared';
+
+	/** The signed-in user, so the footer can show their face + name. */
+	let { user }: { user: UserRow | null } = $props();
 
 	type NavItem = { href: string; label: string; icon: typeof Search; external?: boolean };
 
@@ -151,6 +156,25 @@
 	</Sidebar.Content>
 	<Sidebar.Footer>
 		<Sidebar.Menu>
+			<Sidebar.MenuItem>
+				<!-- Identity row: the avatar is the fastest "who am I signed in as" -->
+				<Sidebar.MenuButton onclick={() => goto('/app/account')} tooltipContent="Account">
+					{#snippet child({ props })}
+						<a href="/app/account" {...props}>
+							{#if user}
+								<UserAvatar {user} class="size-8" />
+								<div class="grid flex-1 text-left leading-tight">
+									<span class="truncate font-medium">{user.name}</span>
+									<span class="truncate text-xs text-muted-foreground">{user.email}</span>
+								</div>
+							{:else}
+								<UserRound />
+								<span>Not signed in</span>
+							{/if}
+						</a>
+					{/snippet}
+				</Sidebar.MenuButton>
+			</Sidebar.MenuItem>
 			<Sidebar.MenuItem>
 				<Sidebar.MenuButton onclick={handleLogout} tooltipContent="Sign out">
 					<LogOut />
