@@ -189,6 +189,9 @@ export const apikey = pgTable(
   {
     id: uuid().primaryKey().notNull(),
     configId: text("config_id").notNull().default("default"),
+    // Nullable on purpose: keys minted before named keys existed (and any
+    // Better Auth plugin path) have no name, and old rows must keep reading.
+    // The dashboard's create dialog is what forces a name — not the DB.
     name: text(),
     start: text(),
     referenceId: uuid("reference_id").notNull(),

@@ -46,3 +46,6 @@ docs/superpowers/
 
 # local npm auth (never commit tokens)
 packages/sepia-mcp/.npmrc
+
+# local flow screenshots (review artifacts)
+/screenshots/

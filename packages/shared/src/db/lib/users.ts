@@ -2,6 +2,7 @@ import type { Db } from "../client.ts";
 import { and, desc, eq, gt, ne } from "drizzle-orm";
 import { apikey, sessions, users } from "../schema.ts";
 import { API_KEY_PREFIX } from "../../types.ts";
+import { MemoryError } from "../errors.ts";
 
 /**
  * Account helpers shared by the MCP server and the dashboard. Both resolve
@@ -226,6 +227,51 @@ export async function deleteApiKeyForUser(
   await db
     .delete(apikey)
     .where(and(eq(apikey.id, keyId), eq(apikey.referenceId, userId)));
+}
+
+/**
+ * Rename one of a user's API keys — the label that tells a user which key is
+ * for what (and which one to delete). Throws if the key isn't the caller's,
+ * so a successful rename also proves ownership rather than silently
+ * updating zero rows.
+ */
+export async function renameApiKeyForUser(
+  db: Db,
+  userId: string,
+  keyId: string,
+  name: string,
+) {
+  const rows = await db
+    .update(apikey)
+    .set({ name, updatedAt: new Date() })
+    .where(and(eq(apikey.id, keyId), eq(apikey.referenceId, userId)))
+    .returning({ id: apikey.id });
+  if (rows.length === 0) {
+    throw new MemoryError("not_found", `api key '${keyId}' not found`);
+  }
+}
+
+/**
+ * Rotate a key: mint a replacement carrying the SAME name, then drop the old
+ * material. The replacement is created before the old one is deleted so a
+ * failed mint can never leave the user with no working key — the only moment
+ * a plaintext key exists is the return value here, same as create.
+ */
+export async function regenerateApiKeyForUser(
+  db: Db,
+  userId: string,
+  keyId: string,
+) {
+  const [row] = await db
+    .select({ name: apikey.name })
+    .from(apikey)
+    .where(and(eq(apikey.id, keyId), eq(apikey.referenceId, userId)));
+  if (!row) {
+    throw new MemoryError("not_found", `api key '${keyId}' not found`);
+  }
+  const created = await createApiKeyForUser(db, userId, row.name ?? undefined);
+  await deleteApiKeyForUser(db, userId, keyId);
+  return created;
 }
 
 /**
