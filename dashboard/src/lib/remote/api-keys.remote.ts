@@ -1,6 +1,12 @@
-import { query, command } from '$app/server';
+import { query, form, command } from '$app/server';
 import * as v from 'valibot';
-import { createApiKeyForUser, deleteApiKeyForUser, listApiKeysForUser } from '@sepia/shared';
+import {
+	createApiKeyForUser,
+	deleteApiKeyForUser,
+	listApiKeysForUser,
+	regenerateApiKeyForUser,
+	renameApiKeyForUser
+} from '@sepia/shared';
 import { requireAuth } from '$lib/server/auth';
 import { db } from '$lib/server/db';
 
@@ -36,10 +42,43 @@ export const listApiKeys = query(async (): Promise<ApiKeyRow[]> => {
 	}));
 });
 
-/** Create an API key. Returns the plaintext key — shown to the user once. */
-export const createApiKey = command(async (): Promise<{ id: string; key: string }> => {
+/**
+ * Create or rename an API key, as a form — the dialog's button is a submit
+ * button. `id` present → rename; absent → mint a new key (the same
+ * create-or-update shape `saveMemory` uses).
+ *
+ * The name is REQUIRED here even though the `apikey.name` column stays
+ * nullable: older rows (and keys minted by the Better Auth plugin) keep
+ * reading, while every key created from now on gets a label the user chose.
+ * Returns the plaintext key on create (shown once) — `undefined` on rename.
+ */
+export const saveApiKey = form(
+	v.object({
+		id: v.optional(v.string(), ''),
+		name: v.pipe(
+			v.string(),
+			v.trim(),
+			v.minLength(1, 'Give the key a name so you know what it is for'),
+			v.maxLength(64, 'Keep the name under 64 characters')
+		)
+	}),
+	async ({ id, name }) => {
+		const user = await requireAuth();
+		if (id) {
+			await renameApiKeyForUser(db(), user.id, id, name);
+			return;
+		}
+		return createApiKeyForUser(db(), user.id, name);
+	}
+);
+
+/**
+ * Rotate a key — new secret, same name (a command: no form inputs, it is a
+ * bare button on the connect page).
+ */
+export const regenerateApiKey = command(v.string(), async (keyId) => {
 	const user = await requireAuth();
-	return createApiKeyForUser(db(), user.id);
+	return regenerateApiKeyForUser(db(), user.id, keyId);
 });
 
 /** Delete an API key (scoped to the caller's own keys). */

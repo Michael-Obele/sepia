@@ -22,7 +22,7 @@ export { runPruneMemories } from './prune-memories.remote';
 export { exportAll } from './export.remote';
 export { getMe } from './account.remote';
 export { signIn, signUp, signOut, signOutOtherSessions } from './auth.remote';
-export { listApiKeys, createApiKey, deleteApiKey } from './api-keys.remote';
+export { listApiKeys, saveApiKey, regenerateApiKey, deleteApiKey } from './api-keys.remote';
 // Billing schema/types live in $lib/billing (a .remote.ts file may only export
 // remote functions), but they are re-exported here so callers keep one import.
 // `BillingPeriod` is both a valibot schema and a type — one export carries both.

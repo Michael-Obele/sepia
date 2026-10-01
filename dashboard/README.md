@@ -62,7 +62,7 @@ src/routes/
 - `src/lib/server/cookies.ts` — the dashboard's own HTTP-only session cookie (`__Host-sepia_session` in prod) + session-lifetime policy (sliding window, absolute cap)
 - `src/lib/server/auth.ts` — `requireAuth()` / `getSessionUser()` — cookie → Neon lookup, with activity-based session renewal
 - `src/routes/+layout.server.ts` — exposes `data.user` to every route (the app's auth truth)
-- `packages/shared/src/db/lib/users.ts` — session + API-key helpers shared with the MCP server: `getSessionWithUser`, `slideSession`, `deleteOtherSessions`, `deleteSessionByToken`, `getUserByApiKey`, `createApiKeyForUser` / `listApiKeysForUser` / `deleteApiKeyForUser`, plus `API_KEY_PREFIX` (`sepia_`) and `API_KEY_START_LENGTH`
+- `packages/shared/src/db/lib/users.ts` — ONE implementation of session + API-key logic, imported by both this dashboard and the server so hashing, minting, and validation can never drift. The server's MCP side only **reads**: `getUserByApiKey` resolves a presented `sepia_…` key to its user (the MCP tool surface has **no** key-management tool — keys are created/renamed only here in the dashboard). Key **management** is dashboard-only: `createApiKeyForUser` / `listApiKeysForUser` / `renameApiKeyForUser` / `regenerateApiKeyForUser` / `deleteApiKeyForUser`, alongside the session helpers `getSessionWithUser`, `slideSession`, `deleteOtherSessions`, `deleteSessionByToken` — plus `API_KEY_PREFIX` (`sepia_`) and `API_KEY_START_LENGTH`
 - `src/lib/auth-client.ts` — Better Auth client, used only for the password-reset flows
 
 ## Deploy

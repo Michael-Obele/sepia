@@ -20,6 +20,7 @@
 		EyeOff,
 		RefreshCw,
 		Trash2,
+		Pencil,
 		PartyPopper,
 		Trophy
 	} from '@lucide/svelte';
@@ -37,9 +38,10 @@
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import {
 		listApiKeys as fetchApiKeys,
-		createApiKey as createApiKeyRemote,
+		regenerateApiKey as regenerateApiKeyRemote,
 		deleteApiKey as deleteApiKeyRemote
 	} from '$lib/remote/index.js';
+	import ApiKeyDialog from '$lib/components/api-key-form-dialog.svelte';
 	import { API_KEY_PREFIX, MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared/types';
 	import { IsMounted, PersistedState } from 'runed';
 	import { toast } from 'svelte-sonner';
@@ -338,9 +340,12 @@
 
 	// ── API key management ──────────────────────────────────────────────────
 	let apiKeysLoaded = $state(false);
-	let creatingKey = $state(false);
 	let newKeyId = $state<string | null>(null);
 	let regenerating = $state<string | null>(null);
+	// Naming a key happens in a modal: create, and rename an existing one.
+	let createKeyOpen = $state(false);
+	let renameKeyOpen = $state(false);
+	let editingKey = $state<{ id: string; name: string } | null>(null);
 
 	async function loadApiKeys() {
 		if (!isAuthed()) return;
@@ -354,29 +359,11 @@
 		}
 	}
 
-	async function createApiKey() {
-		creatingKey = true;
-		newKey = null;
-		newKeyId = null;
-		try {
-			const { id, key } = await createApiKeyRemote();
-			newKey = key;
-			newKeyId = id;
-			toast.success('API key created — copy it now, it is shown only once');
-			await loadApiKeys();
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Failed to create API key');
-		} finally {
-			creatingKey = false;
-		}
-	}
-
-	/** Regenerate = delete + create (industry standard — no built-in rotate). */
+	/** Rotate = mint a replacement that keeps the same name, then drop the old key. */
 	async function regenerateApiKey(id: string) {
 		regenerating = id;
 		try {
-			await deleteApiKeyRemote(id);
-			const { key } = await createApiKeyRemote();
+			const { key } = await regenerateApiKeyRemote(id);
 			newKey = key;
 			newKeyId = null;
 			toast.success('Key regenerated — copy the new key now');
@@ -994,9 +981,9 @@
 			{/if}
 
 			<div class="flex flex-wrap items-center gap-2">
-				<Button onclick={createApiKey} disabled={creatingKey} class="gap-1.5">
+				<Button onclick={() => (createKeyOpen = true)} class="gap-1.5">
 					<KeyRound class="size-4" />
-					{creatingKey ? 'Creating…' : 'Create API key'}
+					Create API key
 				</Button>
 				{#if apiKeys.length > 0}
 					<Button
@@ -1011,6 +998,15 @@
 					</Button>
 				{/if}
 			</div>
+			<ApiKeyDialog
+				bind:open={createKeyOpen}
+				onCreated={(created) => {
+					newKey = created.key;
+					newKeyId = created.id;
+				}}
+				onSaved={loadApiKeys}
+			/>
+			<ApiKeyDialog bind:open={renameKeyOpen} editing={editingKey} onSaved={loadApiKeys} />
 
 			{#if !apiKeysLoaded}
 				<Skeleton class="h-10 w-full" />
@@ -1036,14 +1032,30 @@
 								<Button
 									size="sm"
 									variant="ghost"
+									class="gap-1"
 									onclick={() => regenerateApiKey(key.id)}
 									disabled={regenerating !== null}
-									class="gap-1"
 								>
 									<RefreshCw class="size-3.5" />
 									Regenerate
 								</Button>
-								<Button size="sm" variant="ghost" onclick={() => deleteApiKey(key.id)}>
+								<Button
+									size="sm"
+									variant="ghost"
+									aria-label={`Rename ${key.name}`}
+									onclick={() => {
+										editingKey = { id: key.id, name: key.name };
+										renameKeyOpen = true;
+									}}
+								>
+									<Pencil class="size-4" />
+								</Button>
+								<Button
+									size="sm"
+									variant="ghost"
+									aria-label={`Delete ${key.name}`}
+									onclick={() => deleteApiKey(key.id)}
+								>
 									<Trash2 class="size-4" />
 								</Button>
 							</div>

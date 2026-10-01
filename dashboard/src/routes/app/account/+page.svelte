@@ -3,7 +3,9 @@
 		KeyRound,
 		Copy,
 		Check,
+		CircleCheck,
 		Trash2,
+		Pencil,
 		ShieldCheck,
 		Sparkles,
 		CreditCard,
@@ -25,16 +27,19 @@
 		CardTitle
 	} from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
+	import ApiKeyDialog from '$lib/components/api-key-form-dialog.svelte';
+	import UserAvatar from '$lib/components/user-avatar.svelte';
+	import AvatarShareCard from '$lib/components/avatar-share-card.svelte';
 	import { toast } from 'svelte-sonner';
 	import {
 		getMe,
 		listApiKeys,
-		createApiKey,
 		deleteApiKey,
 		listConnections,
 		disconnectConnection,
@@ -81,6 +86,8 @@
 	 * lemon-squeezy-billing-design.md → Out of scope).
 	 */
 	let upgrading = $state(false);
+	/** Durable payment proof — outlives the success toast (critique HIGH-2). */
+	let paymentConfirmed = $state(false);
 	async function upgrade() {
 		// `account` is template-scoped ({@const}); the script reads the same
 		// resource. `current` is undefined only while loading — and the button
@@ -102,8 +109,9 @@
 			switch (outcome.status) {
 				case 'completed':
 					// Poll until the webhook's flip is actually visible; the
-					// success toast is only shown on a confirmed read (U1).
-					await confirmPayment();
+					// success toast is only shown on a confirmed read (U1),
+					// and the banner persists after the toast fades (HIGH-2).
+					paymentConfirmed = await confirmPayment();
 					break;
 				case 'dismissed':
 					// Normal — they changed their mind. Say nothing.
@@ -124,8 +132,11 @@
 	}
 
 	let copied = $state('');
-	let creatingKey = $state(false);
 	let newKey = $state<string | null>(null);
+	// Naming a key happens in a modal: create, and rename an existing one.
+	let createKeyOpen = $state(false);
+	let renameKeyOpen = $state(false);
+	let editingKey = $state<{ id: string; name: string } | null>(null);
 	let keys = $state<
 		Array<{
 			id: string;
@@ -229,21 +240,6 @@
 		}
 	}
 
-	async function createKey() {
-		creatingKey = true;
-		newKey = null;
-		try {
-			const { key } = await createApiKey();
-			newKey = key;
-			toast.success('API key created — copy it now, it is shown only once');
-			await loadKeys();
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Failed to create API key');
-		} finally {
-			creatingKey = false;
-		}
-	}
-
 	async function deleteKey(id: string) {
 		if (!confirm('Delete this API key? Anything using it will stop working.')) return;
 		try {
@@ -300,7 +296,7 @@
 		if (page.url.searchParams.get('checkout') !== 'success') return;
 		checkoutHandled = true;
 		void (async () => {
-			await confirmPayment();
+			paymentConfirmed = await confirmPayment();
 			// Drop the query param so a refresh doesn't re-toast.
 			const url = new URL(page.url);
 			url.searchParams.delete('checkout');
@@ -314,6 +310,16 @@
 </svelte:head>
 
 <div class="mx-auto space-y-6">
+	{#if paymentConfirmed}
+		<!-- Durable proof of purchase — a toast that fades in 4s is not evidence. -->
+		<Alert.Root class="border-emerald-500/30 bg-emerald-500/10">
+			<CircleCheck />
+			<Alert.Title>You’re on Pro — payment confirmed</Alert.Title>
+			<Alert.Description>
+				100 namespaces, 1,000,000 memories and unlimited Web AI connections are now active.
+			</Alert.Description>
+		</Alert.Root>
+	{/if}
 	<div class="flex items-center justify-between">
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Account</h1>
@@ -331,8 +337,9 @@
 		{@const account = me.current}
 		<Card>
 			<CardHeader>
-				<CardTitle class="flex items-center gap-2">
-					{account.user.name}
+				<CardTitle class="flex items-center gap-3">
+					<UserAvatar user={account.user} class="size-10" />
+					<span>{account.user.name}</span>
 					{#if account.user.plan === 'pro'}
 						<Badge class="gap-1 bg-primary text-primary-foreground">
 							<Sparkles class="size-3" /> Pro
@@ -401,7 +408,7 @@
 										Web AI connections
 										<Badge
 											variant="outline"
-											class="border-violet-500/30 bg-violet-500/10 font-mono text-[10px] tracking-wider text-violet-700 uppercase dark:text-violet-300"
+											class="border-violet-500/30 bg-violet-500/10 font-mono text-[11px] tracking-wider text-violet-700 uppercase dark:text-violet-300"
 											>Counts toward limit</Badge
 										>
 										<Tooltip.Root>
@@ -413,8 +420,9 @@
 											</Tooltip.Trigger>
 											<Tooltip.Content side="top" class="max-w-72 text-xs leading-relaxed">
 												Web AIs connect via OAuth 2.1 — ChatGPT, Claude web, Grok, Gemini,
-												Perplexity, Le Chat. Each provider you authorize counts as 1. Local apps (LM
-												Studio, Cursor) and editors that use an API key never count.
+												Perplexity, Le Chat. Each account you authorize counts as 1, so two accounts
+												of the same provider count as 2. Local apps (LM Studio, Cursor) and editors
+												that use an API key never count.
 											</Tooltip.Content>
 										</Tooltip.Root>
 									</span>
@@ -439,7 +447,7 @@
 								</div>
 								<p class="text-xs leading-relaxed text-muted-foreground">
 									<span class="font-medium text-foreground">OAuth 2.1</span> — ChatGPT, Claude web,
-									Grok, Gemini, Perplexity, Le Chat. Each provider = 1 connection. Local apps (LM
+									Grok, Gemini, Perplexity, Le Chat. Each account = 1 connection. Local apps (LM
 									Studio, Cursor) don’t count. Free: 2 · Pro: unlimited.
 									<a
 										href="/pricing"
@@ -465,11 +473,11 @@
 										<Skeleton class="h-16 w-full" />
 									{:else if connections.length === 0}
 										<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-											No Web AI connections yet. Connect one from
+											No Web AI connections yet — add one on the
 											<a
 												href="/app/connect"
 												class="underline underline-offset-2 hover:text-foreground">Connect</a
-											>.
+											> page.
 										</p>
 									{:else}
 										<ul class="space-y-2">
@@ -558,7 +566,7 @@
 						<div class="flex items-center gap-3 py-1">
 							<Separator class="flex-1" />
 							<span
-								class="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 font-mono text-[10px] tracking-wider text-muted-foreground uppercase"
+								class="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 font-mono text-[11px] tracking-wider text-muted-foreground uppercase"
 							>
 								<span class="size-1.5 rounded-full bg-emerald-500"></span>
 								Separate system — not counted below
@@ -647,6 +655,9 @@
 			</CardContent>
 		</Card>
 
+		<!-- The big, shareable portrait — see avatar-share-card.svelte -->
+		<AvatarShareCard user={account.user} plan={account.user.plan} />
+
 		<!-- Disconnect confirmation -->
 		<AlertDialog.Root
 			open={!!pendingDisconnect}
@@ -660,6 +671,12 @@
 					<AlertDialog.Description>
 						This will revoke all tokens for this connection and free the slot. The Web AI will need
 						to re-authorize to reconnect. This cannot be undone.
+						{#if pendingDisconnect}
+							<!-- Two accounts of one provider share a name, so identify the exact row. -->
+							<span class="mt-2 block font-mono text-xs">
+								{pendingDisconnect.clientId.slice(0, 8)}…
+							</span>
+						{/if}
 					</AlertDialog.Description>
 				</AlertDialog.Header>
 				<AlertDialog.Footer>
@@ -703,9 +720,15 @@
 						</Button>
 					</div>
 				{/if}
-				<Button onclick={createKey} disabled={creatingKey}>
-					{creatingKey ? 'Creating…' : 'Create API key'}
-				</Button>
+				<Button onclick={() => (createKeyOpen = true)}>Create API key</Button>
+				<ApiKeyDialog
+					bind:open={createKeyOpen}
+					onCreated={(created) => {
+						newKey = created.key;
+					}}
+					onSaved={loadKeys}
+				/>
+				<ApiKeyDialog bind:open={renameKeyOpen} editing={editingKey} onSaved={loadKeys} />
 				{#if !keysLoaded}
 					<Skeleton class="h-10 w-full" />
 				{:else if keys.length === 0}
@@ -726,9 +749,27 @@
 											· last used {new Date(key.lastRequest).toLocaleDateString()}{/if}
 									</p>
 								</div>
-								<Button size="sm" variant="ghost" onclick={() => deleteKey(key.id)}>
-									<Trash2 class="size-4" />
-								</Button>
+								<div class="flex items-center gap-1">
+									<Button
+										size="sm"
+										variant="ghost"
+										aria-label={`Rename ${key.name}`}
+										onclick={() => {
+											editingKey = { id: key.id, name: key.name };
+											renameKeyOpen = true;
+										}}
+									>
+										<Pencil class="size-4" />
+									</Button>
+									<Button
+										size="sm"
+										variant="ghost"
+										aria-label={`Delete ${key.name}`}
+										onclick={() => deleteKey(key.id)}
+									>
+										<Trash2 class="size-4" />
+									</Button>
+								</div>
 							</li>
 						{/each}
 					</ul>
