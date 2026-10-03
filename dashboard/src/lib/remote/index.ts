@@ -3,12 +3,25 @@
 // via `requireAuth()` and scopes every query to that user's id.
 
 export { getStatsData } from './stats.remote';
+export { getHomePage } from './home.remote';
+export { getConversationsPage } from './conversations.remote';
+export { getPreferencesPage, getDataPage } from './settings.remote';
 export { getNamespaces, addNamespace, removeNamespace } from './namespaces.remote';
-export { getEntities, getEntityDetail, saveEntity, removeEntity } from './entities.remote';
-export { getBriefingData } from './briefing.remote';
+export {
+	getEntities,
+	getEntitiesPage,
+	getEntityList,
+	getEntityDetail,
+	saveEntity,
+	removeEntity
+} from './entities.remote';
+export { getBriefingData, getBriefingPage } from './briefing.remote';
 export {
 	getMemories,
+	getMemoriesPage,
+	getMemoryList,
 	getMemoryDetail,
+	getMemoryDetailPage,
 	saveMemory,
 	updateMemoryData,
 	removeMemory,
@@ -17,7 +30,7 @@ export {
 } from './memories.remote';
 export { getRelations, addRelation, removeRelation } from './relations.remote';
 export { searchAll } from './search.remote';
-export { getGraph, getFullGraph } from './graph.remote';
+export { getGraph, getFullGraph, getGraphRoot } from './graph.remote';
 export { runPruneMemories } from './prune-memories.remote';
 export { exportAll } from './export.remote';
 export { getMe } from './account.remote';
@@ -28,7 +41,7 @@ export { listApiKeys, saveApiKey, regenerateApiKey, deleteApiKey } from './api-k
 // `BillingPeriod` is both a valibot schema and a type — one export carries both.
 export { createCheckout } from './billing.remote';
 export { BillingPeriod, type CheckoutResult } from '$lib/billing';
-export { listConnections, disconnectConnection } from './connections.remote';
+export { listConnections, disconnectConnection, getConnectPage } from './connections.remote';
 export {
 	getTelemetry,
 	getTelemetryReport,

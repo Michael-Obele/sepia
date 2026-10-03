@@ -8,6 +8,7 @@ import {
   ilike,
   inArray,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import {
   entities,
@@ -18,6 +19,7 @@ import {
 } from "../schema.ts";
 import { normalizeEntityType, normalizeTags } from "../../types.ts";
 import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
+import { ENTITY_LIST_COLUMNS } from "./list-columns.ts";
 import { syncEntity, syncEntityIds, unsyncEntity } from "./index-sync.ts";
 
 export interface EntityCreate {
@@ -220,16 +222,32 @@ export async function deleteEntity(db: Db, ownerId: string, id: string) {
 }
 
 /** Find entities by name (exact or substring) with optional type + namespace filters. */
-export async function findEntities(
-  db: Db,
+export interface EntityListFilters {
+  namespace?: string;
+  q?: string;
+  type?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** A row from the lean entity list — derived from the builder, not the async
+ *  wrapper, so the type alias does not circularly reference `findEntityList`. */
+export type EntityListRow = Awaited<ReturnType<typeof entityListQuery>>[number];
+
+/**
+ * Shared filter assembly for the entity list reads. `namespaceMatch` is the
+ * caller's namespace predicate: `findEntities` resolves the name to an id (and
+ * throws for an unknown namespace, preserving the MCP/REST contract), while
+ * `findEntityList` inlines a subquery so the dashboard list costs ONE round
+ * trip instead of two.
+ */
+function entityConditions(
   ownerId: string,
-  namespaceName: string | undefined,
   query: string | undefined,
   type: string | undefined,
-  limit = 20,
-  offset = 0,
-) {
-  const conditions = [eq(namespaces.ownerId, ownerId)];
+  namespaceMatch?: SQL,
+): SQL[] {
+  const conditions: SQL[] = [eq(namespaces.ownerId, ownerId)];
   if (query !== undefined) {
     // Read path: match every term in any order, against the name or the summary,
     // so a multi-word lookup like "Smoke Project" no longer needs adjacency.
@@ -240,10 +258,37 @@ export async function findEntities(
   if (type !== undefined) {
     conditions.push(eq(entities.type, type));
   }
-  if (namespaceName !== undefined) {
-    const nsId = await resolveNamespaceId(db, ownerId, namespaceName);
-    conditions.push(eq(entities.namespaceId, nsId));
+  if (namespaceMatch !== undefined) {
+    conditions.push(namespaceMatch);
   }
+  return conditions;
+}
+
+/**
+ * Full entity list for the MCP/REST/export surfaces — every column, including
+ * `metadata` and the generated `haystack_tsv`.
+ *
+ * Ordered by importance DESC, then updated_at DESC, then id DESC (an immutable
+ * tiebreaker — without it, equal-ranked rows come back in whatever order the
+ * plan happens to produce, which makes `offset` pagination skip or duplicate
+ * rows at a page boundary).
+ */
+export async function findEntities(
+  db: Db,
+  ownerId: string,
+  namespaceName: string | undefined,
+  query: string | undefined,
+  type: string | undefined,
+  limit = 20,
+  offset = 0,
+) {
+  const namespaceMatch =
+    namespaceName !== undefined
+      ? eq(
+          entities.namespaceId,
+          await resolveNamespaceId(db, ownerId, namespaceName),
+        )
+      : undefined;
   return db
     .select({
       ...getTableColumns(entities),
@@ -251,10 +296,64 @@ export async function findEntities(
     })
     .from(entities)
     .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
-    .where(and(...conditions))
-    .orderBy(desc(entities.importance), desc(entities.updatedAt))
+    .where(and(...entityConditions(ownerId, query, type, namespaceMatch)))
+    .orderBy(
+      desc(entities.importance),
+      desc(entities.updatedAt),
+      desc(entities.id),
+    )
     .limit(Math.min(limit, 10000))
     .offset(Math.max(offset, 0));
+}
+
+/**
+ * Lean entity list for the dashboard: same filters and ordering as
+ * `findEntities`, but only the columns the list card renders (see
+ * `list-columns.ts` — no tsvector, no metadata, no namespace name).
+ *
+ * The namespace is matched with a SUBQUERY rather than a `resolveNamespaceId`
+ * round trip: the filter values come from the namespace dropdown, so a miss is
+ * a stale URL and an empty list is the right answer — throwing
+ * `namespace_not_found` would need a second HTTP round trip to say nothing.
+ *
+ * Deliberately NOT async — `db.batch()` calls `_prepare()` on every element,
+ * and an async function returns a native Promise without it. Use
+ * `findEntityList` for the awaiting form.
+ */
+export function entityListQuery(
+  db: Db,
+  ownerId: string,
+  filters: EntityListFilters = {},
+) {
+  const namespaceMatch =
+    filters.namespace !== undefined
+      ? sql`${entities.namespaceId} = (SELECT n2.id FROM ${namespaces} n2 WHERE n2.name = ${filters.namespace} AND n2.owner_id = ${ownerId})`
+      : undefined;
+  return db
+    .select(ENTITY_LIST_COLUMNS)
+    .from(entities)
+    .innerJoin(namespaces, eq(namespaces.id, entities.namespaceId))
+    .where(
+      and(
+        ...entityConditions(ownerId, filters.q, filters.type, namespaceMatch),
+      ),
+    )
+    .orderBy(
+      desc(entities.importance),
+      desc(entities.updatedAt),
+      desc(entities.id),
+    )
+    .limit(Math.min(filters.limit ?? 20, 10000))
+    .offset(Math.max(filters.offset ?? 0, 0));
+}
+
+/** Awaiting wrapper around `entityListQuery` for callers that don't batch. */
+export async function findEntityList(
+  db: Db,
+  ownerId: string,
+  filters: EntityListFilters = {},
+): Promise<EntityListRow[]> {
+  return entityListQuery(db, ownerId, filters);
 }
 
 export interface EntityWhere {

@@ -16,22 +16,30 @@ export function registerTraverseTools(server: McpServer<any, any>) {
       schema: TraverseToolInput,
       annotations: { readOnlyHint: true },
     },
-    safe(TraverseToolInput, async (args: v.InferInput<typeof TraverseToolInput>) => {
-      const user = server.ctx.custom?.user;
-      if (!user) throw new Error("unauthenticated");
-      const sql = db();
-      // Read-only walk: counters only — which start node/depth were asked for
-      // is derived from the row, never the entity's name or contents.
-      recordTelemetrySafe(sql, {
-        ownerId: user.id,
-        sessionHash: telemetrySession(server.ctx),
-        tool: "traverse_graph",
-      });
-      const graph = await traverseGraph(sql, user.id, args.start_id, args.depth);
-      return {
-        start_id: args.start_id,
-        ...graph,
-      };
-    }),
+    safe(
+      TraverseToolInput,
+      async (args: v.InferInput<typeof TraverseToolInput>) => {
+        const user = server.ctx.custom?.user;
+        if (!user) throw new Error("unauthenticated");
+        const sql = db();
+        // Read-only walk: counters only — which start node/depth were asked for
+        // is derived from the row, never the entity's name or contents.
+        recordTelemetrySafe(sql, {
+          ownerId: user.id,
+          sessionHash: await telemetrySession(server.ctx),
+          tool: "traverse_graph",
+        });
+        const graph = await traverseGraph(
+          sql,
+          user.id,
+          args.start_id,
+          args.depth,
+        );
+        return {
+          start_id: args.start_id,
+          ...graph,
+        };
+      },
+    ),
   );
 }

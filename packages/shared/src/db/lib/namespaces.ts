@@ -41,13 +41,15 @@ export async function createNamespace(
   return row;
 }
 
-export async function listNamespaces(
-  db: Db,
-  ownerId: string,
-): Promise<NamespaceStats[]> {
+/**
+ * Builder form of the namespace list — NOT async, so it can be composed into
+ * `db.batch([...])`. `db.batch` calls `_prepare()` on each element, which an
+ * async function cannot provide (it returns a native Promise).
+ */
+export function namespacesQuery(db: Db, ownerId: string) {
   // Correlated count subqueries. Use db.execute with explicit `n.id` — a
   // query-builder ${namespaces.id} renders unqualified and resolves wrong.
-  const res = await db.execute(sql`
+  return db.execute(sql`
     SELECT n.id, n.name, n.description, n.created_at, n.updated_at,
       (SELECT count(*)::int FROM entities e WHERE e.namespace_id = n.id) AS entity_count,
       (SELECT count(*)::int FROM memories m WHERE m.namespace_id = n.id) AS memory_count,
@@ -56,6 +58,14 @@ export async function listNamespaces(
     WHERE n.owner_id = ${ownerId}
     ORDER BY n.name
   `);
+}
+
+/** Awaiting wrapper around `namespacesQuery` for callers that don't batch. */
+export async function listNamespaces(
+  db: Db,
+  ownerId: string,
+): Promise<NamespaceStats[]> {
+  const res = await namespacesQuery(db, ownerId);
   return res.rows as unknown as NamespaceStats[];
 }
 

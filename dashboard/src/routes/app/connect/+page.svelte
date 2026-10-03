@@ -40,12 +40,12 @@
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Progress } from '$lib/components/ui/progress/index.js';
 	import {
-		listApiKeys as fetchApiKeys,
+		getConnectPage,
 		regenerateApiKey as regenerateApiKeyRemote,
 		deleteApiKey as deleteApiKeyRemote,
-		listConnections,
 		disconnectConnection
 	} from '$lib/remote/index.js';
+	import { fresh } from '$lib/fresh.js';
 	import ApiKeyDialog from '$lib/components/api-key-form-dialog.svelte';
 	import { API_KEY_PREFIX, MEMORY_CONTRACT, MEMORY_CONTRACT_QUICK } from '@sepia/shared/types';
 	import { IsMounted, PersistedState } from 'runed';
@@ -211,6 +211,35 @@
 	let { data } = $props();
 	const isAuthed = () => Boolean(data.user);
 
+	/** This page's view model: the API keys plus the OAuth connections. */
+	type View = Awaited<ReturnType<typeof getConnectPage>>;
+
+	// AWAITED DURING SSR — see the note in `entities/+page.svelte`. ONE Neon HTTP
+	// round trip carries BOTH credential planes (keys + clients + tokens), and the
+	// result is serialised into the payload, so the browser makes no initial data
+	// request. The two loaders this replaces each ran their own serverless
+	// invocation, and `listConnections` used to run a query per connection.
+	const initialPage: View = isAuthed() ? await getConnectPage() : { apiKeys: [], connections: [] };
+
+	let view = $state<View>(initialPage);
+	let apiKeys = $derived(view.apiKeys);
+	let connections = $derived(view.connections);
+
+	/**
+	 * Re-read both credential planes — ONE round trip. The loaded flags exist for
+	 * the mutation paths below; they start true because SSR already has the data.
+	 */
+	async function reload() {
+		apiKeysLoaded = false;
+		connectionsLoaded = false;
+		try {
+			view = await fresh(getConnectPage());
+		} finally {
+			apiKeysLoaded = true;
+			connectionsLoaded = true;
+		}
+	}
+
 	/** Masks a credential for the config previews, which are hidden by default. */
 	function maskToken(t: string): string {
 		if (t === 'YOUR_TOKEN' || t === 'YOUR_API_KEY' || t.length <= 8) return t;
@@ -224,14 +253,6 @@
 	// API keys are permanent — the right credential for long-lived MCP configs.
 	// Industry pattern (MCP spec): OAuth 2.1 for web AIs, environment-based
 	// credentials (API keys) for local editors.
-	type ApiKeyRow = {
-		id: string;
-		name: string;
-		start: string | null;
-		createdAt: string;
-		lastRequest: string | null;
-	};
-	let apiKeys = $state<ApiKeyRow[]>([]);
 	let newKey = $state<string | null>(null);
 
 	// The credential for Bearer configs is ALWAYS the API key — never the
@@ -344,7 +365,7 @@
 	}
 
 	// ── API key management ──────────────────────────────────────────────────
-	let apiKeysLoaded = $state(false);
+	let apiKeysLoaded = $state(true);
 	let newKeyId = $state<string | null>(null);
 	let regenerating = $state<string | null>(null);
 	// Naming a key happens in a modal: create, and rename an existing one.
@@ -352,51 +373,15 @@
 	let renameKeyOpen = $state(false);
 	let editingKey = $state<{ id: string; name: string } | null>(null);
 
-	async function loadApiKeys() {
-		if (!isAuthed()) return;
-		apiKeysLoaded = false;
-		try {
-			apiKeys = await fetchApiKeys();
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Failed to load API keys');
-		} finally {
-			apiKeysLoaded = true;
-		}
-	}
-
 	// ── Web AI connections (OAuth) — the counted plane ──────────────────────
 	// This page is the single home for BOTH credential planes: the API keys
 	// above (bearer, never counted) and the OAuth connections below (counted
 	// against the plan). They were previously split across this page and
 	// /app/account, which meant two loaders and two explanations of the same
 	// rule; "what counts" itself is summarised on Settings → Plan & usage.
-	let connections = $state<
-		Array<{
-			id: string;
-			clientId: string;
-			name: string;
-			redirectUris: string[];
-			createdAt: string;
-			lastUsedAt: string | null;
-			active: boolean;
-			local: boolean;
-		}>
-	>([]);
-	let connectionsLoaded = $state(false);
+	let connectionsLoaded = $state(true);
 	let disconnectingId = $state<string | null>(null);
 	let pendingDisconnect: { clientId: string; name: string } | null = $state(null);
-
-	async function loadConnections() {
-		if (!isAuthed()) return;
-		connectionsLoaded = false;
-		try {
-			connections = await listConnections();
-		} catch (e) {
-			toast.error((e as Error)?.message ?? 'Failed to load Web AI connections');
-		} finally {
-			connectionsLoaded = true;
-		}
-	}
 
 	async function confirmDisconnect() {
 		if (!pendingDisconnect) return;
@@ -406,11 +391,9 @@
 		try {
 			await disconnectConnection(clientId);
 			toast.success(`Disconnected ${name}`);
-			// The usage meter counts live connections, so both lists have to
-			// re-read. A full reload is the honest way to do that — the
-			// `getMe` query on the plan page is memoised per navigation.
-			await loadConnections();
-			await loadApiKeys();
+			// The usage meter counts live connections, so both planes have to
+			// re-read — and a full reload re-reads everything anyway, so the two
+			// explicit reloads that used to sit here were wasted round trips.
 			window.location.reload();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Failed to disconnect');
@@ -443,10 +426,6 @@
 		}
 	}
 
-	$effect(() => {
-		if (isAuthed() && !connectionsLoaded) void loadConnections();
-	});
-
 	/** Rotate = mint a replacement that keeps the same name, then drop the old key. */
 	async function regenerateApiKey(id: string) {
 		regenerating = id;
@@ -455,7 +434,7 @@
 			newKey = key;
 			newKeyId = null;
 			toast.success('Key regenerated — copy the new key now');
-			await loadApiKeys();
+			await reload();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Failed to regenerate API key');
 		} finally {
@@ -467,17 +446,11 @@
 		try {
 			await deleteApiKeyRemote(id);
 			toast.success('API key deleted');
-			await loadApiKeys();
+			await reload();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Failed to delete API key');
 		}
 	}
-
-	$effect(() => {
-		if (isAuthed() && !apiKeysLoaded) {
-			void loadApiKeys();
-		}
-	});
 
 	// ── Connect progress (Goal Gradient + IKEA Effect) ──────────────────
 	// 4 steps: 0 Pick AI (pre-completed), 1 Copy URL/config, 2 Authorize/token, 3 Instructions/verify.
@@ -1092,9 +1065,9 @@
 					newKey = created.key;
 					newKeyId = created.id;
 				}}
-				onSaved={loadApiKeys}
+				onSaved={reload}
 			/>
-			<ApiKeyDialog bind:open={renameKeyOpen} editing={editingKey} onSaved={loadApiKeys} />
+			<ApiKeyDialog bind:open={renameKeyOpen} editing={editingKey} onSaved={reload} />
 
 			{#if !apiKeysLoaded}
 				<Skeleton class="h-10 w-full" />

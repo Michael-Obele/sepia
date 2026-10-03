@@ -11,6 +11,7 @@ import {
   inArray,
   or,
   sql,
+  type SQL,
 } from "drizzle-orm";
 import {
   entities,
@@ -30,6 +31,7 @@ import {
   type BriefingDetail,
 } from "../../types.ts";
 import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
+import { MEMORY_DIGEST_COLUMNS, MEMORY_LIST_COLUMNS } from "./list-columns.ts";
 import { assertMemoryQuota } from "./plans.ts";
 import { syncMemory, syncMemoryIds, unsyncMemory } from "./index-sync.ts";
 
@@ -137,9 +139,9 @@ export async function createMemory(
   return rows[0];
 }
 
-/** Full memory detail: memory + linked entity names. */
-export async function getMemory(db: Db, ownerId: string, id: string) {
-  const rows = await db
+/** Builder: the memory row plus its namespace, scoped to the owner. */
+export function memoryDetailQuery(db: Db, ownerId: string, id: string) {
+  return db
     .select({
       ...getTableColumns(memories),
       namespace: namespaces.name,
@@ -148,9 +150,11 @@ export async function getMemory(db: Db, ownerId: string, id: string) {
     .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
     .where(and(eq(memories.id, id), eq(namespaces.ownerId, ownerId)))
     .limit(1);
-  const memory = rows[0];
-  if (!memory) throw new MemoryError("not_found", `memory '${id}' not found`);
-  const links = await db
+}
+
+/** Builder: the entities this memory is linked to, by name. */
+export function memoryLinksQuery(db: Db, id: string) {
+  return db
     .select({
       id: entities.id,
       name: entities.name,
@@ -160,6 +164,22 @@ export async function getMemory(db: Db, ownerId: string, id: string) {
     .innerJoin(entities, eq(entities.id, memoryEntityLinks.entityId))
     .where(eq(memoryEntityLinks.memoryId, id))
     .orderBy(entities.name);
+}
+
+/**
+ * Full memory detail: memory + linked entity names.
+ *
+ * The two reads go in ONE `db.batch` — they used to be two sequential round
+ * trips — and a page can append its own statements (the detail route adds the
+ * namespace options) to the very same request.
+ */
+export async function getMemory(db: Db, ownerId: string, id: string) {
+  const [rows, links] = await db.batch([
+    memoryDetailQuery(db, ownerId, id),
+    memoryLinksQuery(db, id),
+  ]);
+  const memory = rows[0];
+  if (!memory) throw new MemoryError("not_found", `memory '${id}' not found`);
   return { ...memory, entities: links };
 }
 
@@ -261,22 +281,27 @@ export interface MemoryQueryFilters {
   offset?: number;
 }
 
-/** Query memories: ordered by importance DESC, then updated_at DESC. */
-export async function queryMemories(
-  db: Db,
+/**
+ * Shared filter assembly for the memory list reads. `namespaceMatch` is the
+ * caller's namespace predicate: `queryMemories` resolves the name to an id (and
+ * throws for an unknown namespace, preserving the MCP/REST contract), while
+ * `queryMemoryList` inlines a subquery so the dashboard list costs ONE round
+ * trip instead of two.
+ */
+function memoryConditions(
   ownerId: string,
-  filters: MemoryQueryFilters = {},
-) {
-  const conditions = [
+  filters: MemoryQueryFilters,
+  namespaceMatch?: SQL,
+): SQL[] {
+  const conditions: SQL[] = [
     eq(memories.archived, filters.archived ?? false),
     eq(namespaces.ownerId, ownerId),
   ];
   if (filters.type !== undefined) {
     conditions.push(eq(memories.type, filters.type));
   }
-  if (filters.namespace !== undefined) {
-    const nsId = await resolveNamespaceId(db, ownerId, filters.namespace);
-    conditions.push(eq(memories.namespaceId, nsId));
+  if (namespaceMatch !== undefined) {
+    conditions.push(namespaceMatch);
   }
   if (filters.importance_min !== undefined) {
     conditions.push(gte(memories.importance, filters.importance_min));
@@ -293,6 +318,27 @@ export async function queryMemories(
     )}]::text[]`;
     conditions.push(sql`${memories.tags} @> ${tagArray}`);
   }
+  return conditions;
+}
+
+/**
+ * Query memories: ordered by importance DESC, then updated_at DESC, then id
+ * DESC (an immutable tiebreaker — without it, equal-ranked rows come back in
+ * whatever order the plan happens to produce, which makes `offset` pagination
+ * skip or duplicate rows at a page boundary).
+ */
+export async function queryMemories(
+  db: Db,
+  ownerId: string,
+  filters: MemoryQueryFilters = {},
+) {
+  const namespaceMatch =
+    filters.namespace !== undefined
+      ? eq(
+          memories.namespaceId,
+          await resolveNamespaceId(db, ownerId, filters.namespace),
+        )
+      : undefined;
   const limit = Math.min(filters.limit ?? 20, 10000);
   const offset = Math.max(filters.offset ?? 0, 0);
   return db
@@ -302,10 +348,106 @@ export async function queryMemories(
     })
     .from(memories)
     .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
-    .where(and(...conditions))
-    .orderBy(desc(memories.importance), desc(memories.updatedAt))
+    .where(and(...memoryConditions(ownerId, filters, namespaceMatch)))
+    .orderBy(
+      desc(memories.importance),
+      desc(memories.updatedAt),
+      desc(memories.id),
+    )
     .limit(limit)
     .offset(offset);
+}
+
+/** A row from the lean memory list — derived from the builder, not the async
+ *  wrapper, so the type alias does not circularly reference `queryMemoryList`. */
+export type MemoryListRow = Awaited<ReturnType<typeof memoryListQuery>>[number];
+
+/**
+ * Lean memory list for the dashboard: same filters and ordering as
+ * `queryMemories`, but only the columns the list card renders (see
+ * `list-columns.ts` — no tsvector). Keeps `content` because the card truncates
+ * it, and `namespace` because the card renders it.
+ *
+ * The namespace is matched with a SUBQUERY rather than a `resolveNamespaceId`
+ * round trip — the filter values come from the namespace dropdown, so a miss is
+ * a stale URL and an empty list is the right answer.
+ *
+ * Deliberately NOT async — `db.batch()` calls `_prepare()` on every element,
+ * and an async function returns a native Promise without it. Use
+ * `queryMemoryList` for the awaiting form.
+ */
+export function memoryListQuery(
+  db: Db,
+  ownerId: string,
+  filters: MemoryQueryFilters = {},
+) {
+  const namespaceMatch = memoryNamespaceMatch(ownerId, filters);
+  return db
+    .select({ ...MEMORY_LIST_COLUMNS, namespace: namespaces.name })
+    .from(memories)
+    .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
+    .where(and(...memoryConditions(ownerId, filters, namespaceMatch)))
+    .orderBy(
+      desc(memories.importance),
+      desc(memories.updatedAt),
+      desc(memories.id),
+    )
+    .limit(Math.min(filters.limit ?? 20, 10000))
+    .offset(Math.max(filters.offset ?? 0, 0));
+}
+
+/**
+ * The same read as `memoryListQuery`, but carrying `metadata` and `source` too —
+ * the conversation-digest view needs the title, `conversation_id` and status out
+ * of `metadata`. Still excludes the generated tsvector.
+ *
+ * Written out rather than sharing a generic helper: threading the column map
+ * through a generic parameter reduces Drizzle's row type to
+ * `{ [x: string]: unknown }`, losing every field. The filters still come from the
+ * shared `memoryConditions`, which is the part that must not drift.
+ */
+export function memoryDigestQuery(
+  db: Db,
+  ownerId: string,
+  filters: MemoryQueryFilters = {},
+) {
+  const namespaceMatch = memoryNamespaceMatch(ownerId, filters);
+  return db
+    .select({ ...MEMORY_DIGEST_COLUMNS, namespace: namespaces.name })
+    .from(memories)
+    .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
+    .where(and(...memoryConditions(ownerId, filters, namespaceMatch)))
+    .orderBy(
+      desc(memories.importance),
+      desc(memories.updatedAt),
+      desc(memories.id),
+    )
+    .limit(Math.min(filters.limit ?? 20, 10000))
+    .offset(Math.max(filters.offset ?? 0, 0));
+}
+
+/**
+ * The dashboard's namespace predicate: a SUBQUERY on the name rather than a
+ * `resolveNamespaceId` round trip, because the filter values come from the
+ * namespace dropdown — a miss is a stale URL, and an empty list is the right
+ * answer for that.
+ */
+function memoryNamespaceMatch(
+  ownerId: string,
+  filters: MemoryQueryFilters,
+): SQL | undefined {
+  return filters.namespace !== undefined
+    ? sql`${memories.namespaceId} = (SELECT n2.id FROM ${namespaces} n2 WHERE n2.name = ${filters.namespace} AND n2.owner_id = ${ownerId})`
+    : undefined;
+}
+
+/** Awaiting wrapper around `memoryListQuery` for callers that don't batch. */
+export async function queryMemoryList(
+  db: Db,
+  ownerId: string,
+  filters: MemoryQueryFilters = {},
+): Promise<MemoryListRow[]> {
+  return memoryListQuery(db, ownerId, filters);
 }
 
 /** One standing rule as returned by `getBriefing` — compacted, but still identifiable. */
@@ -380,79 +522,144 @@ function compactContent(content: string, max = BRIEFING_ITEM_CHARS): string {
  *
  * Returns core only unless `detail: "all"` is passed. See `Briefing` for why.
  */
-export async function getBriefing(
-  db: Db,
-  ownerId: string,
-  opts: {
-    namespace?: string;
-    max_chars?: number;
-    detail?: BriefingDetail;
-    /**
-     * Set false to get the whole requested slice with no character budget
-     * (the dashboard's browsing view). Default true — the AI's escalation to
-     * `detail: "all"` must stay bounded no matter how large the tail grows.
-     */
-    budget?: boolean;
-  } = {},
-): Promise<Briefing> {
-  const detail: BriefingDetail = opts.detail ?? BRIEFING_DETAIL_DEFAULT;
-  const applyBudget = opts.budget ?? true;
-  const maxChars = Math.min(
-    Math.max(opts.max_chars ?? BRIEFING_CHARS_DEFAULT, 1000),
-    BRIEFING_CHARS_MAX,
-  );
+/** Options `getBriefing` and its dashboard twin both accept. */
+interface BriefingOptions {
+  namespace?: string;
+  max_chars?: number;
+  detail?: BriefingDetail;
+  /**
+   * Set false to get the whole requested slice with no character budget
+   * (the dashboard's browsing view). Default true — the AI's escalation to
+   * `detail: "all"` must stay bounded no matter how large the tail grows.
+   */
+  budget?: boolean;
+}
+
+/** The resolved knobs the briefing reads and its mapper both need. */
+function briefingPlan(opts: BriefingOptions) {
+  return {
+    detail: (opts.detail ?? BRIEFING_DETAIL_DEFAULT) as BriefingDetail,
+    applyBudget: opts.budget ?? true,
+    maxChars: Math.min(
+      Math.max(opts.max_chars ?? BRIEFING_CHARS_DEFAULT, 1000),
+      BRIEFING_CHARS_MAX,
+    ),
+  };
+}
+
+/**
+ * The briefing's WHERE assembly.
+ *
+ * Core membership is the `always` tag ALONE (tag-only core, 2026-09-24). The old
+ * `OR importance >= CORE_IMPORTANCE` half silently admitted any ≥0.9 row —
+ * including project-scoped rules that then shipped to every session — and made
+ * removal impossible without corrupting importance. One knob for membership (the
+ * tag), one for rank (importance).
+ *
+ * `namespaceMatch` is the caller's namespace predicate — see `briefingQueries`
+ * and `getBriefing` for why those two differ.
+ */
+function briefingFilter(ownerId: string, namespaceMatch?: SQL) {
   const alwaysExpr = sql`${memories.tags} @> ARRAY[${ALWAYS_TAG}]::text[]`;
-  // Core membership is the `always` tag ALONE (tag-only core, 2026-09-24). The old
-  // `OR importance >= CORE_IMPORTANCE` half silently admitted any ≥0.9 row — including
-  // project-scoped rules that then shipped to every session — and made removal impossible
-  // without corrupting importance. One knob for membership (the tag), one for rank
-  // (importance).
-  const coreExpr = alwaysExpr;
+  // Left unannotated on purpose: `or(...)` is `SQL | undefined` in this Drizzle
+  // version, and the original code let the literal infer that union.
   const conditions = [
     eq(memories.archived, false),
     eq(namespaces.ownerId, ownerId),
     or(inArray(memories.type, [...BRIEFING_TYPES]), alwaysExpr),
   ];
-  if (opts.namespace !== undefined) {
-    const nsId = await resolveNamespaceId(db, ownerId, opts.namespace);
-    conditions.push(eq(memories.namespaceId, nsId));
-  }
+  if (namespaceMatch !== undefined) conditions.push(namespaceMatch);
+  return { coreExpr: alwaysExpr, conditions };
+}
+
+/**
+ * The briefing's two reads as a READONLY TUPLE — totals first, rows second — so
+ * the two can go in one `db.batch` and a caller can append its own statements.
+ */
+function briefingStatementPair(
+  db: Db,
+  ownerId: string,
+  detail: BriefingDetail,
+  namespaceMatch?: SQL,
+) {
+  const { coreExpr, conditions } = briefingFilter(ownerId, namespaceMatch);
   const where = and(...conditions);
   // A bare boolean SQL expression is a valid condition, so core can be filtered in SQL
   // rather than by loading the tail and discarding it.
   const coreWhere = and(...conditions, coreExpr);
+  return [
+    // Both counts in ONE statement, and exact rather than inferred from a capped
+    // window: `omitted` has to be trustworthy, and `other_standing` is what makes
+    // the tail discoverable.
+    db
+      .select({
+        total: sql<number>`COUNT(*)::int`,
+        core: sql<number>`(COUNT(*) FILTER (WHERE ${coreExpr}))::int`,
+      })
+      .from(memories)
+      .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
+      .where(where),
+    db
+      .select({
+        id: memories.id,
+        type: memories.type,
+        content: memories.content,
+        importance: memories.importance,
+        tags: memories.tags,
+        core: coreExpr,
+      })
+      .from(memories)
+      .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
+      .where(detail === "core" ? coreWhere : where)
+      .orderBy(
+        desc(coreExpr),
+        desc(memories.importance),
+        desc(memories.updatedAt),
+      )
+      .limit(BRIEFING_FETCH_MAX),
+  ] as const;
+}
 
-  // Both counts in one round trip, and exact rather than inferred from a capped window:
-  // `omitted` has to be trustworthy, and `other_standing` is what makes the tail discoverable.
-  const totals = await db
-    .select({
-      total: sql<number>`COUNT(*)::int`,
-      core: sql<number>`(COUNT(*) FILTER (WHERE ${coreExpr}))::int`,
-    })
-    .from(memories)
-    .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
-    .where(where);
+type BriefingStatementPair = ReturnType<typeof briefingStatementPair>;
+/** Await each element: `Awaited<tuple>` leaves the elements' promises alone. */
+type BriefingTotals = Awaited<BriefingStatementPair[0]>;
+type BriefingRows = Awaited<BriefingStatementPair[1]>;
+
+/**
+ * The DASHBOARD's briefing, as a READONLY TUPLE of builders.
+ *
+ * DIVERGENCE — deliberate and approved (2026-10-03): the namespace is matched
+ * with a SUBQUERY here, so a stale namespace name yields an empty briefing
+ * instead of throwing. That is the right answer for a value that can only come
+ * from the namespace dropdown, and it is what lets this compose with
+ * `namespacesQuery` in ONE round trip. `getBriefing` keeps
+ * `resolveNamespaceId` and its `namespace_not_found` throw, because the MCP
+ * `briefing` action's callers must still be told about a bad name.
+ */
+export function briefingQueries(
+  db: Db,
+  ownerId: string,
+  opts: BriefingOptions = {},
+) {
+  return briefingStatementPair(
+    db,
+    ownerId,
+    briefingPlan(opts).detail,
+    opts.namespace !== undefined
+      ? sql`${memories.namespaceId} = (SELECT n2.id FROM ${namespaces} n2 WHERE n2.name = ${opts.namespace} AND n2.owner_id = ${ownerId})`
+      : undefined,
+  );
+}
+
+/** The compaction + budget accounting — shared by both entry points. */
+export function buildBriefing(
+  totals: BriefingTotals,
+  rows: BriefingRows,
+  opts: BriefingOptions = {},
+): Briefing {
+  const { detail, applyBudget, maxChars } = briefingPlan(opts);
   const total = totals[0]?.total ?? 0;
   const totalCore = totals[0]?.core ?? 0;
-
-  const rows = await db
-    .select({
-      id: memories.id,
-      type: memories.type,
-      content: memories.content,
-      importance: memories.importance,
-      tags: memories.tags,
-      core: coreExpr,
-    })
-    .from(memories)
-    .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
-    .where(detail === "core" ? coreWhere : where)
-    .orderBy(
-      desc(coreExpr),
-      desc(memories.importance),
-      desc(memories.updatedAt),
-    )
-    .limit(BRIEFING_FETCH_MAX);
 
   let used = 0;
   const included: BriefingItem[] = [];
@@ -494,6 +701,29 @@ export async function getBriefing(
     ...(detail === "all" && applyBudget ? { max_chars: maxChars } : {}),
     memories: included,
   };
+}
+
+export async function getBriefing(
+  db: Db,
+  ownerId: string,
+  opts: BriefingOptions = {},
+): Promise<Briefing> {
+  const { detail } = briefingPlan(opts);
+  // MCP CONTRACT: an unknown namespace THROWS, so the name is resolved to an id
+  // here instead of being matched by subquery. That costs a round trip only when
+  // a namespace filter was actually asked for; the two reads below are one batch
+  // (they used to be two sequential round trips).
+  const namespaceMatch =
+    opts.namespace !== undefined
+      ? eq(
+          memories.namespaceId,
+          await resolveNamespaceId(db, ownerId, opts.namespace),
+        )
+      : undefined;
+  const [totals, rows] = await db.batch(
+    briefingStatementPair(db, ownerId, detail, namespaceMatch),
+  );
+  return buildBriefing(totals, rows, opts);
 }
 
 export interface MemoryWhere {

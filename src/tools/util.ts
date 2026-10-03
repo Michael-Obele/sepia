@@ -83,10 +83,10 @@ export function safe<Schema extends { entries: Record<string, unknown> }, T>(
  * REPORTED as uncorrelated instead of being quietly attributed to a bucket.
  * The summary surfaces that coverage rather than pretending it is complete.
  */
-export function telemetrySession(ctx: {
+export async function telemetrySession(ctx: {
   sessionId?: string;
   sessionInfo?: { clientInfo?: { name?: string } };
-}): string | null {
+}): Promise<string | null> {
   if (!ctx.sessionId) return null;
   return fingerprintSession([
     ctx.sessionId,

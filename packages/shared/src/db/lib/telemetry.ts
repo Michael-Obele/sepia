@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import {
@@ -10,6 +9,25 @@ import {
 import { SEARCH_LIMIT_DEFAULT } from "../../types.ts";
 
 export type TelemetryTier = (typeof TELEMETRY_TIERS)[number];
+
+/**
+ * `node:crypto` is loaded LAZILY — never at the top level.
+ *
+ * This module is re-exported by the `@sepia/shared` barrel, so a top-level Node
+ * import lands in the browser-reachable module graph; Vite then externalises it
+ * and the client bundle throws at IMPORT time ("Cannot access
+ * node:crypto.createHash in client code"), taking the whole page down before any
+ * of its code runs. Deferring it means the module is safe to import anywhere and
+ * only an actual `fingerprintQuery()` call needs Node — and that only ever
+ * happens server-side. Same pattern as `getUserByApiKey` in `users.ts`;
+ * `browser-safety.test.ts` guards the boundary from the other side.
+ */
+let createHashLoader: Promise<typeof import("node:crypto").createHash> | null =
+  null;
+function loadCreateHash() {
+  createHashLoader ??= import("node:crypto").then((m) => m.createHash);
+  return createHashLoader;
+}
 
 /** How long a query's terms are remembered, in seconds, when spotting loops. */
 const REFORMULATION_WINDOW_SEC = 120;
@@ -32,13 +50,14 @@ const tierCache = new Map<
  *  - the secret falls back to the auth secret (always present) rather than a
  *    literal, because a hardcoded salt makes the hash dictionary-reversible.
  */
-export function fingerprintQuery(parts: string[]): string {
+export async function fingerprintQuery(parts: string[]): Promise<string> {
   const normalized = [...new Set(parts.map((p) => p.toLowerCase()))]
     .sort()
     .join(" ");
   const day = new Date().toISOString().slice(0, 10);
   const secret =
     process.env.TELEMETRY_SALT ?? process.env.BETTER_AUTH_SECRET ?? "";
+  const createHash = await loadCreateHash();
   return createHash("sha256")
     .update(`${secret}|${day}|${normalized}`)
     .digest("hex")
@@ -46,7 +65,7 @@ export function fingerprintQuery(parts: string[]): string {
 }
 
 /** Same derivation for sessions: correlated within a day, not across days. */
-export function fingerprintSession(parts: string[]): string {
+export async function fingerprintSession(parts: string[]): Promise<string> {
   return fingerprintQuery(["session", ...parts]);
 }
 
@@ -102,12 +121,20 @@ export function searchOptions(input: {
   return options;
 }
 
-export async function getTelemetrySettings(db: Db, ownerId: string) {
-  const rows = await db
+/**
+ * Builder form of the telemetry-settings read — NOT async, so a page can compose
+ * it into `db.batch([...])` alongside its other statements.
+ */
+export function telemetrySettingsQuery(db: Db, ownerId: string) {
+  return db
     .select()
     .from(telemetrySettings)
     .where(eq(telemetrySettings.ownerId, ownerId))
     .limit(1);
+}
+
+export async function getTelemetrySettings(db: Db, ownerId: string) {
+  const rows = await telemetrySettingsQuery(db, ownerId);
   const row = rows[0];
   return {
     // No row means the account has never opted in. Default is OFF, by design.
@@ -189,7 +216,7 @@ export async function recordTelemetry(
     action: input.action ?? null,
     engine: input.engine ?? null,
     queryFingerprint: input.terms?.length
-      ? fingerprintQuery(input.terms)
+      ? await fingerprintQuery(input.terms)
       : null,
     terms: input.terms?.length ?? null,
     bestMatchedTerms: input.bestMatchedTerms ?? null,
@@ -506,15 +533,19 @@ export async function telemetrySummary(
   };
 }
 
-/** Raw rows for the transparency viewer — the owner sees exactly what is stored. */
-export async function listTelemetry(db: Db, ownerId: string, limit = 100) {
-  const safeLimit = Math.min(Math.max(limit, 1), 500);
+/** Builder form of the raw-row read — composable into `db.batch`. */
+export function listTelemetryQuery(db: Db, ownerId: string, limit = 100) {
   return db
     .select()
     .from(telemetryEvents)
     .where(eq(telemetryEvents.ownerId, ownerId))
     .orderBy(desc(telemetryEvents.createdAt))
-    .limit(safeLimit);
+    .limit(Math.min(Math.max(limit, 1), 500));
+}
+
+/** Raw rows for the transparency viewer — the owner sees exactly what is stored. */
+export async function listTelemetry(db: Db, ownerId: string, limit = 100) {
+  return listTelemetryQuery(db, ownerId, limit);
 }
 
 /** Right to erasure, in one call. */
@@ -532,7 +563,8 @@ export async function deleteTelemetry(db: Db, ownerId: string) {
  * predicate never got a caller. `terms > 0` keeps the recent-items path out —
  * it has no coverage to judge.
  */
-export async function telemetryFailures(
+/** Builder form of the failure-queue read — composable into `db.batch`. */
+export function telemetryFailuresQuery(
   db: Db,
   ownerId: string,
   windowDays = 30,
@@ -556,4 +588,13 @@ export async function telemetryFailures(
     )
     .orderBy(desc(telemetryEvents.createdAt))
     .limit(Math.min(Math.max(limit, 1), 500));
+}
+
+export async function telemetryFailures(
+  db: Db,
+  ownerId: string,
+  windowDays = 30,
+  limit = 50,
+) {
+  return telemetryFailuresQuery(db, ownerId, windowDays, limit);
 }

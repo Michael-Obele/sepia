@@ -14,24 +14,31 @@
 	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
-	import {
-		exportAll,
-		getStatsData,
-		runPruneMemories,
-		eraseTelemetry,
-		getTelemetryEvents,
-		getTelemetryFailures,
-		getTelemetryReport
-	} from '$lib/remote/index.js';
+	import { exportAll, getDataPage, runPruneMemories, eraseTelemetry } from '$lib/remote/index.js';
+	import { fresh } from '$lib/fresh.js';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 
 	let { data } = $props();
 	const isAuthed = () => Boolean(data.user);
 
-	const stats = $derived(isAuthed() ? getStatsData() : null);
-	const report = $derived(isAuthed() ? getTelemetryReport() : null);
-	const events = $derived(isAuthed() ? getTelemetryEvents(50) : null);
-	const failures = $derived(isAuthed() ? getTelemetryFailures(25) : null);
+	/** This page's view model: stats, raw rows, the failure queue and the report. */
+	type DataPage = Awaited<ReturnType<typeof getDataPage>>;
+
+	// AWAITED DURING SSR — see the note in `entities/+page.svelte`. The stats, the
+	// raw rows and the failure queue come back in ONE Neon HTTP round trip, and the
+	// whole result is serialised into the payload, so the browser makes no initial
+	// data request. This replaced FOUR separate remote calls.
+	const initialPage = isAuthed() ? await getDataPage() : null;
+
+	let view = $state<DataPage | null>(initialPage);
+
+	// Render `view` DIRECTLY — see the note in `app/+page.svelte` for why wrapping
+	// these in a promise for `{#await}` leaves each card stuck on its skeleton.
+
+	/** Re-read the page after a mutation. */
+	async function reload() {
+		view = await fresh(getDataPage());
+	}
 
 	let exporting = $state(false);
 	let erasing = $state(false);
@@ -47,7 +54,7 @@
 		toast.success('Memories pruned', {
 			description: `${res.archived_stale} stale, ${res.archived_duplicates} duplicates archived, ${res.purged} purged`
 		});
-		stats?.refresh();
+		await reload();
 	}
 
 	// DISPOSITION 10: a destructive sweep behind a bare button — route it
@@ -186,19 +193,12 @@
 			</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-3">
-			{#if stats}
-				{#await stats}
-					<Skeleton class="h-6 w-48" />
-				{:then s}
-					<p class="text-sm">
-						<span class="font-semibold tabular-nums">{s.decay_candidates}</span>
-						<span class="text-muted-foreground"> memories will be archived </span>
-					</p>
-				{:catch e}
-					<p class="text-sm text-destructive">
-						{(e as Error)?.message ?? 'Failed to load decay candidates'}
-					</p>
-				{/await}
+			{#if view?.stats}
+				{@const s = view.stats}
+				<p class="text-sm">
+					<span class="font-semibold tabular-nums">{s.decay_candidates}</span>
+					<span class="text-muted-foreground"> memories will be archived </span>
+				</p>
 			{/if}
 			<Button variant="outline" onclick={confirmPrune} class="gap-1">
 				<RefreshCw class="size-4" /> Prune memories
@@ -213,52 +213,42 @@
 			<Card.Description>The 50 most recent, exactly as they sit in your database.</Card.Description>
 		</Card.Header>
 		<Card.Content>
-			{#if events}
-				{#await events}
-					<div class="space-y-2">
-						{#each [0, 1, 2] as i (i)}<Skeleton class="h-12 w-full" />{/each}
-					</div>
-				{:then rows}
-					{#if rows.length === 0}
-						<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-							No rows stored for this account.
-						</p>
-					{:else}
-						<ScrollArea class="h-80 rounded-lg border">
-							<ul class="divide-y">
-								{#each rows as row (row.id)}
-									<li class="space-y-1 p-3">
-										<div class="flex flex-wrap items-center gap-2 text-xs">
-											<span class="font-mono text-[11px] text-muted-foreground"
-												>{fmt(row.createdAt)}</span
-											>
-											<Badge variant="secondary" class="font-mono text-[10px]">
-												{row.tool}{row.action ? `/${row.action}` : ''}
-											</Badge>
-											{#if row.engine}
-												<Badge variant="outline" class="font-mono text-[10px]">{row.engine}</Badge>
-											{/if}
-											{#if row.hitCount !== null}
-												<span class="text-muted-foreground tabular-nums">
-													{row.hitCount} hits · {row.bestMatchedTerms ?? '—'}/{row.terms ?? '—'} terms
-													·
-													{row.latencyMs ?? '—'}ms
-												</span>
-											{/if}
-										</div>
-										{#if row.queryText}
-											<p class="font-mono text-[11px] wrap-break-word">{row.queryText}</p>
-										{/if}
-									</li>
-								{/each}
-							</ul>
-						</ScrollArea>
-					{/if}
-				{:catch e}
-					<p class="text-sm text-destructive">
-						{(e as Error)?.message ?? 'Failed to load stored rows'}
+			{#if view?.events}
+				{@const rows = view.events}
+				{#if rows.length === 0}
+					<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+						No rows stored for this account.
 					</p>
-				{/await}
+				{:else}
+					<ScrollArea class="h-80 rounded-lg border">
+						<ul class="divide-y">
+							{#each rows as row (row.id)}
+								<li class="space-y-1 p-3">
+									<div class="flex flex-wrap items-center gap-2 text-xs">
+										<span class="font-mono text-[11px] text-muted-foreground"
+											>{fmt(row.createdAt)}</span
+										>
+										<Badge variant="secondary" class="font-mono text-[10px]">
+											{row.tool}{row.action ? `/${row.action}` : ''}
+										</Badge>
+										{#if row.engine}
+											<Badge variant="outline" class="font-mono text-[10px]">{row.engine}</Badge>
+										{/if}
+										{#if row.hitCount !== null}
+											<span class="text-muted-foreground tabular-nums">
+												{row.hitCount} hits · {row.bestMatchedTerms ?? '—'}/{row.terms ?? '—'} terms ·
+												{row.latencyMs ?? '—'}ms
+											</span>
+										{/if}
+									</div>
+									{#if row.queryText}
+										<p class="font-mono text-[11px] wrap-break-word">{row.queryText}</p>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</ScrollArea>
+				{/if}
 			{/if}
 		</Card.Content>
 	</Card.Root>
@@ -276,132 +266,122 @@
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
-			{#if report}
-				{#await report}
-					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-						{#each [0, 1, 2, 3] as i (i)}<Skeleton class="h-20 w-full" />{/each}
-					</div>
-				{:then r}
-					{#if r.tier === 'off' && r.events === 0}
-						<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-							Nothing recorded. Turn telemetry on under
-							<a href="/app/settings/preferences" class="underline underline-offset-2"
-								>Preferences</a
-							> if you want to see what this would show.
-						</p>
-					{:else}
-						<div class="space-y-4">
-							<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-								<div class="rounded-lg border p-4">
-									<div class="text-2xl font-semibold tabular-nums">{r.searches}</div>
-									<div class="text-xs text-muted-foreground">Searches</div>
+			{#if view?.report}
+				{@const r = view.report}
+				{#if r.tier === 'off' && r.events === 0}
+					<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+						Nothing recorded. Turn telemetry on under
+						<a href="/app/settings/preferences" class="underline underline-offset-2">Preferences</a> if
+						you want to see what this would show.
+					</p>
+				{:else}
+					<div class="space-y-4">
+						<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+							<div class="rounded-lg border p-4">
+								<div class="text-2xl font-semibold tabular-nums">{r.searches}</div>
+								<div class="text-xs text-muted-foreground">Searches</div>
+							</div>
+							<div class="rounded-lg border p-4">
+								<div class="text-2xl font-semibold tabular-nums">{r.zero_result}</div>
+								<div class="text-xs text-muted-foreground">
+									Came back empty <span class="tabular-nums"
+										>({pct(r.zero_result, r.searches)})</span
+									>
 								</div>
-								<div class="rounded-lg border p-4">
-									<div class="text-2xl font-semibold tabular-nums">{r.zero_result}</div>
-									<div class="text-xs text-muted-foreground">
-										Came back empty <span class="tabular-nums"
-											>({pct(r.zero_result, r.searches)})</span
-										>
-									</div>
-									<div class="text-[11px] text-muted-foreground tabular-nums">
-										bare {r.zero_bare} · precision {r.zero_precision} · filtered {r.zero_filtered}{r.zero_unknown
-											? ` · unclassifiable ${r.zero_unknown}`
-											: ''}
-									</div>
-								</div>
-								<div class="rounded-lg border p-4">
-									<div class="text-2xl font-semibold tabular-nums">{r.repeated}</div>
-									<div class="text-xs text-muted-foreground">Asked again in the same session</div>
-								</div>
-								<div class="rounded-lg border p-4">
-									<div class="text-2xl font-semibold tabular-nums">{r.latency_ms.p50 ?? '—'}</div>
-									<div class="text-xs text-muted-foreground">
-										Median ms <span class="tabular-nums">(p95 {r.latency_ms.p95 ?? '—'})</span>
-									</div>
+								<div class="text-[11px] text-muted-foreground tabular-nums">
+									bare {r.zero_bare} · precision {r.zero_precision} · filtered {r.zero_filtered}{r.zero_unknown
+										? ` · unclassifiable ${r.zero_unknown}`
+										: ''}
 								</div>
 							</div>
-
-							<dl class="space-y-1 text-xs text-muted-foreground">
-								<div class="flex flex-wrap gap-x-2">
-									<dt>Outcome known for</dt>
-									<dd class="text-foreground tabular-nums">
-										{r.correlated_searches} of {r.searches} searches ({pct(
-											r.correlated_searches,
-											r.searches
-										)})
-									</dd>
+							<div class="rounded-lg border p-4">
+								<div class="text-2xl font-semibold tabular-nums">{r.repeated}</div>
+								<div class="text-xs text-muted-foreground">Asked again in the same session</div>
+							</div>
+							<div class="rounded-lg border p-4">
+								<div class="text-2xl font-semibold tabular-nums">{r.latency_ms.p50 ?? '—'}</div>
+								<div class="text-xs text-muted-foreground">
+									Median ms <span class="tabular-nums">(p95 {r.latency_ms.p95 ?? '—'})</span>
 								</div>
-								<div class="flex flex-wrap gap-x-2">
-									<dt>Chained — another search within 120 s</dt>
-									<dd class="text-foreground tabular-nums">
-										{r.reformulated} ({pct(r.reformulated, r.correlated_searches)} of attributable searches)
-										<span class="text-muted-foreground">— context, not a failure rate</span>
-									</dd>
-								</div>
-								<div class="flex flex-wrap gap-x-2">
-									<dt>Retried after an empty result</dt>
-									<dd class="text-foreground tabular-nums">
-										{r.retried_after_zero} ({pct(r.retried_after_zero, r.correlated_searches)} of attributable
-										searches)
-										<span class="text-muted-foreground">— the real “that didn’t work” signal</span>
-									</dd>
-								</div>
-								<div class="flex flex-wrap gap-x-2">
-									<dt>Out of page</dt>
-									<dd class="text-foreground tabular-nums">
-										{r.truncated} ({pct(r.truncated, r.searches)}) filled the requested page — more
-										existed
-									</dd>
-								</div>
-								<div class="flex flex-wrap gap-x-2">
-									<dt>Coverage</dt>
-									<dd class="text-foreground tabular-nums">
-										avg {r.avg_coverage ?? '—'} · full {r.full_coverage}/{r.coveraged_searches} ({pct(
-											r.full_coverage,
-											r.coveraged_searches
-										)})
-									</dd>
-								</div>
-								<div class="flex flex-wrap gap-x-2">
-									<dt>Distinct queries</dt>
-									<dd class="text-foreground tabular-nums">{r.distinct_queries}</dd>
-								</div>
-								<div class="flex flex-wrap gap-x-2">
-									<dt>Briefing</dt>
-									<dd class="text-foreground tabular-nums">
-										{r.briefing.calls} calls, {r.briefing.escalated} escalated, {r.briefing
-											.sessions_started_work_first} session(s) started work without one
-									</dd>
-								</div>
-								{#if r.by_engine.length}
-									<div class="flex flex-wrap gap-x-2">
-										<dt>By engine</dt>
-										<dd class="text-foreground">
-											{r.by_engine
-												.map(
-													(e) =>
-														`${e.engine}: ${e.searches}${e.explicit ? ` (${e.explicit} asked for)` : ''}`
-												)
-												.join(' · ')}
-											<span class="text-muted-foreground">
-												— rows that asked for an engine are self-selected, so this is an
-												observation, not an A/B
-											</span>
-										</dd>
-									</div>
-								{/if}
-								<div class="flex flex-wrap gap-x-2">
-									<dt>Oldest row</dt>
-									<dd class="text-foreground">{fmt(r.oldest)}</dd>
-								</div>
-							</dl>
+							</div>
 						</div>
-					{/if}
-				{:catch e}
-					<p class="text-sm text-destructive">
-						{(e as Error)?.message ?? 'Failed to load the summary'}
-					</p>
-				{/await}
+
+						<dl class="space-y-1 text-xs text-muted-foreground">
+							<div class="flex flex-wrap gap-x-2">
+								<dt>Outcome known for</dt>
+								<dd class="text-foreground tabular-nums">
+									{r.correlated_searches} of {r.searches} searches ({pct(
+										r.correlated_searches,
+										r.searches
+									)})
+								</dd>
+							</div>
+							<div class="flex flex-wrap gap-x-2">
+								<dt>Chained — another search within 120 s</dt>
+								<dd class="text-foreground tabular-nums">
+									{r.reformulated} ({pct(r.reformulated, r.correlated_searches)} of attributable searches)
+									<span class="text-muted-foreground">— context, not a failure rate</span>
+								</dd>
+							</div>
+							<div class="flex flex-wrap gap-x-2">
+								<dt>Retried after an empty result</dt>
+								<dd class="text-foreground tabular-nums">
+									{r.retried_after_zero} ({pct(r.retried_after_zero, r.correlated_searches)} of attributable
+									searches)
+									<span class="text-muted-foreground">— the real “that didn’t work” signal</span>
+								</dd>
+							</div>
+							<div class="flex flex-wrap gap-x-2">
+								<dt>Out of page</dt>
+								<dd class="text-foreground tabular-nums">
+									{r.truncated} ({pct(r.truncated, r.searches)}) filled the requested page — more
+									existed
+								</dd>
+							</div>
+							<div class="flex flex-wrap gap-x-2">
+								<dt>Coverage</dt>
+								<dd class="text-foreground tabular-nums">
+									avg {r.avg_coverage ?? '—'} · full {r.full_coverage}/{r.coveraged_searches} ({pct(
+										r.full_coverage,
+										r.coveraged_searches
+									)})
+								</dd>
+							</div>
+							<div class="flex flex-wrap gap-x-2">
+								<dt>Distinct queries</dt>
+								<dd class="text-foreground tabular-nums">{r.distinct_queries}</dd>
+							</div>
+							<div class="flex flex-wrap gap-x-2">
+								<dt>Briefing</dt>
+								<dd class="text-foreground tabular-nums">
+									{r.briefing.calls} calls, {r.briefing.escalated} escalated, {r.briefing
+										.sessions_started_work_first} session(s) started work without one
+								</dd>
+							</div>
+							{#if r.by_engine.length}
+								<div class="flex flex-wrap gap-x-2">
+									<dt>By engine</dt>
+									<dd class="text-foreground">
+										{r.by_engine
+											.map(
+												(e) =>
+													`${e.engine}: ${e.searches}${e.explicit ? ` (${e.explicit} asked for)` : ''}`
+											)
+											.join(' · ')}
+										<span class="text-muted-foreground">
+											— rows that asked for an engine are self-selected, so this is an observation,
+											not an A/B
+										</span>
+									</dd>
+								</div>
+							{/if}
+							<div class="flex flex-wrap gap-x-2">
+								<dt>Oldest row</dt>
+								<dd class="text-foreground">{fmt(r.oldest)}</dd>
+							</div>
+						</dl>
+					</div>
+				{/if}
 			{/if}
 		</Card.Content>
 	</Card.Root>
@@ -420,71 +400,62 @@
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
-			{#if failures}
-				{#await failures}
-					<div class="space-y-2">
-						{#each [0, 1, 2] as i (i)}<Skeleton class="h-12 w-full" />{/each}
-					</div>
-				{:then rows}
-					{#if rows.length === 0}
-						<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
-							Nothing came back empty or thin in this window.
-						</p>
-					{:else}
-						<ScrollArea class="h-80 rounded-lg border">
-							<ul class="divide-y">
-								{#each rows as row (row.id)}
-									<li class="space-y-1 p-3">
-										<div class="flex flex-wrap items-center gap-2 text-xs">
-											<span class="text-muted-foreground tabular-nums">{fmt(row.createdAt)}</span>
-											<Badge variant="secondary" class="font-mono text-[10px]">search</Badge>
-											{#if row.engine}
-												<Badge variant="outline" class="font-mono text-[10px]">{row.engine}</Badge>
-											{/if}
-											<span class="text-muted-foreground tabular-nums">
-												{row.hitCount === 0
-													? 'empty'
-													: `${row.bestMatchedTerms ?? 0}/${row.terms ?? 0} terms`} · {row.hitCount ??
-													0}
-												hits
-												{#if row.options?.min_terms !== undefined}
-													· min_terms {row.options.min_terms}{/if}
-												{#if row.options?.limit !== undefined}
-													· limit {row.options.limit}{/if}
-												{#if row.options?.namespace}
-													· ns {row.options.namespace}{/if}
-												{#if row.options?.type}
-													· type {row.options.type}{/if}
-												{#if row.options?.engine}
-													· asked for {row.options.engine}{/if}
-												{#if !row.options}
-													· options not recorded (older row){/if}
-											</span>
-										</div>
-										{#if row.queryText}
-											<p class="font-mono text-[11px] wrap-break-word">{row.queryText}</p>
-										{:else if row.queryText === ''}
-											<!-- Empty string, not null: a "show me recent items" call that older
+			{#if view?.failures}
+				{@const rows = view.failures}
+				{#if rows.length === 0}
+					<p class="rounded-lg border border-dashed p-3 text-xs text-muted-foreground">
+						Nothing came back empty or thin in this window.
+					</p>
+				{:else}
+					<ScrollArea class="h-80 rounded-lg border">
+						<ul class="divide-y">
+							{#each rows as row (row.id)}
+								<li class="space-y-1 p-3">
+									<div class="flex flex-wrap items-center gap-2 text-xs">
+										<span class="text-muted-foreground tabular-nums">{fmt(row.createdAt)}</span>
+										<Badge variant="secondary" class="font-mono text-[10px]">search</Badge>
+										{#if row.engine}
+											<Badge variant="outline" class="font-mono text-[10px]">{row.engine}</Badge>
+										{/if}
+										<span class="text-muted-foreground tabular-nums">
+											{row.hitCount === 0
+												? 'empty'
+												: `${row.bestMatchedTerms ?? 0}/${row.terms ?? 0} terms`} · {row.hitCount ??
+												0}
+											hits
+											{#if row.options?.min_terms !== undefined}
+												· min_terms {row.options.min_terms}{/if}
+											{#if row.options?.limit !== undefined}
+												· limit {row.options.limit}{/if}
+											{#if row.options?.namespace}
+												· ns {row.options.namespace}{/if}
+											{#if row.options?.type}
+												· type {row.options.type}{/if}
+											{#if row.options?.engine}
+												· asked for {row.options.engine}{/if}
+											{#if !row.options}
+												· options not recorded (older row){/if}
+										</span>
+									</div>
+									{#if row.queryText}
+										<p class="font-mono text-[11px] wrap-break-word">{row.queryText}</p>
+									{:else if row.queryText === ''}
+										<!-- Empty string, not null: a "show me recent items" call that older
 											     rows recorded with one fake term. Saying "counters-only" here would
 											     be false — this account does store query text. -->
-											<p class="text-[11px] text-muted-foreground">
-												empty query — a recent-items call, not a miss
-											</p>
-										{:else}
-											<p class="text-[11px] text-muted-foreground">
-												query text not stored — this account is on the counters-only tier
-											</p>
-										{/if}
-									</li>
-								{/each}
-							</ul>
-						</ScrollArea>
-					{/if}
-				{:catch e}
-					<p class="text-sm text-destructive">
-						{(e as Error)?.message ?? 'Failed to load the failure queue'}
-					</p>
-				{/await}
+										<p class="text-[11px] text-muted-foreground">
+											empty query — a recent-items call, not a miss
+										</p>
+									{:else}
+										<p class="text-[11px] text-muted-foreground">
+											query text not stored — this account is on the counters-only tier
+										</p>
+									{/if}
+								</li>
+							{/each}
+						</ul>
+					</ScrollArea>
+				{/if}
 			{/if}
 		</Card.Content>
 	</Card.Root>

@@ -2,7 +2,7 @@ import { query, command } from '$app/server';
 import * as v from 'valibot';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
-import { isLocalClient, oauthClients, oauthTokens } from '@sepia/shared';
+import { apiKeysQuery, isLocalClient, oauthClients, oauthTokens, type Db } from '@sepia/shared';
 import { eq, and, desc } from 'drizzle-orm';
 
 export interface ConnectionRow {
@@ -23,51 +23,126 @@ export interface ConnectionRow {
 	local: boolean;
 }
 
-/** List Web AI connections (OAuth clients) for the current user. */
-export const listConnections = query(async (): Promise<ConnectionRow[]> => {
-	const user = await requireAuth();
-	const clients = await db()
+/** Builder: every OAuth client this owner has registered. */
+function clientsQuery(sql: Db, ownerId: string) {
+	return sql
 		.select()
 		.from(oauthClients)
-		.where(eq(oauthClients.ownerId, user.id))
+		.where(eq(oauthClients.ownerId, ownerId))
 		.orderBy(desc(oauthClients.createdAt));
+}
 
-	if (clients.length === 0) return [];
+/**
+ * Builder: every token belonging to this owner's clients, in one read.
+ *
+ * Scoped through a JOIN rather than a list of client ids so it does NOT depend on
+ * `clientsQuery` — that is what lets both go in the same `db.batch` (one HTTP
+ * round trip). Only the four columns the activity calculation needs.
+ */
+function tokensForOwnerQuery(sql: Db, ownerId: string) {
+	return sql
+		.select({
+			clientId: oauthTokens.clientId,
+			expiresAt: oauthTokens.expiresAt,
+			refreshExpiresAt: oauthTokens.refreshExpiresAt,
+			revokedAt: oauthTokens.revokedAt
+		})
+		.from(oauthTokens)
+		.innerJoin(oauthClients, eq(oauthClients.clientId, oauthTokens.clientId))
+		.where(eq(oauthClients.ownerId, ownerId))
+		.orderBy(desc(oauthTokens.refreshExpiresAt));
+}
 
-	// Batch fetch latest token per client to compute lastUsedAt / active
+/** Shape of one row from `tokensForOwnerQuery`. */
+type TokenRow = Awaited<ReturnType<typeof tokensForOwnerQuery>>[number];
+
+/**
+ * Join clients to their tokens in memory — replacing the per-client query loop
+ * this used to run. Tokens arrive newest-first (refresh expiry desc), so the
+ * first token for a client is the newest, exactly as before.
+ */
+function buildConnections(
+	clients: Awaited<ReturnType<typeof clientsQuery>>,
+	tokens: TokenRow[]
+): ConnectionRow[] {
 	const now = new Date();
-	const rows: ConnectionRow[] = [];
-	for (const c of clients) {
-		const tokens = await db()
-			.select()
-			.from(oauthTokens)
-			.where(eq(oauthTokens.clientId, c.clientId))
-			.orderBy(desc(oauthTokens.refreshExpiresAt));
+	const byClient = new Map<string, TokenRow[]>();
+	for (const t of tokens) {
+		const list = byClient.get(t.clientId);
+		if (list) list.push(t);
+		else byClient.set(t.clientId, [t]);
+	}
 
-		let lastUsedAt: string | null = null;
-		let active = false;
-		if (tokens.length > 0) {
-			// lastUsedAt = most recent token's refreshExpiresAt minus TTL is approx last issue time;
-			// better: use max of expiresAt / created ordering. We use the newest token's expiresAt as proxy.
-			// Prefer the newest non-revoked token's expiry as last activity.
-			const newest = tokens[0];
-			// Use the newest token's expiresAt as last activity marker (issue time + 1h)
-			// Fallback to createdAt if no tokens
-			lastUsedAt = newest.expiresAt ? String(newest.expiresAt) : null;
-			active = tokens.some((t) => !t.revokedAt && new Date(t.refreshExpiresAt) > now);
-		}
-		rows.push({
+	return clients.map((c) => {
+		const list = byClient.get(c.clientId) ?? [];
+		// Newest token's expiry is the closest thing we store to "last activity".
+		const newest = list[0];
+		return {
 			id: c.id,
 			clientId: c.clientId,
 			name: c.name,
 			redirectUris: c.redirectUris as string[],
 			createdAt: String(c.createdAt),
-			lastUsedAt,
-			active,
+			lastUsedAt: newest?.expiresAt ? String(newest.expiresAt) : null,
+			active: list.some((t) => !t.revokedAt && new Date(t.refreshExpiresAt) > now),
 			local: isLocalClient(c.redirectUris as string[])
-		});
-	}
-	return rows;
+		};
+	});
+}
+
+/**
+ * List Web AI connections (OAuth clients) for the current user.
+ *
+ * ONE Neon HTTP round trip. This used to run a token query INSIDE a loop over
+ * the user's clients — an N+1 that cost an extra ~300 ms round trip per
+ * connection on every visit to `/app/connect`.
+ */
+export const listConnections = query(async (): Promise<ConnectionRow[]> => {
+	const user = await requireAuth();
+	const sql = db();
+	const [clients, tokens] = await sql.batch([
+		clientsQuery(sql, user.id),
+		tokensForOwnerQuery(sql, user.id)
+	]);
+	return buildConnections(clients, tokens);
+});
+
+/** One API key as the connect page renders it. */
+export interface ConnectApiKey {
+	id: string;
+	name: string;
+	start: string | null;
+	createdAt: string;
+	lastRequest: string | null;
+}
+
+export interface ConnectPage {
+	apiKeys: ConnectApiKey[];
+	connections: ConnectionRow[];
+}
+
+/**
+ * Everything `/app/connect` renders on its first paint, in ONE Neon HTTP round
+ * trip: the API keys, the OAuth clients and their tokens.
+ */
+export const getConnectPage = query(async (): Promise<ConnectPage> => {
+	const user = await requireAuth();
+	const sql = db();
+	const [keys, clients, tokens] = await sql.batch([
+		apiKeysQuery(sql, user.id),
+		clientsQuery(sql, user.id),
+		tokensForOwnerQuery(sql, user.id)
+	]);
+	return {
+		apiKeys: keys.map((k) => ({
+			id: String(k.id),
+			name: k.name ?? 'Untitled key',
+			start: k.start,
+			createdAt: String(k.createdAt),
+			lastRequest: k.lastRequest ? String(k.lastRequest) : null
+		})),
+		connections: buildConnections(clients, tokens)
+	};
 });
 
 /** Disconnect (revoke + delete) a Web AI connection. Only the owner can do this. */

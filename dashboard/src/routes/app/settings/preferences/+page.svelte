@@ -9,21 +9,38 @@
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import { toast } from 'svelte-sonner';
 	import {
-		getNamespaces,
+		getPreferencesPage,
 		addNamespace,
 		removeNamespace,
-		getTelemetry,
 		updateTelemetryTier,
 		updateTelemetryTtl
 	} from '$lib/remote/index.js';
+	import { fresh } from '$lib/fresh.js';
 	import type { TelemetryTier } from '@sepia/shared';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
 
 	let { data } = $props();
 	const isAuthed = () => Boolean(data.user);
 
-	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
-	const settings = $derived(isAuthed() ? getTelemetry() : null);
+	/** This page's view model: the namespace list plus the telemetry setting. */
+	type View = Awaited<ReturnType<typeof getPreferencesPage>>;
+
+	// AWAITED DURING SSR — see the note in `entities/+page.svelte`. ONE Neon HTTP
+	// round trip for both cards, serialised into the payload, so the browser makes
+	// no initial data request.
+	const initialPage: View = isAuthed()
+		? await getPreferencesPage()
+		: { namespaces: [], settings: { tier: 'off', ttlDays: 30, enabledAt: null } };
+
+	let view = $state<View>(initialPage);
+
+	// Render `view` DIRECTLY — see the note in `app/+page.svelte` for why wrapping
+	// these in a promise for `{#await}` leaves the page stuck on its skeleton.
+
+	/** Re-read both cards — namespace edits and telemetry edits both land here. */
+	async function reload() {
+		view = await fresh(getPreferencesPage());
+	}
 
 	let newName = $state('');
 	let newDesc = $state('');
@@ -47,7 +64,7 @@
 		try {
 			await removeNamespace(id);
 			toast.success(`Namespace "${name}" deleted`);
-			namespaces?.refresh();
+			void reload();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Failed to delete namespace');
 		}
@@ -70,7 +87,7 @@
 					{ description: 'Recording into your own database. Nothing leaves your infrastructure.' }
 				);
 			}
-			settings?.refresh();
+			void reload();
 		} catch (e) {
 			toast.error((e as Error)?.message ?? 'Could not change the telemetry setting');
 		} finally {
@@ -126,54 +143,43 @@
 					<Plus class="size-4" /> Create
 				</Button>
 			</form>
-			{#if namespaces}
-				{#await namespaces}
-					<div class="space-y-2">
-						{#each [0, 1] as i (i)}
-							<Skeleton class="h-14 w-full" />
-						{/each}
-					</div>
-				{:then ns}
-					<div class="space-y-2">
-						{#each ns as n (n.id)}
-							<div class="flex items-center justify-between gap-3 rounded-md border p-3">
-								<div class="min-w-0">
-									<div class="flex items-center gap-2">
-										<p class="font-medium">{n.name}</p>
-										{#if n.name === 'personal'}
-											<Badge variant="secondary">default</Badge>
-										{/if}
-									</div>
-									{#if n.description}
-										<p class="truncate text-xs text-muted-foreground">{n.description}</p>
+			{#if view.namespaces.length}
+				{@const ns = view.namespaces}
+				<div class="space-y-2">
+					{#each ns as n (n.id)}
+						<div class="flex items-center justify-between gap-3 rounded-md border p-3">
+							<div class="min-w-0">
+								<div class="flex items-center gap-2">
+									<p class="font-medium">{n.name}</p>
+									{#if n.name === 'personal'}
+										<Badge variant="secondary">default</Badge>
 									{/if}
-									<p class="text-xs text-muted-foreground">
-										{n.entity_count} entities · {n.memory_count} memories · {n.relation_count} relations
-									</p>
 								</div>
-								<Button
-									variant="ghost"
-									size="icon"
-									onclick={() =>
-										(pendingDelete = {
-											title: `Delete namespace "${n.name}"?`,
-											description:
-												'This permanently removes all its entities, relations, and memories. This cannot be undone.',
-											run: () => delNs(String(n.id), n.name)
-										})}
-									disabled={n.name === 'personal'}
-									aria-label={`Delete namespace ${n.name}`}
-								>
-									<Trash2 class="size-4 text-destructive" />
-								</Button>
+								{#if n.description}
+									<p class="truncate text-xs text-muted-foreground">{n.description}</p>
+								{/if}
+								<p class="text-xs text-muted-foreground">
+									{n.entity_count} entities · {n.memory_count} memories · {n.relation_count} relations
+								</p>
 							</div>
-						{/each}
-					</div>
-				{:catch e}
-					<p class="text-sm text-destructive">
-						{(e as Error)?.message ?? 'Failed to load namespaces'}
-					</p>
-				{/await}
+							<Button
+								variant="ghost"
+								size="icon"
+								onclick={() =>
+									(pendingDelete = {
+										title: `Delete namespace "${n.name}"?`,
+										description:
+											'This permanently removes all its entities, relations, and memories. This cannot be undone.',
+										run: () => delNs(String(n.id), n.name)
+									})}
+								disabled={n.name === 'personal'}
+								aria-label={`Delete namespace ${n.name}`}
+							>
+								<Trash2 class="size-4 text-destructive" />
+							</Button>
+						</div>
+					{/each}
+				</div>
 			{/if}
 		</Card.Content>
 	</Card.Root>
@@ -272,113 +278,106 @@
 			<Card.Title class="text-base">Collecting</Card.Title>
 		</Card.Header>
 		<Card.Content class="space-y-4">
-			{#if settings}
-				{#await settings}
-					<Skeleton class="h-16 w-full" />
-				{:then s}
-					<label
-						for="telemetry-enabled"
-						class="flex cursor-pointer items-center justify-between gap-3 rounded-lg border p-3 transition-colors has-data-[state=checked]:bg-muted/40"
-					>
-						<span class="space-y-0.5">
-							<span class="block text-sm font-medium">
-								{s.tier === 'off' ? 'Telemetry is off' : 'Telemetry is on'}
-							</span>
-							<span class="block text-xs text-muted-foreground">
-								{s.tier === 'off'
-									? 'Nothing is being recorded for this account.'
-									: s.enabledAt
-										? `Recording since ${fmt(s.enabledAt)}.`
-										: 'Recording.'}
-							</span>
+			{#if view.settings}
+				{@const s = view.settings}
+				<label
+					for="telemetry-enabled"
+					class="flex cursor-pointer items-center justify-between gap-3 rounded-lg border p-3 transition-colors has-data-[state=checked]:bg-muted/40"
+				>
+					<span class="space-y-0.5">
+						<span class="block text-sm font-medium">
+							{s.tier === 'off' ? 'Telemetry is off' : 'Telemetry is on'}
 						</span>
-						<Switch
-							id="telemetry-enabled"
-							checked={s.tier !== 'off'}
-							disabled={saving}
-							onCheckedChange={(checked) => setTier(checked ? 'signals' : 'off')}
-						/>
-					</label>
+						<span class="block text-xs text-muted-foreground">
+							{s.tier === 'off'
+								? 'Nothing is being recorded for this account.'
+								: s.enabledAt
+									? `Recording since ${fmt(s.enabledAt)}.`
+									: 'Recording.'}
+						</span>
+					</span>
+					<Switch
+						id="telemetry-enabled"
+						checked={s.tier !== 'off'}
+						disabled={saving}
+						onCheckedChange={(checked) => setTier(checked ? 'signals' : 'off')}
+					/>
+				</label>
 
-					{#if s.tier !== 'off'}
-						<div class="space-y-2">
-							<p class="text-xs text-muted-foreground">
-								How much to record. Turning this on starts at the lower tier on purpose — widen it
-								only if you want failures to be reproducible.
-							</p>
-							<div class="flex flex-wrap gap-2">
-								<Button
-									size="sm"
-									variant={s.tier === 'signals' ? 'default' : 'outline'}
-									disabled={saving}
-									onclick={() => setTier('signals')}>Counters only</Button
-								>
-								<Button
-									size="sm"
-									variant={s.tier === 'transcripts' ? 'default' : 'outline'}
-									disabled={saving}
-									onclick={() => setTier('transcripts')}>Counters + query text</Button
-								>
-							</div>
+				{#if s.tier !== 'off'}
+					<div class="space-y-2">
+						<p class="text-xs text-muted-foreground">
+							How much to record. Turning this on starts at the lower tier on purpose — widen it
+							only if you want failures to be reproducible.
+						</p>
+						<div class="flex flex-wrap gap-2">
+							<Button
+								size="sm"
+								variant={s.tier === 'signals' ? 'default' : 'outline'}
+								disabled={saving}
+								onclick={() => setTier('signals')}>Counters only</Button
+							>
+							<Button
+								size="sm"
+								variant={s.tier === 'transcripts' ? 'default' : 'outline'}
+								disabled={saving}
+								onclick={() => setTier('transcripts')}>Counters + query text</Button
+							>
 						</div>
-					{/if}
+					</div>
+				{/if}
 
-					<!-- Retention is shown whether telemetry is on or off: the current
+				<!-- Retention is shown whether telemetry is on or off: the current
 					     window is part of what the owner is agreeing to, so it is never
 					     hidden behind a tier. The presets are the submit buttons of one
 					     remote form, so the choice survives without JavaScript. -->
-					<form
-						{...updateTelemetryTtl.enhance(async (f) => {
-							try {
-								if (await f.submit()) {
-									toast.success(`Raw query text kept for ${f.result?.ttlDays} days`, {
-										description:
-											'Counters are untouched — only the expiry of raw query text and returned ids changed.'
-									});
-								} else {
-									toast.error('Retention must be between 1 and 365 days');
-								}
-							} catch (e) {
-								toast.error((e as Error)?.message ?? 'Could not change the retention window');
+				<form
+					{...updateTelemetryTtl.enhance(async (f) => {
+						try {
+							if (await f.submit()) {
+								toast.success(`Raw query text kept for ${f.result?.ttlDays} days`, {
+									description:
+										'Counters are untouched — only the expiry of raw query text and returned ids changed.'
+								});
+							} else {
+								toast.error('Retention must be between 1 and 365 days');
 							}
-						})}
-						class="space-y-2"
-					>
-						<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
-							<span class="space-y-0.5">
-								<span class="block text-sm font-medium">
-									Raw query text kept for {s.ttlDays}
-									{s.ttlDays === 1 ? 'day' : 'days'}
-								</span>
-								<span class="block text-xs text-muted-foreground">
-									{s.tier === 'off'
-										? 'Applies to query text once telemetry is on at the query-text tier.'
-										: 'Counters are kept until you erase them — only raw query text and returned ids expire.'}
-								</span>
+						} catch (e) {
+							toast.error((e as Error)?.message ?? 'Could not change the retention window');
+						}
+					})}
+					class="space-y-2"
+				>
+					<div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border p-3">
+						<span class="space-y-0.5">
+							<span class="block text-sm font-medium">
+								Raw query text kept for {s.ttlDays}
+								{s.ttlDays === 1 ? 'day' : 'days'}
 							</span>
-							<div class="flex flex-wrap gap-2">
-								{#each TTL_PRESETS as days (days)}
-									<Button
-										size="sm"
-										variant={s.ttlDays === days ? 'default' : 'outline'}
-										disabled={updateTelemetryTtl.pending > 0}
-										{...updateTelemetryTtl.fields.ttlDays.as('submit', days)}
-									>
-										{days === 365 ? '1 year' : `${days} days`}
-									</Button>
-								{/each}
-							</div>
+							<span class="block text-xs text-muted-foreground">
+								{s.tier === 'off'
+									? 'Applies to query text once telemetry is on at the query-text tier.'
+									: 'Counters are kept until you erase them — only raw query text and returned ids expire.'}
+							</span>
+						</span>
+						<div class="flex flex-wrap gap-2">
+							{#each TTL_PRESETS as days (days)}
+								<Button
+									size="sm"
+									variant={s.ttlDays === days ? 'default' : 'outline'}
+									disabled={updateTelemetryTtl.pending > 0}
+									{...updateTelemetryTtl.fields.ttlDays.as('submit', days)}
+								>
+									{days === 365 ? '1 year' : `${days} days`}
+								</Button>
+							{/each}
 						</div>
-						<p class="text-xs text-muted-foreground">
-							Expired payloads are cleared when this page is next read — this project has no
-							scheduler, so retention is enforced on read rather than pretended.
-						</p>
-					</form>
-				{:catch e}
-					<p class="text-sm text-destructive">
-						{(e as Error)?.message ?? 'Failed to load telemetry settings'}
+					</div>
+					<p class="text-xs text-muted-foreground">
+						Expired payloads are cleared when this page is next read — this project has no
+						scheduler, so retention is enforced on read rather than pretended.
 					</p>
-				{/await}
+				</form>
 			{/if}
 			<p class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
 				<Activity class="size-3" /> Anything already recorded lives in

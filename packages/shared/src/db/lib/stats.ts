@@ -36,34 +36,24 @@ export interface Stats {
   }>;
 }
 
-/** Dashboard stats: counts, top entities, decay candidates, recent feed. */
-export async function getStats(db: Db, ownerId: string): Promise<Stats> {
+/**
+ * The 11 dashboard-stat queries as a READONLY TUPLE of builders, so a caller can
+ * append its own statements and pay ONE Neon HTTP round trip for everything
+ * (the `/app` home page appends the namespace options).
+ *
+ * `as const` is load-bearing. `db.batch` accepts `Readonly<[U, ...U[]]>` and
+ * returns `BatchResponse<T>`, which maps over the tuple position-for-position —
+ * that is what keeps each result's type attached. Returning a plain array would
+ * widen every element to one generic shape and let the destructuring drift out
+ * of order WITHOUT a compile error.
+ */
+export function statsQueries(db: Db, ownerId: string) {
   // All 11 queries in ONE Neon HTTP round trip via db.batch. Firing them as
   // separate requests (even via Promise.all) costs ~500-700ms each through the
   // Neon HTTP driver, so getStats used to take ~10s. A single batch is ~1s.
   // Every query is scoped to the owner's namespaces.
   const owned = sql`(SELECT id FROM ${namespaces} WHERE owner_id = ${ownerId})`;
-  // The array is passed INLINE to db.batch — never hoisted into a typed
-  // `BatchItem<"pg">[]` variable and then re-cast. Hoisting widens every element
-  // to one generic shape, which erases each query's result type and lets the
-  // destructuring below drift out of order WITHOUT a compile error. That is how
-  // `recent`/`conv` were silently swapped (they read each other's results, so
-  // the feed showed a phantom memory and `conversations` always read 0).
-  // Inlined, TypeScript infers the tuple and checks the order for us.
-  const [
-    // ORDER MUST MATCH THE ARRAY BELOW, position for position:
-    ns, // 1  namespace count
-    ent, // 2  entity count
-    mem, // 3  memory count
-    rel, // 4  relation count
-    archived, // 5  archived memory count
-    memByType, // 6  memories grouped by type
-    entByType, // 7  entities grouped by type
-    top, // 8  top entities by access_count
-    decay, // 9  prune candidates (raw SQL)
-    conv, // 10 conversation digests
-    recent, // 11 most recently updated memories
-  ] = await db.batch([
+  return [
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(namespaces)
@@ -141,8 +131,40 @@ export async function getStats(db: Db, ownerId: string): Promise<Stats> {
       .where(and(eq(memories.archived, false), eq(namespaces.ownerId, ownerId)))
       .orderBy(sql`${memories.updatedAt} DESC`)
       .limit(10),
-  ]);
+  ] as const;
+}
 
+/** The raw batch that runs every `statsQueries` statement. */
+function rawStatsBatch(db: Db, ownerId: string) {
+  return db.batch(statsQueries(db, ownerId));
+}
+
+/** The raw results of `statsQueries`, in order. */
+export type StatsResults = Awaited<ReturnType<typeof rawStatsBatch>>;
+
+/**
+ * Turn the raw `statsQueries` results into the `Stats` object.
+ *
+ * Split out from `getStats` so a page can append its OWN statements to the same
+ * batch — the `/app` home page adds the namespace options — and still reuse this
+ * mapping instead of repeating it.
+ *
+ * ORDER MUST MATCH `statsQueries`, position for position; the tuple typing is
+ * what enforces it.
+ */
+export function buildStats([
+  ns, // 1  namespace count
+  ent, // 2  entity count
+  mem, // 3  memory count
+  rel, // 4  relation count
+  archived, // 5  archived memory count
+  memByType, // 6  memories grouped by type
+  entByType, // 7  entities grouped by type
+  top, // 8  top entities by access_count
+  decay, // 9  prune candidates (raw SQL)
+  conv, // 10 conversation digests
+  recent, // 11 most recently updated memories
+]: StatsResults): Stats {
   const memoriesByType: Record<string, number> = {};
   for (const r of memByType) memoriesByType[String(r.type)] = Number(r.n);
   const entitiesByType: Record<string, number> = {};
@@ -187,4 +209,9 @@ export async function getStats(db: Db, ownerId: string): Promise<Stats> {
       updated_at: m.updated_at ?? "",
     })),
   };
+}
+
+/** Dashboard stats: counts, top entities, decay candidates, recent feed. */
+export async function getStats(db: Db, ownerId: string): Promise<Stats> {
+  return buildStats(await rawStatsBatch(db, ownerId));
 }

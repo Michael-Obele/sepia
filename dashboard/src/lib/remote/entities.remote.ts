@@ -1,13 +1,17 @@
 import { command, form, query } from '$app/server';
 import * as v from 'valibot';
 import {
+	entityListQuery,
 	findEntities,
+	findEntityList,
 	getEntity,
 	createEntity,
 	updateEntity,
 	deleteEntity,
+	namespacesQuery,
 	EntityInput,
-	EntityUpdateInput
+	EntityUpdateInput,
+	type NamespaceStats
 } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
@@ -33,6 +37,51 @@ export const getEntities = query(EntityFilters, async (filters) => {
 		filters.limit,
 		filters.offset
 	);
+});
+
+/**
+ * Lean list read for the dashboard list view: same filters and ordering, but
+ * only the columns the card renders (see `list-columns.ts` — no tsvector, no
+ * metadata). `getEntities` keeps the full row for the consumers that need it
+ * (the relation/entity pickers).
+ */
+export const getEntityList = query(EntityFilters, async (filters) => {
+	const user = await requireAuth();
+	return findEntityList(db(), user.id, {
+		namespace: filters.namespace,
+		q: filters.q,
+		type: filters.type,
+		limit: filters.limit,
+		offset: filters.offset
+	});
+});
+
+/**
+ * Everything `/app/entities` needs for its FIRST PAINT, in ONE Neon HTTP round
+ * trip: the lean entity list plus the namespace filter options.
+ *
+ * The array is passed INLINE to `db.batch` — never hoisted into a typed
+ * variable, because hoisting widens every element to one generic shape, which
+ * erases each query's result type and lets the destructuring drift out of order
+ * WITHOUT a compile error (see the note in `db/lib/stats.ts`).
+ */
+export const getEntitiesPage = query(EntityFilters, async (filters) => {
+	const user = await requireAuth();
+	const sql = db();
+	const [entities, namespaces] = await sql.batch([
+		entityListQuery(sql, user.id, {
+			namespace: filters.namespace,
+			q: filters.q,
+			type: filters.type,
+			limit: filters.limit,
+			offset: filters.offset
+		}),
+		namespacesQuery(sql, user.id)
+	]);
+	return {
+		entities,
+		namespaces: namespaces.rows as unknown as NamespaceStats[]
+	};
 });
 
 /** Full entity detail: entity + linked memories + in/out relations. */

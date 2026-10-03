@@ -16,46 +16,62 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { toast } from 'svelte-sonner';
-	import { getMemories, getNamespaces, removeMemory, updateMemoryData } from '$lib/remote/index.js';
+	import {
+		getMemoriesPage,
+		getMemoryList,
+		removeMemory,
+		updateMemoryData
+	} from '$lib/remote/index.js';
 	import { fresh } from '$lib/fresh.js';
 	import { timeAgo, importancePct, TYPE_BADGE, truncate } from '$lib/format.js';
 	import MemoryFormDialog from '$lib/components/memory-form-dialog.svelte';
-	import BriefingPanel from '$lib/components/briefing-panel.svelte';
 	import ConfirmDeleteDialog from '$lib/components/confirm-delete-dialog.svelte';
+	import SectionTabs from '$lib/components/section-tabs.svelte';
 	import { page } from '$app/state';
 	import { MEMORY_TYPES, ALWAYS_TAG } from '@sepia/shared/types';
 	import { useSearchParams } from 'runed/kit';
-	import {
-		memoriesSearchSchema,
-		SEARCH_PARAMS_OPTIONS,
-		type MemoryView
-	} from '$lib/search-params.js';
-	import { onMount } from 'svelte';
+	import { memoriesSearchSchema, SEARCH_PARAMS_OPTIONS } from '$lib/search-params.js';
+	import { memoryTabs } from '$lib/section-tabs.js';
 
 	let { data } = $props();
 	const isAuthed = () => Boolean(data.user);
 
-	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
-	let namespaceList = $state<string[]>([]);
-
-	$effect(() => {
-		namespaces?.then((ns) => {
-			namespaceList = ns.map((n) => n.name);
-		});
-	});
-
 	// URL-backed filters — validated with valibot, restored on back/forward.
 	const params = useSearchParams(memoriesSearchSchema, SEARCH_PARAMS_OPTIONS);
 
-	let limit = $state(20);
-	let offset = $state(0);
+	/** Page size for the list. Fixed — the UI has no "per page" control. */
+	const PAGE_SIZE = 20;
 
-	let memories = $state<Awaited<ReturnType<typeof getMemories>>>([]);
-	let loading = $state(true);
+	/** The one shape this page renders: the list plus the namespace dropdown. */
+	type MemoriesPage = Awaited<ReturnType<typeof getMemoriesPage>>;
+
+	/** Query args for the current URL filters, starting at `offset`. */
+	function args(offset = 0) {
+		return {
+			q: params.q || undefined,
+			type: params.type === 'all' ? undefined : params.type,
+			namespace: params.namespace === 'all' ? undefined : params.namespace,
+			archived: params.archived,
+			importance_min: params.minImportance > 0 ? params.minImportance : undefined,
+			limit: PAGE_SIZE,
+			offset
+		};
+	}
+
+	// AWAITED DURING SSR — see the note in `entities/+page.svelte`. A query called
+	// on the server runs in-process in this same request (reusing the session the
+	// root layout resolved) and its result is serialised into the payload, so the
+	// rows are in the HTML and the browser makes NO initial data request.
+	// `getMemoriesPage` is ONE Neon HTTP round trip (list + namespaces).
+	const initialPage = isAuthed() ? await getMemoriesPage(args()) : { memories: [], namespaces: [] };
+
+	let view = $state<MemoriesPage>(initialPage);
+	let memories = $derived(view.memories);
+	const namespaceList = $derived(view.namespaces.map((n) => n.name));
+	let loading = $state(false);
 	let loadingMore = $state(false);
-	let hasMore = $state(true);
+	let hasMore = $state(initialPage.memories.length >= PAGE_SIZE);
 	let error = $state('');
 
 	let showCreate = $state(false);
@@ -74,22 +90,11 @@
 		const seq = ++loadSeq;
 		loading = true;
 		error = '';
-		offset = 0;
 		try {
-			const result = await fresh(
-				getMemories({
-					q: params.q || undefined,
-					type: params.type === 'all' ? undefined : params.type,
-					namespace: params.namespace === 'all' ? undefined : params.namespace,
-					archived: params.archived,
-					importance_min: params.minImportance > 0 ? params.minImportance : undefined,
-					limit,
-					offset: 0
-				})
-			);
+			const next = await fresh(getMemoriesPage(args()));
 			if (seq !== loadSeq) return;
-			memories = result;
-			hasMore = result.length >= limit;
+			view = next;
+			hasMore = next.memories.length >= PAGE_SIZE;
 		} catch (e) {
 			if (seq !== loadSeq) return;
 			error = (e as Error)?.message ?? 'Failed to load memories';
@@ -103,20 +108,11 @@
 		loadingMore = true;
 		error = '';
 		try {
-			const next = await fresh(
-				getMemories({
-					q: params.q || undefined,
-					type: params.type === 'all' ? undefined : params.type,
-					namespace: params.namespace === 'all' ? undefined : params.namespace,
-					archived: params.archived,
-					importance_min: params.minImportance > 0 ? params.minImportance : undefined,
-					limit,
-					offset: offset + limit
-				})
-			);
-			memories = [...memories, ...next];
-			offset += limit;
-			hasMore = next.length >= limit;
+			// Lean read, and no namespaces — a page append doesn't need the
+			// dropdown options again.
+			const next = await fresh(getMemoryList(args(memories.length)));
+			view.memories = [...view.memories, ...next];
+			hasMore = next.length >= PAGE_SIZE;
 		} catch (e) {
 			error = (e as Error)?.message ?? 'Failed to load more memories';
 		} finally {
@@ -166,22 +162,9 @@
 		}
 	});
 
-	// Load once on mount (with any URL-restored filters). Searches run on
-	// Enter/Apply — typing only updates the URL, never the results.
-	// The briefing tab fetches its own data, so only the list loads here.
-	onMount(() => {
-		if (params.view === 'all') load();
-	});
-
-	/**
-	 * Switching to the list from the briefing tab has to fetch, because the
-	 * briefing path never called load(). Guarded on an empty cache so flipping
-	 * tabs back and forth does not re-fetch on every click.
-	 */
-	function setView(view: string) {
-		params.view = view as MemoryView;
-		if (view === 'all' && memories.length === 0 && !loading) void load();
-	}
+	// No onMount load: the first page of rows was awaited during SSR above.
+	// Searches run on Enter/Apply — typing only updates the URL, never the
+	// results.
 
 	function resetFilters() {
 		params.reset();
@@ -195,278 +178,228 @@
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<div>
 			<h1 class="text-2xl font-semibold tracking-tight">Memories</h1>
-			<p class="text-sm text-muted-foreground">
-				{#if params.view === 'briefing'}
-					The standing rules every AI loads at session start — before any work. Edit them here; your
-					AIs edit them too via
-					<code class="rounded bg-muted px-1 py-0.5 text-xs">manage_memory</code> — same data.
-				{:else}
-					Browse and manage knowledge fragments.
-				{/if}
-			</p>
+			<p class="text-sm text-muted-foreground">Browse and manage knowledge fragments.</p>
 		</div>
 		<Button onclick={() => (showCreate = true)}>
 			<Plus class="size-4" /> New memory
 		</Button>
 	</div>
 
-	<Tabs.Root value={params.view} onValueChange={setView}>
-		<Tabs.List variant="line">
-			<Tabs.Trigger value="all">All</Tabs.Trigger>
-			<Tabs.Trigger value="briefing">Briefing</Tabs.Trigger>
-		</Tabs.List>
-	</Tabs.Root>
+	<SectionTabs items={memoryTabs} label="Memory views" />
 
-	{#if params.view === 'briefing'}
-		<!-- The briefing is a SLICE of memories, not a separate dataset, so it
-		     lives here as a tab instead of as a peer route. Only the namespace
-		     filter applies to it — the text/type/importance filters below are
-		     list-only, so they are hidden rather than shown inert. -->
-		<Card>
-			<CardHeader class="pb-3">
-				<CardTitle class="flex items-center gap-2 text-base">
-					<SlidersHorizontal class="size-4" /> Filters
-				</CardTitle>
-			</CardHeader>
-			<CardContent class="flex flex-wrap items-end gap-3">
-				<div class="flex min-w-0 flex-col gap-1.5">
-					<label for="briefing-ns" class="text-xs font-medium text-muted-foreground"
-						>Namespace</label
-					>
-					<select
-						id="briefing-ns"
-						value={params.namespace}
-						onchange={(e) => (params.namespace = e.currentTarget.value)}
-						class="h-9 w-full min-w-45 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
-						aria-label="Namespace filter"
-					>
-						<option value="all">All namespaces</option>
-						{#each namespaceList as n (n)}
-							<option value={n}>{n}</option>
-						{/each}
-					</select>
+	<Card>
+		<CardHeader class="pb-3">
+			<CardTitle class="flex items-center gap-2 text-base">
+				<SlidersHorizontal class="size-4" /> Filters
+			</CardTitle>
+			<p class="text-sm text-muted-foreground">Refine by text, type, namespace and importance.</p>
+		</CardHeader>
+		<CardContent class="space-y-4">
+			<!-- Search row -->
+			<div class="relative">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<Input
+					bind:value={params.q}
+					placeholder="Filter by text…"
+					class="w-full pl-9"
+					aria-label="Filter by text"
+					onkeydown={(e) => {
+						if (e.key === 'Enter') load();
+					}}
+				/>
+			</div>
+			<!-- Controls row: fixed-width selects + actions -->
+			<div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+				<div class="flex flex-wrap items-end gap-3">
+					<div class="flex min-w-0 flex-col gap-1.5">
+						<label for="filter-type" class="text-xs font-medium text-muted-foreground"
+							>Memory type</label
+						>
+						<select
+							id="filter-type"
+							bind:value={params.type}
+							class="h-9 w-full min-w-40 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							aria-label="Memory type filter"
+						>
+							<option value="all">All types</option>
+							{#each MEMORY_TYPES as t (t)}
+								<option value={t}>{t}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex min-w-0 flex-col gap-1.5">
+						<label for="filter-ns" class="text-xs font-medium text-muted-foreground"
+							>Namespace</label
+						>
+						<select
+							id="filter-ns"
+							bind:value={params.namespace}
+							class="h-9 w-full min-w-45 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							aria-label="Namespace filter"
+						>
+							<option value="all">All namespaces</option>
+							{#each namespaceList as n (n)}
+								<option value={n}>{n}</option>
+							{/each}
+						</select>
+					</div>
+					<div class="flex min-w-0 flex-col gap-1.5">
+						<label for="filter-imp" class="text-xs font-medium text-muted-foreground"
+							>Importance</label
+						>
+						<select
+							id="filter-imp"
+							bind:value={params.minImportance}
+							class="h-9 w-full min-w-40 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
+							aria-label="Minimum importance"
+						>
+							<option value={0}>Any importance</option>
+							<option value={0.3}>≥ 30%</option>
+							<option value={0.5}>≥ 50%</option>
+							<option value={0.7}>≥ 70%</option>
+							<option value={0.9}>≥ 90%</option>
+						</select>
+					</div>
 				</div>
+				<div class="flex flex-wrap items-center gap-3 xl:justify-end">
+					<label
+						for="filter-archived"
+						class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-colors has-data-[state=checked]:bg-muted"
+					>
+						<Switch id="filter-archived" bind:checked={params.archived} />
+						<span>Show archived</span>
+					</label>
+					<Button
+						variant="default"
+						onclick={load}
+						class="h-9 shrink-0 px-5 font-medium shadow-xs"
+						aria-label="Apply filters"
+					>
+						<Search class="size-4" />
+						Apply
+					</Button>
+					<Button
+						variant="outline"
+						onclick={resetFilters}
+						class="h-9 shrink-0 px-5 font-medium shadow-xs"
+						aria-label="Reset filters"
+					>
+						<RotateCcw class="size-4" />
+						Reset
+					</Button>
+				</div>
+			</div>
+		</CardContent>
+	</Card>
+
+	{#if error}
+		<p class="text-sm text-destructive">{error}</p>
+	{/if}
+
+	{#if loading}
+		<div class="space-y-2">
+			{#each [0, 1, 2, 3, 4] as _, i (i)}
+				<Skeleton class="h-20 w-full" />
+			{/each}
+		</div>
+	{:else if memories.length === 0}
+		<Card>
+			<CardContent class="py-10 text-center text-sm text-muted-foreground">
+				No memories match these filters.
 			</CardContent>
 		</Card>
-
-		<BriefingPanel namespace={params.namespace} {namespaceList} />
 	{:else}
-		<Card>
-			<CardHeader class="pb-3">
-				<CardTitle class="flex items-center gap-2 text-base">
-					<SlidersHorizontal class="size-4" /> Filters
-				</CardTitle>
-				<p class="text-sm text-muted-foreground">Refine by text, type, namespace and importance.</p>
-			</CardHeader>
-			<CardContent class="space-y-4">
-				<!-- Search row -->
-				<div class="relative">
-					<Search
-						class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-					/>
-					<Input
-						bind:value={params.q}
-						placeholder="Filter by text…"
-						class="w-full pl-9"
-						aria-label="Filter by text"
-						onkeydown={(e) => {
-							if (e.key === 'Enter') load();
-						}}
-					/>
-				</div>
-				<!-- Controls row: fixed-width selects + actions -->
-				<div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-					<div class="flex flex-wrap items-end gap-3">
-						<div class="flex min-w-0 flex-col gap-1.5">
-							<label for="filter-type" class="text-xs font-medium text-muted-foreground"
-								>Memory type</label
-							>
-							<select
-								id="filter-type"
-								bind:value={params.type}
-								class="h-9 w-full min-w-40 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
-								aria-label="Memory type filter"
-							>
-								<option value="all">All types</option>
-								{#each MEMORY_TYPES as t (t)}
-									<option value={t}>{t}</option>
-								{/each}
-							</select>
-						</div>
-						<div class="flex min-w-0 flex-col gap-1.5">
-							<label for="filter-ns" class="text-xs font-medium text-muted-foreground"
-								>Namespace</label
-							>
-							<select
-								id="filter-ns"
-								bind:value={params.namespace}
-								class="h-9 w-full min-w-45 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
-								aria-label="Namespace filter"
-							>
-								<option value="all">All namespaces</option>
-								{#each namespaceList as n (n)}
-									<option value={n}>{n}</option>
-								{/each}
-							</select>
-						</div>
-						<div class="flex min-w-0 flex-col gap-1.5">
-							<label for="filter-imp" class="text-xs font-medium text-muted-foreground"
-								>Importance</label
-							>
-							<select
-								id="filter-imp"
-								bind:value={params.minImportance}
-								class="h-9 w-full min-w-40 shrink-0 rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none sm:w-auto"
-								aria-label="Minimum importance"
-							>
-								<option value={0}>Any importance</option>
-								<option value={0.3}>≥ 30%</option>
-								<option value={0.5}>≥ 50%</option>
-								<option value={0.7}>≥ 70%</option>
-								<option value={0.9}>≥ 90%</option>
-							</select>
-						</div>
-					</div>
-					<div class="flex flex-wrap items-center gap-3 xl:justify-end">
-						<label
-							for="filter-archived"
-							class="flex h-9 shrink-0 cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 text-sm shadow-xs transition-colors has-data-[state=checked]:bg-muted"
-						>
-							<Switch id="filter-archived" bind:checked={params.archived} />
-							<span>Show archived</span>
-						</label>
-						<Button
-							variant="default"
-							onclick={load}
-							class="h-9 shrink-0 px-5 font-medium shadow-xs"
-							aria-label="Apply filters"
-						>
-							<Search class="size-4" />
-							Apply
-						</Button>
-						<Button
-							variant="outline"
-							onclick={resetFilters}
-							class="h-9 shrink-0 px-5 font-medium shadow-xs"
-							aria-label="Reset filters"
-						>
-							<RotateCcw class="size-4" />
-							Reset
-						</Button>
-					</div>
-				</div>
-			</CardContent>
-		</Card>
-
-		{#if error}
-			<p class="text-sm text-destructive">{error}</p>
-		{/if}
-
-		{#if loading}
-			<div class="space-y-2">
-				{#each [0, 1, 2, 3, 4] as _, i (i)}
-					<Skeleton class="h-20 w-full" />
-				{/each}
-			</div>
-		{:else if memories.length === 0}
-			<Card>
-				<CardContent class="py-10 text-center text-sm text-muted-foreground">
-					No memories match these filters.
-				</CardContent>
-			</Card>
-		{:else}
-			<div class="space-y-2">
-				<p class="text-xs text-muted-foreground">
-					Showing {memories.length} memories{hasMore ? ' — load more to see the rest' : ''}
-				</p>
-				{#each memories as m (m.id)}
-					<Card>
-						<CardContent class="p-4">
-							<div class="flex items-start justify-between gap-3">
-								<a href={`/app/memories/${m.id}`} class="min-w-0 flex-1">
-									<p class="text-sm">{truncate(m.content, 300)}</p>
-									<div class="mt-2 flex flex-wrap items-center gap-2">
-										<Badge class={TYPE_BADGE[m.type as keyof typeof TYPE_BADGE] ?? ''}
-											>{m.type}</Badge
-										>
-										{#if m.tags?.includes(ALWAYS_TAG)}
-											<Badge>always</Badge>
-										{/if}
-										<span class="text-xs text-muted-foreground">{m.namespace}</span>
-										<span class="text-xs text-muted-foreground"
-											>· {importancePct(m.importance)}%</span
-										>
-										<span class="text-xs text-muted-foreground">· {timeAgo(m.updatedAt)}</span>
-										{#if m.archived}
-											<Badge variant="outline">archived</Badge>
-										{/if}
-									</div>
-									{#if m.tags?.length}
-										<div class="mt-2 flex flex-wrap gap-1">
-											{#each m.tags as tag (tag)}
-												<span
-													class="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
-												>
-													{tag}
-												</span>
-											{/each}
-										</div>
+		<div class="space-y-2">
+			<p class="text-xs text-muted-foreground">
+				Showing {memories.length} memories{hasMore ? ' — load more to see the rest' : ''}
+			</p>
+			{#each memories as m (m.id)}
+				<Card>
+					<CardContent class="p-4">
+						<div class="flex items-start justify-between gap-3">
+							<a href={`/app/memories/${m.id}`} class="min-w-0 flex-1">
+								<p class="text-sm">{truncate(m.content, 300)}</p>
+								<div class="mt-2 flex flex-wrap items-center gap-2">
+									<Badge class={TYPE_BADGE[m.type as keyof typeof TYPE_BADGE] ?? ''}>{m.type}</Badge
+									>
+									{#if m.tags?.includes(ALWAYS_TAG)}
+										<Badge>always</Badge>
 									{/if}
-								</a>
-								<div class="flex shrink-0 gap-1">
-									<Button
-										variant="ghost"
-										size="icon"
-										onclick={() => void toggleRule(m)}
-										aria-label={m.tags?.includes(ALWAYS_TAG)
-											? 'Remove from briefing'
-											: 'Elevate to rule'}
-										title={m.tags?.includes(ALWAYS_TAG)
-											? 'Remove from the briefing'
-											: 'Elevate to a standing rule'}
+									<span class="text-xs text-muted-foreground">{m.namespace}</span>
+									<span class="text-xs text-muted-foreground">· {importancePct(m.importance)}%</span
 									>
-										<Star class={m.tags?.includes(ALWAYS_TAG) ? 'size-4 fill-current' : 'size-4'} />
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon"
-										onclick={() => toggleArchive(m)}
-										aria-label={m.archived ? 'Restore' : 'Archive'}
-									>
-										{#if m.archived}
-											<ArchiveRestore class="size-4" />
-										{:else}
-											<Archive class="size-4" />
-										{/if}
-									</Button>
-									<Button
-										variant="ghost"
-										size="icon"
-										onclick={() =>
-											(pendingDelete = {
-												title: 'Delete this memory?',
-												description: `"${truncate(m.content, 80)}" will be permanently lost. This cannot be undone.`,
-												run: () => del(String(m.id))
-											})}
-										aria-label="Delete"
-									>
-										<Trash2 class="size-4 text-destructive" />
-									</Button>
+									<span class="text-xs text-muted-foreground">· {timeAgo(m.updatedAt)}</span>
+									{#if m.archived}
+										<Badge variant="outline">archived</Badge>
+									{/if}
 								</div>
+								{#if m.tags?.length}
+									<div class="mt-2 flex flex-wrap gap-1">
+										{#each m.tags as tag (tag)}
+											<span
+												class="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground"
+											>
+												{tag}
+											</span>
+										{/each}
+									</div>
+								{/if}
+							</a>
+							<div class="flex shrink-0 gap-1">
+								<Button
+									variant="ghost"
+									size="icon"
+									onclick={() => void toggleRule(m)}
+									aria-label={m.tags?.includes(ALWAYS_TAG)
+										? 'Remove from briefing'
+										: 'Elevate to rule'}
+									title={m.tags?.includes(ALWAYS_TAG)
+										? 'Remove from the briefing'
+										: 'Elevate to a standing rule'}
+								>
+									<Star class={m.tags?.includes(ALWAYS_TAG) ? 'size-4 fill-current' : 'size-4'} />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon"
+									onclick={() => toggleArchive(m)}
+									aria-label={m.archived ? 'Restore' : 'Archive'}
+								>
+									{#if m.archived}
+										<ArchiveRestore class="size-4" />
+									{:else}
+										<Archive class="size-4" />
+									{/if}
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon"
+									onclick={() =>
+										(pendingDelete = {
+											title: 'Delete this memory?',
+											description: `"${truncate(m.content, 80)}" will be permanently lost. This cannot be undone.`,
+											run: () => del(String(m.id))
+										})}
+									aria-label="Delete"
+								>
+									<Trash2 class="size-4 text-destructive" />
+								</Button>
 							</div>
-						</CardContent>
-					</Card>
-				{/each}
-				{#if hasMore}
-					<div class="flex justify-center pt-2">
-						<Button variant="outline" onclick={loadMore} disabled={loadingMore}>
-							{#if loadingMore}<LoaderCircle class="size-4 animate-spin" />{/if}
-							Load more
-						</Button>
-					</div>
-				{/if}
-			</div>
-		{/if}
+						</div>
+					</CardContent>
+				</Card>
+			{/each}
+			{#if hasMore}
+				<div class="flex justify-center pt-2">
+					<Button variant="outline" onclick={loadMore} disabled={loadingMore}>
+						{#if loadingMore}<LoaderCircle class="size-4 animate-spin" />{/if}
+						Load more
+					</Button>
+				</div>
+			{/if}
+		</div>
 	{/if}
 
 	<MemoryFormDialog bind:open={showCreate} namespaces={namespaceList} onSaved={load} />

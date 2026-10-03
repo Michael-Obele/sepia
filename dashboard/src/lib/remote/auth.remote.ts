@@ -2,7 +2,7 @@ import { command, form } from '$app/server';
 import * as v from 'valibot';
 import { env } from '$env/dynamic/private';
 import { deleteOtherSessions, deleteSessionByToken } from '@sepia/shared';
-import { requireAuth } from '$lib/server/auth';
+import { forgetSession, requireAuth } from '$lib/server/auth';
 import { db } from '$lib/server/db';
 import { clearSessionToken, readSessionToken, writeSessionToken } from '$lib/server/cookies';
 
@@ -147,6 +147,10 @@ export const signUp = form(SignUpSchema, async ({ name, email, _password }) => {
 export const signOut = command(async () => {
 	const token = readSessionToken();
 	if (token) {
+		// Drop the memoised session FIRST. The row delete is the real revocation,
+		// but without this the instance would keep serving the cached user for up
+		// to SESSION_CACHE_TTL_MS (see $lib/server/auth).
+		forgetSession(token);
 		try {
 			await deleteSessionByToken(db(), token);
 		} catch (e) {

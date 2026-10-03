@@ -32,17 +32,32 @@
 	 */
 	let {
 		namespace = 'all',
-		namespaceList = []
+		namespaceList = [],
+		initial = null,
+		initialNamespace = 'all'
 	}: {
 		/** Mirrors the list's namespace filter — `'all'` means every namespace. */
 		namespace?: string;
 		/** Known namespace names, for the create dialog's picker. */
 		namespaceList?: string[];
+		/**
+		 * A briefing already resolved by the page (during SSR) for
+		 * `initialNamespace`. Passing it means the first paint has real data instead
+		 * of a skeleton, and the namespace effect below must NOT re-fetch it.
+		 */
+		initial?: Awaited<ReturnType<typeof getBriefingData>> | null;
+		initialNamespace?: string;
 	} = $props();
 
 	type Briefing = Awaited<ReturnType<typeof getBriefingData>>;
-	let briefing = $state.raw<Briefing | null>(null);
-	let loading = $state(true);
+	// `initial` is only ever read at mount, so read it once — the panel owns its
+	// own state from then on, and the namespace effect below drives later loads.
+	const initialBriefing = untrack(() => initial);
+	let briefing = $state.raw<Briefing | null>(initialBriefing ?? null);
+	let loading = $state(initialBriefing == null);
+	// One-shot: the SSR briefing already belongs to `initialNamespace`, so skip the
+	// mount-time load the namespace effect would otherwise trigger.
+	let skipInitialLoad = initialBriefing != null;
 	let error = $state('');
 	// "Show all" opt-out: the AI's one-shot escalation is budget-limited, the browser isn't.
 	let showAll = $state(false);
@@ -87,6 +102,10 @@
 	 */
 	$effect(() => {
 		void namespace;
+		if (skipInitialLoad) {
+			skipInitialLoad = false;
+			return;
+		}
 		untrack(() => void load());
 	});
 

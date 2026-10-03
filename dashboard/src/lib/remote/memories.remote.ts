@@ -1,16 +1,22 @@
 import { command, form, query } from '$app/server';
 import * as v from 'valibot';
 import {
+	memoryDetailQuery,
+	memoryLinksQuery,
+	memoryListQuery,
 	queryMemories,
+	queryMemoryList,
 	getMemory,
 	createMemory,
 	updateMemory,
 	deleteMemory,
 	ingestConversation,
 	getConversation,
+	namespacesQuery,
 	MemoryInput,
 	MemoryUpdateInput,
-	ConversationInput
+	ConversationInput,
+	type NamespaceStats
 } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
@@ -33,10 +39,62 @@ export const getMemories = query(MemoryFilters, async (filters) => {
 	return queryMemories(db(), user.id, filters);
 });
 
+/**
+ * Lean list read for the dashboard list view: same filters and ordering, but
+ * only the columns the card renders (see `list-columns.ts` — no tsvector).
+ */
+export const getMemoryList = query(MemoryFilters, async (filters) => {
+	const user = await requireAuth();
+	return queryMemoryList(db(), user.id, filters);
+});
+
+/**
+ * Everything `/app/memories` needs for its FIRST PAINT, in ONE Neon HTTP round
+ * trip: the lean memory list plus the namespace filter options.
+ *
+ * The array is passed INLINE to `db.batch` — never hoisted into a typed
+ * variable, because hoisting widens every element to one generic shape, which
+ * erases each query's result type and lets the destructuring drift out of order
+ * WITHOUT a compile error (see the note in `db/lib/stats.ts`).
+ */
+export const getMemoriesPage = query(MemoryFilters, async (filters) => {
+	const user = await requireAuth();
+	const sql = db();
+	const [memories, namespaces] = await sql.batch([
+		memoryListQuery(sql, user.id, filters),
+		namespacesQuery(sql, user.id)
+	]);
+	return {
+		memories,
+		namespaces: namespaces.rows as unknown as NamespaceStats[]
+	};
+});
+
 /** Full memory detail: memory + linked entities. */
 export const getMemoryDetail = query(v.string(), async (id) => {
 	const user = await requireAuth();
 	return getMemory(db(), user.id, id);
+});
+
+/**
+ * Everything `/app/memories/[id]` needs for its first paint, in ONE Neon HTTP
+ * round trip: the memory plus its linked entities, plus the namespace options
+ * the edit dialog needs.
+ */
+export const getMemoryDetailPage = query(v.string(), async (id) => {
+	const user = await requireAuth();
+	const sql = db();
+	const [rows, links, namespaces] = await sql.batch([
+		memoryDetailQuery(sql, user.id, id),
+		memoryLinksQuery(sql, id),
+		namespacesQuery(sql, user.id)
+	]);
+	const memory = rows[0];
+	if (!memory) throw new Error(`memory '${id}' not found`);
+	return {
+		memory: { ...memory, entities: links },
+		namespaces: namespaces.rows as unknown as NamespaceStats[]
+	};
 });
 
 /**

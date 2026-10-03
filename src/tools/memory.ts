@@ -27,128 +27,131 @@ export function registerMemoryTools(server: McpServer<any, any>) {
       icons: [SEPIA_ICON],
       schema: MemoryToolInput,
     },
-    safe(MemoryToolInput, async (args: v.InferInput<typeof MemoryToolInput>) => {
-      const user = server.ctx.custom?.user;
-      if (!user) throw new Error("unauthenticated");
-      const sql = db();
-      recordTelemetrySafe(sql, {
-        ownerId: user.id,
-        sessionHash: telemetrySession(server.ctx),
-        tool: "manage_memory",
-        action: args.action,
-        // For a briefing, `detail` is the escalation signal (core vs all).
-        engine: args.action === "briefing" ? (args.detail ?? "core") : null,
-      });
-      switch (args.action) {
-        case "create": {
-          if (!args.memory) throw new Error("action=create requires memory");
-          const source =
-            server.ctx.sessionInfo?.clientInfo?.name ?? "unknown-client";
-          return {
-            action: "create",
-            memory: await createMemory(
-              sql,
-              user.id,
-              args.memory,
-              source,
-              user.plan,
-            ),
-          };
-        }
-        case "get": {
-          if (!args.id) throw new Error("action=get requires id");
-          return {
-            action: "get",
-            memory: await getMemory(sql, user.id, args.id),
-          };
-        }
-        case "update": {
-          if (!args.id) throw new Error("action=update requires id");
-          if (!args.update) throw new Error("action=update requires update");
-          return {
-            action: "update",
-            memory: await updateMemory(sql, user.id, args.id, args.update),
-          };
-        }
-        case "delete": {
-          if (!args.id) throw new Error("action=delete requires id");
-          return {
-            action: "delete",
-            deleted: await deleteMemory(sql, user.id, args.id),
-          };
-        }
-        case "query": {
-          const memories = await queryMemories(sql, user.id, {
-            type: args.type,
-            namespace: args.namespace,
-            importance_min: args.importance_min,
-            archived: args.archived,
-            tags: args.tags,
-            // q + offset forwarded — dropping either here was the 2026-09-29
-            // incident (params accepted by the schema, ignored by the handler).
-            q: args.q,
-            offset: args.offset,
-            limit: args.limit,
-          });
-          // G5: echo keyed by the DECLARED set (filter-sets.ts), so a dropped
-          // filter shows as null instead of looking applied. `ignored` names
-          // present-but-inapplicable params (wrong-action class).
-          const { filters_applied, ignored } = echoQueryFilters(
-            args as Record<string, unknown>,
-            MEMORY_QUERY_FILTERS,
-            MemoryToolInput.entries,
-          );
-          return {
-            action: "query",
-            count: memories.length,
-            filters_applied,
-            ...(ignored.length ? { ignored } : {}),
-            memories,
-          };
-        }
-        case "briefing": {
-          return {
-            action: "briefing",
-            ...(await getBriefing(sql, user.id, {
-              namespace: args.namespace,
-              detail: args.detail,
-              max_chars: args.max_chars,
-            })),
-          };
-        }
-        case "batch_update": {
-          if (!args.where)
-            throw new Error("action=batch_update requires where");
-          if (!args.update)
-            throw new Error("action=batch_update requires update");
-          return {
-            action: "batch_update",
-            ...(await batchUpdateMemories(
-              sql,
-              user.id,
-              args.where,
-              args.update,
-              args.batch_limit,
-            )),
-          };
-        }
-        case "ingest": {
-          if (!args.conversation) {
-            throw new Error("action=ingest requires conversation");
+    safe(
+      MemoryToolInput,
+      async (args: v.InferInput<typeof MemoryToolInput>) => {
+        const user = server.ctx.custom?.user;
+        if (!user) throw new Error("unauthenticated");
+        const sql = db();
+        recordTelemetrySafe(sql, {
+          ownerId: user.id,
+          sessionHash: await telemetrySession(server.ctx),
+          tool: "manage_memory",
+          action: args.action,
+          // For a briefing, `detail` is the escalation signal (core vs all).
+          engine: args.action === "briefing" ? (args.detail ?? "core") : null,
+        });
+        switch (args.action) {
+          case "create": {
+            if (!args.memory) throw new Error("action=create requires memory");
+            const source =
+              server.ctx.sessionInfo?.clientInfo?.name ?? "unknown-client";
+            return {
+              action: "create",
+              memory: await createMemory(
+                sql,
+                user.id,
+                args.memory,
+                source,
+                user.plan,
+              ),
+            };
           }
-          const source =
-            server.ctx.sessionInfo?.clientInfo?.name ?? "unknown-client";
-          return {
-            action: "ingest",
-            ...(await ingestConversation(
-              sql,
-              user.id,
-              args.conversation,
-              source,
-            )),
-          };
+          case "get": {
+            if (!args.id) throw new Error("action=get requires id");
+            return {
+              action: "get",
+              memory: await getMemory(sql, user.id, args.id),
+            };
+          }
+          case "update": {
+            if (!args.id) throw new Error("action=update requires id");
+            if (!args.update) throw new Error("action=update requires update");
+            return {
+              action: "update",
+              memory: await updateMemory(sql, user.id, args.id, args.update),
+            };
+          }
+          case "delete": {
+            if (!args.id) throw new Error("action=delete requires id");
+            return {
+              action: "delete",
+              deleted: await deleteMemory(sql, user.id, args.id),
+            };
+          }
+          case "query": {
+            const memories = await queryMemories(sql, user.id, {
+              type: args.type,
+              namespace: args.namespace,
+              importance_min: args.importance_min,
+              archived: args.archived,
+              tags: args.tags,
+              // q + offset forwarded — dropping either here was the 2026-09-29
+              // incident (params accepted by the schema, ignored by the handler).
+              q: args.q,
+              offset: args.offset,
+              limit: args.limit,
+            });
+            // G5: echo keyed by the DECLARED set (filter-sets.ts), so a dropped
+            // filter shows as null instead of looking applied. `ignored` names
+            // present-but-inapplicable params (wrong-action class).
+            const { filters_applied, ignored } = echoQueryFilters(
+              args as Record<string, unknown>,
+              MEMORY_QUERY_FILTERS,
+              MemoryToolInput.entries,
+            );
+            return {
+              action: "query",
+              count: memories.length,
+              filters_applied,
+              ...(ignored.length ? { ignored } : {}),
+              memories,
+            };
+          }
+          case "briefing": {
+            return {
+              action: "briefing",
+              ...(await getBriefing(sql, user.id, {
+                namespace: args.namespace,
+                detail: args.detail,
+                max_chars: args.max_chars,
+              })),
+            };
+          }
+          case "batch_update": {
+            if (!args.where)
+              throw new Error("action=batch_update requires where");
+            if (!args.update)
+              throw new Error("action=batch_update requires update");
+            return {
+              action: "batch_update",
+              ...(await batchUpdateMemories(
+                sql,
+                user.id,
+                args.where,
+                args.update,
+                args.batch_limit,
+              )),
+            };
+          }
+          case "ingest": {
+            if (!args.conversation) {
+              throw new Error("action=ingest requires conversation");
+            }
+            const source =
+              server.ctx.sessionInfo?.clientInfo?.name ?? "unknown-client";
+            return {
+              action: "ingest",
+              ...(await ingestConversation(
+                sql,
+                user.id,
+                args.conversation,
+                source,
+              )),
+            };
+          }
         }
-      }
-    }),
+      },
+    ),
   );
 }

@@ -200,8 +200,11 @@ export async function createApiKeyForUser(
   return { id: row.id, key };
 }
 
-/** List a user's API keys. Never returns key material. */
-export async function listApiKeysForUser(db: Db, userId: string) {
+/**
+ * Builder form of the API-key list — NOT async, so a page can compose it into
+ * `db.batch([...])` alongside its other reads.
+ */
+export function apiKeysQuery(db: Db, userId: string) {
   return db
     .select({
       id: apikey.id,
@@ -213,6 +216,11 @@ export async function listApiKeysForUser(db: Db, userId: string) {
     .from(apikey)
     .where(eq(apikey.referenceId, userId))
     .orderBy(desc(apikey.createdAt));
+}
+
+/** List a user's API keys. Never returns key material. */
+export async function listApiKeysForUser(db: Db, userId: string) {
+  return apiKeysQuery(db, userId);
 }
 
 /**

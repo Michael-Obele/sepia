@@ -26,7 +26,7 @@ export function registerPruneMemoriesTools(server: McpServer<any, any>) {
       // telemetry records that it RAN, never what it swept.
       recordTelemetrySafe(sql, {
         ownerId: user.id,
-        sessionHash: telemetrySession(server.ctx),
+        sessionHash: await telemetrySession(server.ctx),
         tool: "prune_memories",
       });
       return pruneMemories(sql, user.id);

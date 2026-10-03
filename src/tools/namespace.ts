@@ -21,52 +21,55 @@ export function registerNamespaceTools(server: McpServer<any, any>) {
       icons: [SEPIA_ICON],
       schema: NamespaceToolInput,
     },
-    safe(NamespaceToolInput, async (args: v.InferInput<typeof NamespaceToolInput>) => {
-      const user = server.ctx.custom?.user;
-      if (!user) throw new Error("unauthenticated");
-      const sql = db();
-      recordTelemetrySafe(sql, {
-        ownerId: user.id,
-        sessionHash: telemetrySession(server.ctx),
-        tool: "manage_namespace",
-        action: args.action,
-      });
-      switch (args.action) {
-        case "create": {
-          if (!args.name) throw new Error("action=create requires name");
-          return {
-            action: "create",
-            namespace: await createNamespace(
-              sql,
-              user.id,
-              args.name,
-              args.description,
-              user.plan,
-            ),
-          };
+    safe(
+      NamespaceToolInput,
+      async (args: v.InferInput<typeof NamespaceToolInput>) => {
+        const user = server.ctx.custom?.user;
+        if (!user) throw new Error("unauthenticated");
+        const sql = db();
+        recordTelemetrySafe(sql, {
+          ownerId: user.id,
+          sessionHash: await telemetrySession(server.ctx),
+          tool: "manage_namespace",
+          action: args.action,
+        });
+        switch (args.action) {
+          case "create": {
+            if (!args.name) throw new Error("action=create requires name");
+            return {
+              action: "create",
+              namespace: await createNamespace(
+                sql,
+                user.id,
+                args.name,
+                args.description,
+                user.plan,
+              ),
+            };
+          }
+          case "list":
+            return {
+              action: "list",
+              namespaces: await listNamespaces(sql, user.id),
+            };
+          case "get": {
+            const idOrName = args.id ?? args.name;
+            if (!idOrName) throw new Error("action=get requires id or name");
+            return {
+              action: "get",
+              namespace: await getNamespace(sql, user.id, idOrName),
+            };
+          }
+          case "delete": {
+            const idOrName = args.id ?? args.name;
+            if (!idOrName) throw new Error("action=delete requires id or name");
+            return {
+              action: "delete",
+              deleted: await deleteNamespace(sql, user.id, idOrName),
+            };
+          }
         }
-        case "list":
-          return {
-            action: "list",
-            namespaces: await listNamespaces(sql, user.id),
-          };
-        case "get": {
-          const idOrName = args.id ?? args.name;
-          if (!idOrName) throw new Error("action=get requires id or name");
-          return {
-            action: "get",
-            namespace: await getNamespace(sql, user.id, idOrName),
-          };
-        }
-        case "delete": {
-          const idOrName = args.id ?? args.name;
-          if (!idOrName) throw new Error("action=delete requires id or name");
-          return {
-            action: "delete",
-            deleted: await deleteNamespace(sql, user.id, idOrName),
-          };
-        }
-      }
-    }),
+      },
+    ),
   );
 }

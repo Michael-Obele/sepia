@@ -31,7 +31,7 @@ export function registerEntityTools(server: McpServer<any, any>) {
         const sql = db();
         recordTelemetrySafe(sql, {
           ownerId: user.id,
-          sessionHash: telemetrySession(server.ctx),
+          sessionHash: await telemetrySession(server.ctx),
           tool: "manage_entity",
           action: args.action,
         });

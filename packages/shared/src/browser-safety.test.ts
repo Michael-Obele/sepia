@@ -32,64 +32,71 @@ const DYNAMIC_BARREL = /import\(\s*["']@sepia\/shared["']\s*\)/;
  * sees it, so it is harmless. Remove those, then look for anything left.
  */
 const TYPE_ONLY_IMPORT =
-	/import\s+type\s*(?:\{[^}]*\}|\*\s+as\s+[\w$]+|[\w$]+)\s*from\s*["']@sepia\/shared["'];?/gs;
+  /import\s+type\s*(?:\{[^}]*\}|\*\s+as\s+[\w$]+|[\w$]+)\s*from\s*["']@sepia\/shared["'];?/gs;
 
 /** Files whose contents never reach the browser bundle. */
 function isServerOnly(relativePath: string): boolean {
-	return (
-		relativePath.endsWith(".remote.ts") ||
-		relativePath.endsWith("+server.ts") ||
-		relativePath.endsWith(".server.ts") ||
-		relativePath.includes("lib/server/")
-	);
+  return (
+    relativePath.endsWith(".remote.ts") ||
+    relativePath.endsWith("+server.ts") ||
+    relativePath.endsWith(".server.ts") ||
+    relativePath.includes("lib/server/")
+  );
 }
 
 function walk(dir: string, found: string[] = []): string[] {
-	for (const entry of readdirSync(dir)) {
-		const full = join(dir, entry);
-		if (statSync(full).isDirectory()) {
-			if (entry === "node_modules" || entry.startsWith(".")) continue;
-			walk(full, found);
-		} else if (entry.endsWith(".ts") || entry.endsWith(".svelte")) {
-			found.push(full);
-		}
-	}
-	return found;
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      if (entry === "node_modules" || entry.startsWith(".")) continue;
+      walk(full, found);
+    } else if (entry.endsWith(".ts") || entry.endsWith(".svelte")) {
+      found.push(full);
+    }
+  }
+  return found;
 }
 
 function stripComments(source: string): string {
-	return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
+  return source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
 describe("the shared package's browser boundary", () => {
-	test("types.ts imports nothing, so it stays safe to bundle", () => {
-		const source = stripComments(
-			readFileSync(join(import.meta.dir, "types.ts"), "utf8"),
-		);
-		expect(source).not.toMatch(/\bimport\b/);
-		expect(source).not.toMatch(/\brequire\s*\(/);
-	});
+  test("types.ts imports nothing, so it stays safe to bundle", () => {
+    const source = stripComments(
+      readFileSync(join(import.meta.dir, "types.ts"), "utf8"),
+    );
+    expect(source).not.toMatch(/\bimport\b/);
+    expect(source).not.toMatch(/\brequire\s*\(/);
+  });
 
-	test("no browser-reachable dashboard file imports the server barrel", () => {
-		const offenders: string[] = [];
+  test("no browser-reachable dashboard file imports the server barrel", () => {
+    const offenders: string[] = [];
 
-		for (const file of walk(CLIENT_ROOT)) {
-			const relativePath = relative(CLIENT_ROOT, file).replaceAll("\\", "/");
-			if (isServerOnly(relativePath)) continue;
+    for (const file of walk(CLIENT_ROOT)) {
+      const relativePath = relative(CLIENT_ROOT, file).replaceAll("\\", "/");
+      if (isServerOnly(relativePath)) continue;
 
-			const source = readFileSync(file, "utf8");
-			const withoutTypes = source.replace(TYPE_ONLY_IMPORT, "");
+      const source = readFileSync(file, "utf8");
+      // Strip comments FIRST. Otherwise merely mentioning the barrel in a doc
+      // comment — explaining why it is banned, of all things — reads as an
+      // offence, and the guard cries wolf on its own documentation. (Commented-out
+      // code is not executed, so nothing real can hide behind this.)
+      const withoutTypes = stripComments(source).replace(TYPE_ONLY_IMPORT, "");
 
-			if (BARREL_SPECIFIER.test(withoutTypes) || DYNAMIC_BARREL.test(withoutTypes)) {
-				offenders.push(relativePath);
-			}
-		}
+      if (
+        BARREL_SPECIFIER.test(withoutTypes) ||
+        DYNAMIC_BARREL.test(withoutTypes)
+      ) {
+        offenders.push(relativePath);
+      }
+    }
 
-		expect(
-			offenders,
-			"These import `@sepia/shared`, which pulls Postgres into the browser " +
-				"bundle. Import from `@sepia/shared/types` instead (add the constant " +
-				"there if it is missing).",
-		).toEqual([]);
-	});
+    expect(
+      offenders,
+      "These import `@sepia/shared`, which pulls Postgres into the browser " +
+        "bundle. Import from `@sepia/shared/types` instead (add the constant " +
+        "there if it is missing).",
+    ).toEqual([]);
+  });
 });

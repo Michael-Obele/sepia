@@ -16,7 +16,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { toast } from 'svelte-sonner';
-	import { getMemories, getNamespaces, removeMemory, updateMemoryData } from '$lib/remote/index.js';
+	import { getConversationsPage, removeMemory, updateMemoryData } from '$lib/remote/index.js';
 	import { fresh } from '$lib/fresh.js';
 	import {
 		timeAgo,
@@ -38,19 +38,24 @@
 	let { data } = $props();
 	const isAuthed = () => Boolean(data.user);
 
-	const namespaces = $derived(isAuthed() ? getNamespaces() : null);
-	let namespaceList = $state<string[]>([]);
+	/** This page's view model: the digests plus the namespace options. */
+	type ConversationsPage = Awaited<ReturnType<typeof getConversationsPage>>;
 
-	$effect(() => {
-		namespaces?.then((ns) => {
-			namespaceList = ns.map((n) => n.name);
-		});
-	});
+	/** One digest row, as returned by the page query. */
+	type Digest = ConversationsPage['digests'][number];
 
-	type Digest = Awaited<ReturnType<typeof getMemories>>[number];
+	// AWAITED DURING SSR — see the note in `entities/+page.svelte`. ONE Neon HTTP
+	// round trip for the digests plus the namespace options, serialised into the
+	// payload, so the browser makes no initial data request.
+	const initialPage = isAuthed()
+		? await getConversationsPage()
+		: ({ digests: [], namespaces: [] } as ConversationsPage);
 
-	let digests = $state<Digest[]>([]);
-	let loading = $state(true);
+	let view = $state<ConversationsPage>(initialPage);
+	let digests = $derived(view.digests);
+	const namespaceList = $derived(view.namespaces.map((n) => n.name));
+
+	let loading = $state(false);
 	let error = $state('');
 	let showCreate = $state(false);
 
@@ -81,12 +86,7 @@
 		loading = true;
 		error = '';
 		try {
-			// Real digests are auto-tagged `conversation` AND have
-			// metadata.kind === "conversation" — filter out regular memories
-			// that merely carry the tag.
-			digests = (await fresh(getMemories({ tags: ['conversation'], limit: 50 }))).filter(
-				(d) => (d.metadata as Record<string, unknown> | null)?.kind === 'conversation'
-			);
+			view = await fresh(getConversationsPage());
 		} catch (e) {
 			error = (e as Error)?.message ?? 'Failed to load conversations';
 		} finally {

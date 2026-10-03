@@ -22,32 +22,35 @@ export function registerSearchTools(server: McpServer<any, any>) {
       schema: SearchToolInput,
       annotations: { readOnlyHint: true },
     },
-    safe(SearchToolInput, async (args: v.InferInput<typeof SearchToolInput>) => {
-      const user = server.ctx.custom?.user;
-      if (!user) throw new Error("unauthenticated");
-      const startedAt = Date.now();
-      const hits = await search(db(), user.id, args);
-      const summary = summarizeSearch(args.q, hits);
-      recordTelemetrySafe(db(), {
-        ownerId: user.id,
-        sessionHash: telemetrySession(server.ctx),
-        tool: "search",
-        // The engine ACTUALLY used, not the one requested: the server default can
-        // differ per call, and the A/B compares these values.
-        engine: resolveSearchEngine(args),
-        terms: summary.terms,
-        bestMatchedTerms: summary.best_matched_terms,
-        hitCount: hits.length,
-        latencyMs: Date.now() - startedAt,
-        // What the model actually receives, so cost is measured, not guessed.
-        resultChars: hits.reduce((n, h) => n + (h.snippet?.length ?? 0), 0),
-        queryText: args.q,
-        hitIds: hits.map((h) => h.id),
-        // The call AS MADE (limit, precision dial, filters, requested engine) —
-        // never `q`, which is content and lives in queryText above.
-        options: searchOptions(args),
-      });
-      return { count: hits.length, ...summary, hits };
-    }),
+    safe(
+      SearchToolInput,
+      async (args: v.InferInput<typeof SearchToolInput>) => {
+        const user = server.ctx.custom?.user;
+        if (!user) throw new Error("unauthenticated");
+        const startedAt = Date.now();
+        const hits = await search(db(), user.id, args);
+        const summary = summarizeSearch(args.q, hits);
+        recordTelemetrySafe(db(), {
+          ownerId: user.id,
+          sessionHash: await telemetrySession(server.ctx),
+          tool: "search",
+          // The engine ACTUALLY used, not the one requested: the server default can
+          // differ per call, and the A/B compares these values.
+          engine: resolveSearchEngine(args),
+          terms: summary.terms,
+          bestMatchedTerms: summary.best_matched_terms,
+          hitCount: hits.length,
+          latencyMs: Date.now() - startedAt,
+          // What the model actually receives, so cost is measured, not guessed.
+          resultChars: hits.reduce((n, h) => n + (h.snippet?.length ?? 0), 0),
+          queryText: args.q,
+          hitIds: hits.map((h) => h.id),
+          // The call AS MADE (limit, precision dial, filters, requested engine) —
+          // never `q`, which is content and lives in queryText above.
+          options: searchOptions(args),
+        });
+        return { count: hits.length, ...summary, hits };
+      },
+    ),
   );
 }

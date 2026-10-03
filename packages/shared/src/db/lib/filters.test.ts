@@ -26,8 +26,22 @@ import { and, inArray, like, lt } from "drizzle-orm";
 import type { Db } from "../client.ts";
 import { db } from "../client.ts";
 import { entities, memories, namespaces, users } from "../schema.ts";
-import { batchUpdateEntities, findEntities } from "./entities.ts";
-import { batchUpdateMemories, queryMemories } from "./memories.ts";
+import {
+  batchUpdateEntities,
+  entityListQuery,
+  findEntities,
+  findEntityList,
+} from "./entities.ts";
+import {
+  batchUpdateMemories,
+  memoryDetailQuery,
+  memoryDigestQuery,
+  memoryLinksQuery,
+  memoryListQuery,
+  queryMemories,
+  queryMemoryList,
+} from "./memories.ts";
+import { namespacesQuery } from "./namespaces.ts";
 
 const hasDb = Boolean(process.env.DATABASE_URL);
 
@@ -168,6 +182,152 @@ describe.skipIf(!hasDb)("filters", () => {
   test("findEntities escapes LIKE wildcards", async () => {
     const rows = await findEntities(conn, ownerId, NS, "%", undefined, 50);
     expect(rows.map((r) => String(r.id))).toEqual([id("E2")]);
+  });
+
+  // ── Lean list reads: the dashboard's projection ─────────────────────────
+  // The dashboard list must not pay for the generated BM25 columns — measured
+  // 2026-10-02, `haystack_tsv` alone is 45 kB of an 86 kB 50-row payload.
+  test("findEntityList drops the tsvector/metadata columns", async () => {
+    const rows = await findEntityList(conn, ownerId, {
+      namespace: NS,
+      limit: 50,
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(Object.keys(row)).not.toContain("haystackTsv");
+      expect(Object.keys(row)).not.toContain("metadata");
+    }
+  });
+
+  test("findEntityList returns the same ids in the same order as findEntities", async () => {
+    const lean = await findEntityList(conn, ownerId, {
+      namespace: NS,
+      limit: 50,
+    });
+    const full = await findEntities(
+      conn,
+      ownerId,
+      NS,
+      undefined,
+      undefined,
+      50,
+      0,
+    );
+    expect(lean.map((r) => String(r.id))).toEqual(
+      full.map((r) => String(r.id)),
+    );
+  });
+
+  test("findEntityList honours the q/type filters the same way", async () => {
+    const lean = await findEntityList(conn, ownerId, {
+      namespace: NS,
+      q: "Project Smoke",
+      limit: 50,
+    });
+    expect(lean.map((r) => String(r.id))).toContain(id("E1"));
+  });
+
+  test("findEntityList returns [] for a stale namespace instead of throwing", async () => {
+    const rows = await findEntityList(conn, ownerId, {
+      namespace: "no-such-namespace",
+      limit: 50,
+    });
+    expect(rows).toEqual([]);
+  });
+
+  test("queryMemoryList drops content_tsv but keeps content + namespace", async () => {
+    const rows = await queryMemoryList(conn, ownerId, {
+      namespace: NS,
+      limit: 50,
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(Object.keys(row)).not.toContain("contentTsv");
+      expect(Object.keys(row)).toContain("content");
+      expect(row.namespace).toBe(NS);
+    }
+  });
+
+  test("queryMemoryList returns the same ids in the same order as queryMemories", async () => {
+    const lean = await queryMemoryList(conn, ownerId, {
+      namespace: NS,
+      limit: 50,
+    });
+    const full = await queryMemories(conn, ownerId, {
+      namespace: NS,
+      limit: 50,
+    });
+    expect(lean.map((r) => String(r.id))).toEqual(
+      full.map((r) => String(r.id)),
+    );
+  });
+
+  // ── The dashboard page shape: ONE HTTP request ──────────────────────────
+  // `db.batch` calls `_prepare()` on every element, so the reads must be
+  // non-async BUILDERS. This test is what stops someone "helpfully" making
+  // `entityListQuery` async and silently turning the page's single round trip
+  // back into two (or throwing at runtime, as it did on 2026-10-02).
+  test("the entities page composes into ONE db.batch", async () => {
+    const [ents, nss] = await conn.batch([
+      entityListQuery(conn, ownerId, { namespace: NS, limit: 50 }),
+      namespacesQuery(conn, ownerId),
+    ]);
+    expect(ents.length).toBeGreaterThan(0);
+    expect(
+      (nss as unknown as { rows: { name: string }[] }).rows.map((r) => r.name),
+    ).toContain(NS);
+  });
+
+  test("the memories page composes into ONE db.batch", async () => {
+    const [mems, nss] = await conn.batch([
+      memoryListQuery(conn, ownerId, { namespace: NS, limit: 50 }),
+      namespacesQuery(conn, ownerId),
+    ]);
+    expect(mems.length).toBeGreaterThan(0);
+    expect((nss as unknown as { rows: unknown[] }).rows.length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  // The digest view is the one list that still needs `metadata` (the title,
+  // conversation_id and status live there) — but not the tsvector.
+  test("memoryDigestQuery keeps metadata and drops content_tsv", async () => {
+    const rows = await memoryDigestQuery(conn, ownerId, {
+      namespace: NS,
+      limit: 50,
+    });
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      expect(Object.keys(row)).not.toContain("contentTsv");
+      expect(Object.keys(row)).toContain("metadata");
+      expect(Object.keys(row)).toContain("source");
+    }
+  });
+
+  test("the conversations page composes into ONE db.batch", async () => {
+    const [digests, nss] = await conn.batch([
+      memoryDigestQuery(conn, ownerId, { tags: ["conversation"], limit: 50 }),
+      namespacesQuery(conn, ownerId),
+    ]);
+    expect(Array.isArray(digests)).toBe(true);
+    expect((nss as unknown as { rows: unknown[] }).rows.length).toBeGreaterThan(
+      0,
+    );
+  });
+
+  // Both detail reads used to be two SEQUENTIAL round trips; they are now one
+  // batch, and the detail page appends the namespace options to the same one.
+  test("the memory detail shape composes into ONE db.batch", async () => {
+    const [rows, links, nss] = await conn.batch([
+      memoryDetailQuery(conn, ownerId, id("M1")),
+      memoryLinksQuery(conn, id("M1")),
+      namespacesQuery(conn, ownerId),
+    ]);
+    expect(String(rows[0]?.id)).toBe(id("M1"));
+    expect(Array.isArray(links)).toBe(true);
+    expect((nss as unknown as { rows: unknown[] }).rows.length).toBeGreaterThan(
+      0,
+    );
   });
 
   // ── Destructive paths: a wildcard must not select the namespace ─────────
