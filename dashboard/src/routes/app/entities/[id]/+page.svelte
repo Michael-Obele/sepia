@@ -113,7 +113,7 @@
 						<Button
 							variant="outline"
 							size="sm"
-							onclick={() => goto(`/app/entities?view=graph&focus=${e.id}`)}
+							onclick={() => goto(`/app/graph?focus=${e.id}`)}
 							class="gap-1"
 						>
 							<Network class="size-4" /> Graph

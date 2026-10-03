@@ -34,12 +34,15 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 PRODUCT.md
 PLAN favicon.md
-articles/
+/articles/
 
 # internal planning docs (not for public repo)
-plan/
-docs/plans/
-docs/plans/*
+# ANCHORED with a leading slash on purpose: a bare `plan/` also matched
+# dashboard/src/routes/app/settings/plan/, which silently kept the whole
+# "Plan & usage" settings page out of git. Same trap for any bare name.
+/plan/
+/docs/plans/
+/docs/plans/*
 .vscode/mcp.json
 .playwright-mcp/
 docs/superpowers/

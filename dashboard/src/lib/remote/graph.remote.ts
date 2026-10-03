@@ -1,7 +1,17 @@
 import { query } from '$app/server';
-import { traverseGraph, fullGraph, TraverseInput } from '@sepia/shared';
+import { traverseGraph, fullGraph, mostConnectedEntity, TraverseInput } from '@sepia/shared';
 import { db } from '$lib/server/db';
 import { requireAuth } from '$lib/server/auth';
+
+/**
+ * The Focus view's default root — the most connected entity. Ordering by degree
+ * rather than access count matters: 58% of entities have no relations, and the
+ * most-accessed one is among them, so the old default rendered a single node.
+ */
+export const getGraphRoot = query(async () => {
+	const user = await requireAuth();
+	return mostConnectedEntity(db(), user.id);
+});
 
 /** BFS traversal of the knowledge graph from a start entity. */
 export const getGraph = query(TraverseInput, async (input) => {

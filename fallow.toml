@@ -123,6 +123,8 @@ gate = "new-only"
 # ---------------------------------------------------------------------------
 # - health / complexity thresholds are left at defaults: findings like
 #   `src/api.ts handleApi` (cyc 53) are genuine hotspots, not false positives.
-# - `cytoscape` / `cytoscape-dagre` (unused deps), `valibot` (used by dashboard
-#   remotes but missing from dashboard/package.json) and the two scaffold
-#   stubs above are real findings — fix them in code, don't mask them here.
+# - `valibot` (used by dashboard remotes but missing from
+#   dashboard/package.json) and the two scaffold stubs above are real findings —
+#   fix them in code, don't mask them here.
+#   (The unused `cytoscape` / `cytoscape-dagre` deps this note used to list are
+#   now GONE — removed rather than masked.)

@@ -1,12 +1,14 @@
 <script lang="ts">
+	import { Label } from '$lib/components/ui/label/index.js';
 	import { Search, LoaderCircle, ChevronDown, ChevronRight, Check } from '@lucide/svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Card, CardContent } from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { getGraph, getFullGraph, getEntities, getStatsData } from '$lib/remote/index.js';
+	import { getGraph, getFullGraph, getGraphRoot, getEntities } from '$lib/remote/index.js';
 	import { importancePct } from '$lib/format.js';
 	import { goto } from '$app/navigation';
 	import type { GraphResult } from '@sepia/shared';
@@ -16,6 +18,7 @@
 		forceLink,
 		forceCenter,
 		forceCollide,
+		type Simulation,
 		type SimulationNodeDatum,
 		type SimulationLinkDatum
 	} from 'd3-force';
@@ -90,8 +93,17 @@
 	let dragging = $state(false);
 	let moved = $state(false);
 	let hoveredId = $state<string | null>(null);
+	/** Hovered EDGE — its relation type is drawn on the line while the pointer is on it. */
+	let hoveredEdgeId = $state<string | null>(null);
 	let typeFilter = $state<Set<string>>(new Set());
 	let legendOpen = $state(false);
+
+	// The live d3 simulation, captured from ForceSimulation's `onStart` so the
+	// toolbar can reheat a layout without remounting this component.
+	let sim: Simulation<SimNode, SimLink> | undefined;
+
+	/** How many nodes are pinned (fx/fy set) — the toolbar offers to free them. */
+	let pinnedCount = $state(0);
 
 	// Pick a default root: the focus prop (→ focus mode), else the
 	// most-accessed entity (used if the user switches to focus mode).
@@ -100,8 +112,11 @@
 			mode = 'focus';
 			rootId = focus;
 		} else if (!rootId) {
-			getStatsData().then((s) => {
-				if (s.top_entities[0]) rootId = s.top_entities[0].id;
+			// Centre on the entity with the most RELATIONS, not the most views. A
+			// frequently-opened entity may have no edges at all, and traversing from
+			// it yields a single node (which is what made Focus look broken).
+			getGraphRoot().then((root) => {
+				if (root) rootId = root.id;
 			});
 		}
 	});
@@ -142,6 +157,14 @@
 	const nodeTypeById = $derived.by(() => {
 		const m = new Map<string, string>();
 		for (const n of simNodes) m.set(n.id, n.type);
+		return m;
+	});
+
+	// Node id → importance, so an edge can trim itself to the radius of the node it
+	// points at (nodeRadius is a function of importance).
+	const nodeImportance = $derived.by(() => {
+		const m = new Map<string, number>();
+		for (const n of simNodes) m.set(n.id, n.importance);
 		return m;
 	});
 
@@ -204,6 +227,53 @@
 		return set;
 	});
 
+	function countPins() {
+		pinnedCount = simNodes.filter((n) => n.fx != null).length;
+	}
+
+	/**
+	 * Pin or release ONE node. `sticky` decides what a drag leaves behind; this
+	 * is the way back out of a pin a previous drag created.
+	 */
+	function setPinned(node: SimNode, pinned: boolean) {
+		if (pinned) {
+			node.fx = node.x;
+			node.fy = node.y;
+		} else {
+			delete node.fx;
+			delete node.fy;
+		}
+		countPins();
+	}
+
+	/** Release every pinned node and reheat, so the layout can breathe again. */
+	function releasePins() {
+		for (const n of simNodes) {
+			delete n.fx;
+			delete n.fy;
+		}
+		pinnedCount = 0;
+		sim?.alpha(1).restart();
+	}
+
+	function setSticky(next: boolean | 'indeterminate') {
+		sticky = next === true;
+		// Turning the mode OFF must free what it pinned. The `onMoveEnd` guard only
+		// ever affected FUTURE drags, so without this a node pinned while sticky was
+		// on stayed fixed for the life of the page with no way to release it.
+		if (!sticky) releasePins();
+	}
+
+	/**
+	 * Label policy. Every name is drawn while the graph is small enough to read;
+	 * past that, labels follow the pointer instead of piling into a mat of text.
+	 */
+	const LABEL_LIMIT = 60;
+	const labelAll = $derived(visibleNodes.length <= LABEL_LIMIT);
+	function showLabel(id: string): boolean {
+		return hoveredId === null ? labelAll : neighborIds.has(id);
+	}
+
 	function toggleType(type: string) {
 		const next = new Set(typeFilter);
 		if (next.has(type)) {
@@ -223,10 +293,11 @@
 	}
 
 	function pickRoot(id: string, name: string) {
+		// Only set `rootId` — the `$effect` above owns loading. Calling
+		// `loadGraph()` here as well fired two identical traversals per pick.
 		rootId = id;
 		rootSearch = name;
 		rootResults = [];
-		loadGraph();
 	}
 </script>
 
@@ -340,7 +411,7 @@
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content
 							align="start"
-							class="max-h-80 w-auto max-w-[min(92vw,22rem)] min-w-[var(--bits-dropdown-menu-anchor-width)]"
+							class="max-h-80 w-auto max-w-[min(92vw,22rem)] min-w-(--bits-dropdown-menu-anchor-width)"
 						>
 							<DropdownMenu.Item onclick={() => (typeFilter = new Set())} class="whitespace-nowrap">
 								{#if typeFilter.size === 0}
@@ -366,15 +437,30 @@
 				</div>
 			{/if}
 
-			<label class="flex items-center gap-2 pb-2 text-sm text-muted-foreground">
-				<input type="checkbox" bind:checked={sticky} class="size-4 accent-primary" />
+			<Label for="sticky-nodes" class="flex items-center gap-2 pb-2 text-sm text-muted-foreground">
+				<Checkbox id="sticky-nodes" checked={sticky} onCheckedChange={setSticky} />
 				Sticky nodes
-			</label>
+			</Label>
 		</CardContent>
 	</Card>
 
 	{#if error}
 		<p class="text-sm text-destructive">{error}</p>
+	{/if}
+
+	<!--
+		An isolated entity is a legitimate answer, not a failure — 58% of entities
+		have no relations. Say so, and offer the way out, instead of rendering one
+		lonely dot that reads as a broken page.
+	-->
+	{#if mode === 'focus' && graphData && !loading && graphData.edges.length === 0}
+		<p class="text-sm text-muted-foreground">
+			<strong class="font-medium text-foreground">{graphData.nodes[0]?.label}</strong> has no
+			relations yet, so there is nothing to traverse from it. Add one from its entity page, or
+			<button type="button" onclick={() => (mode = 'full')} class="underline underline-offset-2">
+				view the full graph
+			</button>.
+		</p>
 	{/if}
 
 	<Card>
@@ -397,82 +483,143 @@
 					>
 						{#snippet children({ context })}
 							<Layer>
-								{#key `${visibleNodes.length}-${visibleLinks.length}-${mode}`}
-									<ForceSimulation forces={simForces} data={simData}>
-										{#snippet children({ nodes, simulation, linkPositions })}
-											{#each visibleLinks as link, i (link.id)}
-												{@const src =
-													typeof link.source === 'object' ? link.source.id : link.source}
-												{@const tgt =
-													typeof link.target === 'object' ? link.target.id : link.target}
-												{@const connected =
-													hoveredId === null || src === hoveredId || tgt === hoveredId}
-												<Link
-													data={link}
-													{...linkPositions[i]}
-													curve={curveLinear}
-													class={cls(
-														'stroke-muted-foreground/30 transition-opacity',
-														hoveredId !== null && !connected && 'opacity-15'
-													)}
-												/>
-											{/each}
-
-											{#each nodes as node, i (node.id)}
-												{@const thisNode = simulation.nodes()[i]}
-												{@const dimmed = hoveredId !== null && !neighborIds.has(node.id)}
-												<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
-												<circle
-													cx={node.x}
-													cy={node.y}
-													r={nodeRadius(node)}
-													use:movable={{
-														onMoveStart: () => {
-															context.tooltip.hide();
-															dragging = true;
-															moved = false;
-														},
-														onMove: (e) => {
-															moved = true;
-															thisNode.fx = clamp(
-																(thisNode.fx ?? thisNode.x ?? 0) + e.detail.dx,
-																0,
-																context.width
-															);
-															thisNode.fy = clamp(
-																(thisNode.fy ?? thisNode.y ?? 0) + e.detail.dy,
-																0,
-																context.height
-															);
-															simulation.alpha(1).restart();
-														},
-														onMoveEnd: () => {
-															dragging = false;
-															if (!sticky) {
-																delete thisNode.fx;
-																delete thisNode.fy;
-																simulation.alpha(1).restart();
-															}
-														}
-													}}
-													onclick={() => {
-														if (moved) return;
-														goto(`/app/entities/${node.id}`);
-													}}
-													onpointerenter={() => (hoveredId = node.id)}
-													onpointerleave={() => {
-														hoveredId = null;
+								<!--
+									The arrowhead every edge points with. Relations are DIRECTED
+									(`addRelation` takes direction: out | in; types are `uses`, `prefers`),
+									so without this `A —uses→ B` and `B —uses→ A` look identical.
+								-->
+								<defs>
+									<marker
+										id="edge-arrow"
+										viewBox="0 0 10 10"
+										refX="8"
+										refY="5"
+										markerWidth="4"
+										markerHeight="4"
+										orient="auto-start-reverse"
+									>
+										<path d="M 0 0 L 10 5 L 0 10 z" class="fill-muted-foreground/60" />
+									</marker>
+								</defs>
+								<ForceSimulation
+									forces={simForces}
+									data={simData}
+									onStart={(e) => (sim = e.simulation)}
+								>
+									{#snippet children({ nodes, simulation, linkPositions })}
+										{#each visibleLinks as link, i (link.id)}
+											{@const pos = linkPositions[i]}
+											{@const src = typeof link.source === 'object' ? link.source.id : link.source}
+											{@const tgt = typeof link.target === 'object' ? link.target.id : link.target}
+											{@const connected =
+												hoveredId === null || src === hoveredId || tgt === hoveredId}
+											{@const edgeHovered = hoveredEdgeId === link.id}
+											<!--
+								An edge is drawn source→target, so `marker-end` puts the arrowhead at
+								the TARGET. The line is trimmed by the target's radius first: drawn to
+								the centre, the arrowhead would sit under the node circle and never be
+								seen. Stroke weight carries `weight`, which was fetched and discarded.
+							-->
+											{@const dx = pos.x2 - pos.x1}
+											{@const dy = pos.y2 - pos.y1}
+											{@const len = Math.hypot(dx, dy) || 1}
+											{@const trim =
+												nodeRadius({ importance: nodeImportance.get(String(tgt)) }) + 6}
+											<Link
+												data={link}
+												x1={pos.x1}
+												y1={pos.y1}
+												x2={pos.x2 - (dx / len) * trim}
+												y2={pos.y2 - (dy / len) * trim}
+												curve={curveLinear}
+												stroke-width={0.8 + link.weight * 1.6}
+												marker-end="url(#edge-arrow)"
+												onpointerenter={() => (hoveredEdgeId = link.id)}
+												onpointerleave={() => (hoveredEdgeId = null)}
+												class={cls(
+													'cursor-pointer transition-opacity',
+													edgeHovered ? 'stroke-primary' : 'stroke-muted-foreground/30',
+													hoveredId !== null && !connected && 'opacity-15'
+												)}
+											/>
+											{#if edgeHovered}
+												<text
+													x={(pos.x1 + pos.x2) / 2}
+													y={(pos.y1 + pos.y2) / 2 - 5}
+													text-anchor="middle"
+													class="pointer-events-none fill-foreground text-[10px]"
+												>
+													{link.label}
+												</text>
+											{/if}
+										{/each}
+										{#each nodes as node, i (node.id)}
+											{@const thisNode = simulation.nodes()[i]}
+											{@const dimmed = hoveredId !== null && !neighborIds.has(node.id)}
+											<!-- svelte-ignore a11y_no_static_element_interactions, a11y_click_events_have_key_events -->
+											<circle
+												cx={node.x}
+												cy={node.y}
+												r={nodeRadius(node)}
+												use:movable={{
+													onMoveStart: () => {
 														context.tooltip.hide();
-													}}
-													onpointermove={(e) => !dragging && context.tooltip.show(e, node)}
-													class={cls(
-														'cursor-grab transition-opacity select-none',
-														dimmed && 'opacity-20'
-													)}
-													fill={nodeColor(node.type)}
-													stroke="var(--color-background)"
-													stroke-width={2}
-												/>
+														dragging = true;
+														moved = false;
+													},
+													onMove: (e) => {
+														moved = true;
+														thisNode.fx = clamp(
+															(thisNode.fx ?? thisNode.x ?? 0) + e.detail.dx,
+															0,
+															context.width
+														);
+														thisNode.fy = clamp(
+															(thisNode.fy ?? thisNode.y ?? 0) + e.detail.dy,
+															0,
+															context.height
+														);
+														simulation.alpha(1).restart();
+													},
+													onMoveEnd: () => {
+														dragging = false;
+														if (!sticky) {
+															delete thisNode.fx;
+															delete thisNode.fy;
+															simulation.alpha(1).restart();
+														}
+														countPins();
+													}
+												}}
+												onclick={(e) => {
+													if (moved) return;
+													// A pinned node is the surprising state, so clicking one FREES it —
+													// before this the only way out of a pin was a page reload.
+													// Shift-click pins; a free node opens.
+													if (thisNode.fx != null) {
+														setPinned(thisNode, false);
+														simulation.alpha(1).restart();
+													} else if (e.shiftKey) {
+														setPinned(thisNode, true);
+													} else {
+														goto(`/app/entities/${node.id}`);
+													}
+												}}
+												onpointerenter={() => (hoveredId = node.id)}
+												onpointerleave={() => {
+													hoveredId = null;
+													context.tooltip.hide();
+												}}
+												onpointermove={(e) => !dragging && context.tooltip.show(e, node)}
+												class={cls(
+													'cursor-grab transition-opacity select-none',
+													dimmed && 'opacity-20'
+												)}
+												fill={nodeColor(node.type)}
+												stroke="var(--color-background)"
+												stroke-width={2}
+											/>
+											{#if showLabel(node.id)}
 												<text
 													x={node.x}
 													y={(node.y ?? 0) + nodeRadius(node) + 12}
@@ -484,10 +631,10 @@
 												>
 													{node.label}
 												</text>
-											{/each}
-										{/snippet}
-									</ForceSimulation>
-								{/key}
+											{/if}
+										{/each}
+									{/snippet}
+								</ForceSimulation>
 							</Layer>
 
 							<GraphControls />
