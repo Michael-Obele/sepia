@@ -70,7 +70,18 @@ registerTraverseTools(server);
 registerPruneMemoriesTools(server);
 
 // Streamable HTTP transport mounted at /mcp inside this Bun.serve process.
-const transport = new HttpTransport(server, { path: "/mcp" });
+//
+// disableSse: no GET stream (clients get 405 → spec-compliant POST-only).
+// Sepia never pushes server→client notifications, so nothing is lost, and a
+// long-lived SSE response would otherwise (a) be killed by Bun's default
+// 10s idleTimeout, putting clients in a reconnect loop that keeps the Fly
+// Machine permanently warm, and (b) hold an open connection that blocks
+// auto-stop. With this on, MCP traffic is short POSTs only → the Machine
+// can actually spin down when nobody is using it.
+const transport = new HttpTransport(server, {
+  path: "/mcp",
+  disableSse: true,
+});
 
 const PORT = Number(process.env.PORT ?? 8080);
 
@@ -94,6 +105,10 @@ function serveSkillFile(relPath: string, contentType: string) {
 
 Bun.serve({
   port: PORT,
+  // 0 = no inactivity timeout (Bun's default is 10s). Without this, any
+  // request that produces no bytes for 10s — a slow tool call, a cold DB
+  // query — gets its connection dropped mid-flight.
+  idleTimeout: 0,
   async fetch(request) {
     const url = new URL(request.url);
 
