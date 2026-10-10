@@ -361,6 +361,30 @@ export const SearchInput = v.looseObject({
 });
 
 /**
+ * Params for a graph traversal: which entity to start from, and how many hops.
+ *
+ * NOT a tool schema — `traverse_graph` was folded into `manage_relation`
+ * action="traverse" in 1.15.0, so it is absent from TOOL_NAMES and the
+ * published snapshot. It stays here because the traversal itself is still a
+ * real shared operation with one set of bounds: the dashboard's `getGraph`
+ * remote query validates with it, and the MCP action documents the same
+ * `start_id`/`depth` (declared inline inside RelationToolInput, which is a
+ * looseObject covering every action).
+ */
+export const TraverseInput = v.object({
+  start_id: v.pipe(uuidSchema, v.description("Entity UUID to start from")),
+  depth: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(1),
+      v.maxValue(TRAVERSE_DEPTH_MAX),
+      v.description("Walk depth (default 1, max 3)"),
+    ),
+    1,
+  ),
+});
+
+/**
  * ── Tool-level schemas (the `action` enum pattern) ─────────────────────────
  * Each `manage_*` tool covers several actions through an action union,
  * keeping the LLM-facing tool surface to 7 while covering every capability.
