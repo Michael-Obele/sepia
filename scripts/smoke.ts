@@ -144,6 +144,19 @@ for (const expected of TOOL_NAMES) {
 }
 check("exactly 7 tools", names.length === 7, names.length.toString());
 
+// `wake` is the FIRST call the contract sends every model to, so a broken one
+// breaks the session before anything else has a chance to run.
+const wake = (await callTool("wake", {})) as {
+  awake?: boolean;
+  ready?: boolean;
+  db?: { ok?: boolean };
+};
+check(
+  "wake reports ready",
+  wake.awake === true && wake.ready === true && wake.db?.ok === true,
+  JSON.stringify({ awake: wake.awake, ready: wake.ready, db: wake.db }),
+);
+
 // `prune_memories` deletes data, so `confirm` must be REQUIRED in the
 // advertised schema — not merely documented. A weak model reaching for it as
 // a "save" action is exactly what the rename + gate exist to stop.
@@ -552,7 +565,8 @@ if (hasDb) {
       `${memBatch.count} updated`,
     );
 
-    const trav = (await callTool("traverse_graph", {
+    const trav = (await callTool("manage_relation", {
+      action: "traverse",
       start_id: project.entity.id,
       depth: 2,
     })) as {
@@ -560,7 +574,7 @@ if (hasDb) {
       edges: unknown[];
     };
     check(
-      "traverse_graph depth 2",
+      "manage_relation action=traverse depth 2",
       trav.nodes.length === 3 && trav.edges.length === 2,
       `${trav.nodes.length} nodes, ${trav.edges.length} edges`,
     );

@@ -24,7 +24,7 @@ import { registerEntityTools } from "./tools/entity.ts";
 import { registerRelationTools } from "./tools/relation.ts";
 import { registerMemoryTools } from "./tools/memory.ts";
 import { registerSearchTools } from "./tools/search.ts";
-import { registerTraverseTools } from "./tools/traverse.ts";
+import { registerWakeTool } from "./tools/wake.ts";
 import { registerPruneMemoriesTools } from "./tools/prune.ts";
 // This package's OWN version — Changesets maintains it on every release, so
 // nothing has to remember to bump it (it used to be a literal "1.0.0").
@@ -68,12 +68,14 @@ export function createSepiaServer(opts: SepiaMcpOptions = {}) {
     },
   );
 
+  // `wake` first — same order as the server, so the cheapest and only
+  // retry-by-design call is what a client reaches for at the top of a chat.
+  registerWakeTool(server, client);
   registerNamespaceTools(server, client);
   registerEntityTools(server, client);
   registerRelationTools(server, client);
   registerMemoryTools(server, client);
   registerSearchTools(server, client);
-  registerTraverseTools(server, client);
   registerPruneMemoriesTools(server, client);
 
   return { server, client };

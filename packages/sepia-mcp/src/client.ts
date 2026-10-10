@@ -74,6 +74,22 @@ export class SepiaClient {
     return (await res.json()) as T;
   }
 
+  // ── Wake ────────────────────────────────────────────────────────────────
+  /**
+   * Readiness probe — the client half of the MCP `wake` tool. One round-trip,
+   * no writes: it is the cheapest call in the surface, so it is the one meant
+   * to absorb a cold start of the remote server.
+   */
+  wake() {
+    return this.request<{
+      awake: boolean;
+      ready: boolean;
+      server: { version: string; docs_version: string; uptime_sec: number };
+      db: { ok: boolean; latency_ms: number };
+      next: string;
+    }>("GET", "/api/wake");
+  }
+
   // ── Namespaces ──────────────────────────────────────────────────────────
   listNamespaces() {
     return this.request<{ namespaces: unknown[] }>("GET", "/api/namespaces");

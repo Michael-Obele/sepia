@@ -1,5 +1,7 @@
 import * as v from "valibot";
+import { sql as rawSql } from "drizzle-orm";
 import { db, MemoryError } from "./db.ts";
+import { SERVER_VERSION } from "./version.ts";
 import {
   // business logic (shared with the MCP tools)
   createNamespace,
@@ -54,7 +56,7 @@ import {
   ConversationInput,
   RelationInput,
   SearchInput,
-  TraverseInput,
+  DOCS_VERSION,
   echoQueryFilters,
   MEMORY_QUERY_FILTERS,
 } from "@sepia/shared";
@@ -195,7 +197,33 @@ export async function handleApi(
   const path = url.pathname;
   const method = request.method;
 
-  try {
+  try {    // ── Wake ────────────────────────────────────────────────────────────────
+    // Readiness probe behind the MCP `wake` tool, and the twin the stdio
+    // client (packages/sepia-mcp) proxies. One `select 1`, no writes — a cold
+    // start should be cheap to discover. Auth already ran in the caller, so
+    // reaching this proves the token path AND the database both answered.
+    if (path === "/api/wake" && method === "GET") {
+      const started = performance.now();
+      await sql.execute(rawSql`select 1`);
+      return json(
+        {
+          awake: true,
+          ready: true,
+          server: {
+            version: SERVER_VERSION,
+            docs_version: DOCS_VERSION,
+            uptime_sec: Math.round(process.uptime()),
+          },
+          db: {
+            ok: true,
+            latency_ms: Math.round(performance.now() - started),
+          },
+          next: "manage_memory action=briefing — once, at the top of this chat.",
+        },
+        200,
+        cors,
+      );
+    }
     // ── Account (me + usage) ──────────────────────────────────────────────
     if (path === "/api/me" && method === "GET") {
       return json(

@@ -1,21 +1,22 @@
 ## Sepia memory (always-on) — Zed
 
-<!-- sepia-docs-version: 1.14.0 -->
+<!-- sepia-docs-version: 1.15.0 -->
 
 You are connected to the user's personal Sepia memory server over MCP (`context_servers.sepia` in `~/.config/zed/settings.json`: `url: "https://sepia.fly.dev/mcp"` + `headers.Authorization: "Bearer TOKEN"`; or stdio bridge via `mcp-remote`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
 > **MANDATORY for Zed — ALMOST EVERY MESSAGE:** Zed's Agent Panel does not auto-recall — you must `search` yourself. **Default to using Sepia on every turn** — `search` BEFORE you answer and persist AFTER you answer. Only skip for trivial chitchat ("hi", "thanks", "bye") with zero durable content. If in doubt, call Sepia. No search = guessing.
 
-### Workflow — do this on ALMOST EVERY turn
+### Workflow — wake + briefing once at the top, then search every turn
 
-**FIRST — once per session, before your first substantive action:**
+**TOP OF THE SESSION — steps 0-1 run ONCE, before your first substantive action. Do NOT repeat them on later messages:**
 
-0. Call `manage_memory` with `action: "briefing"` — the user's **core standing rules** (everything tagged `always`, and only that — importance ranks rules, it never admits one). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. It also reports `other_standing` — the situational rules it did NOT return. **Before anything slow, metered, destructive, or expensive** (an install, build, deploy, deletion, or infra change), call it again with `detail: "all"`: the rule that bites in those moments is exactly the one a default load leaves out. **~1M-token context window?** Make that FIRST call with `detail: "all"` (and `max_chars` at its maximum) instead — the whole standing set is ~10k tokens (≈1% of your window), read once per session, priority-ordered with core first; core-by-default protects small contexts, it does not withhold rules from big ones. If you don't know your window size, keep the default.
+0. Call `wake`, and retry until it succeeds. It is the cheapest call in the system and the only one built to be retried — the host sleeps when idle, so the first call of a chat often lands mid-boot. One failure means you called early, not that memory is down: retry up to 3×, a few seconds apart, and never skip to the briefing or abandon memory for the chat because of one.
+1. Call `manage_memory` with `action: "briefing"` — the user's **core standing rules** (everything tagged `always`, and only that — importance ranks rules, it never admits one). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. It also reports `other_standing` — the situational rules it did NOT return. **Before anything slow, metered, destructive, or expensive** (an install, build, deploy, deletion, or infra change), call it again with `detail: "all"`: the rule that bites in those moments is exactly the one a default load leaves out. **~1M-token context window?** Make that FIRST call with `detail: "all"` (and `max_chars` at its maximum) instead — the whole standing set is ~10k tokens (≈1% of your window), read once per session, priority-ordered with core first; core-by-default protects small contexts, it does not withhold rules from big ones. If you don't know your window size, keep the default.
 
-**BEFORE you answer (every turn except trivial chitchat):**
+**EVERY TURN AFTER THAT (except trivial chitchat) — search before you answer:**
 
-1. Call `search` with 2-5 keywords from the user's current message + task (e.g. `search query="auth rate limiting"`). If sparse, also call `traverse_graph` from the top entity.
-2. Weave hits into your answer (`From your memory: ...`). If nothing, say so — never fabricate.
+2. Call `search` with 2-5 keywords from the user's current message + task (e.g. `search query="auth rate limiting"`). If sparse, also call `manage_relation` with `action: "traverse"` (`start_id` = the top entity, `depth` 2-3) to pull its neighborhood.
+3. Weave hits into your answer (`From your memory: ...`). If nothing, say so — never fabricate.
 
 **AFTER you answer (every turn where you learned something):**
 

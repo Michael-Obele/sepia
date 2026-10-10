@@ -92,12 +92,12 @@ flowchart LR
 
 | #   | Tool               | Actions                                                  | What it does                                                                 |
 | --- | ------------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| 1   | `manage_namespace` | create, list, get, delete                                | Organize memory into isolated spaces                                         |
-| 2   | `manage_entity`    | create, get, update, delete, find, batch_update          | Knowledge graph nodes (people, concepts, projects, tools)                    |
-| 3   | `manage_relation`  | create, delete, list                                     | Directed, weighted edges between entities                                    |
-| 4   | `manage_memory`    | create, get, update, delete, query, batch_update, ingest | Facts/observations/preferences with importance scoring; conversation digests |
-| 5   | `search`           | —                                                        | Unified keyword + metadata search across all data                            |
-| 6   | `traverse_graph`   | —                                                        | BFS walk of the knowledge graph from an entity                               |
+| 1   | `wake`             | —                                                        | Readiness probe: server + database answering? Call first, once per chat      |
+| 2   | `manage_namespace` | create, list, get, delete                                | Organize memory into isolated spaces                                         |
+| 3   | `manage_entity`    | create, get, update, delete, find, batch_update          | Knowledge graph nodes (people, concepts, projects, tools)                    |
+| 4   | `manage_relation`  | create, delete, list, traverse                           | Directed, weighted edges; `traverse` BFS-walks the graph from an entity      |
+| 5   | `manage_memory`    | create, get, update, delete, query, briefing, batch_update, ingest | Facts/observations/preferences with importance scoring; conversation digests |
+| 6   | `search`           | —                                                        | Unified keyword + metadata search across all data                            |
 | 7   | `prune_memories`   | confirm: true                                            | Decay sweep + dedup + purge (destructive maintenance, never a save)          |
 
 **Why 7 instead of 17:** FlarelyLegal's 17 tools split entity search, memory queries, conversations, and admin into separate tools. By using `action` enums inside `manage_*` tools, the LLM surface stays clean while covering all capabilities — including conversation migration (`manage_memory` action=ingest) and bulk updates (`batch_update`). No RBAC, no audit trails — those are team features a personal server doesn't need. Semantic/vector search is a deliberate future upgrade; `search` ships keyword + metadata for v1.

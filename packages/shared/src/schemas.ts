@@ -360,23 +360,6 @@ export const SearchInput = v.looseObject({
   ),
 });
 
-/** Graph traversal input. */
-export const TraverseInput = v.looseObject({
-  start_id: v.pipe(
-    uuidSchema,
-    v.description("Entity UUID to start the BFS walk from"),
-  ),
-  depth: v.optional(
-    v.pipe(
-      v.number(),
-      v.minValue(1),
-      v.maxValue(TRAVERSE_DEPTH_MAX),
-      v.description("Walk depth (default 1, max 3)"),
-    ),
-    1,
-  ),
-});
-
 /**
  * ── Tool-level schemas (the `action` enum pattern) ─────────────────────────
  * Each `manage_*` tool covers several actions through an action union,
@@ -505,9 +488,14 @@ export const EntityToolInput = v.looseObject({
 
 export const RelationToolInput = v.looseObject({
   action: v.pipe(
-    v.union([v.literal("create"), v.literal("delete"), v.literal("list")]),
+    v.union([
+      v.literal("create"),
+      v.literal("delete"),
+      v.literal("list"),
+      v.literal("traverse"),
+    ]),
     v.description(
-      "create (relation) | delete (id) | list (by entity_id or namespace)",
+      "create (relation) | delete (id) | list (by entity_id or namespace) | traverse (BFS walk from start_id, optional depth 1-3)",
     ),
   ),
   relation: v.optional(
@@ -544,6 +532,23 @@ export const RelationToolInput = v.looseObject({
       v.description("list: rows to skip (pagination)"),
     ),
     0,
+  ),
+  /** traverse: entity to start the BFS walk from (was the old traverse_graph tool) */
+  start_id: v.optional(
+    v.pipe(
+      uuidSchema,
+      v.description("traverse: Entity UUID to start the BFS walk from"),
+    ),
+  ),
+  /** traverse: walk depth — capped exactly as the old standalone tool was */
+  depth: v.optional(
+    v.pipe(
+      v.number(),
+      v.minValue(1),
+      v.maxValue(TRAVERSE_DEPTH_MAX),
+      v.description("traverse: Walk depth (default 1, max 3)"),
+    ),
+    1,
   ),
 });
 
@@ -715,7 +720,16 @@ export const MemoryToolInput = v.looseObject({
 
 export const SearchToolInput = SearchInput;
 
-export const TraverseToolInput = TraverseInput;
+/**
+ * `wake` input — the readiness probe. NO arguments, on purpose: its only job is
+ * to confirm the server and its database are answering BEFORE the session's
+ * first expensive read (the briefing) runs, so a cold-start failure lands on a
+ * tool whose documented job is to be retried instead of on the briefing.
+ *
+ * `looseObject({})` so any key a model invents is caught by the G2 guardrail
+ * and reported as `ignored_args` rather than silently stripped.
+ */
+export const WakeToolInput = v.looseObject({});
 
 /**
  * `prune_memories` input — the destructive maintenance sweep. `confirm` is a
@@ -732,13 +746,14 @@ export const PruneMemoriesToolInput = v.looseObject({
   ),
 });
 
-/** All tool names, exported for tests and the smoke script. */
+/** All tool names, exported for tests and the smoke script. `wake` leads —
+ *  it is registered first and is the call the contract sends models to first. */
 export const TOOL_NAMES = [
+  "wake",
   "manage_namespace",
   "manage_entity",
   "manage_relation",
   "manage_memory",
   "search",
-  "traverse_graph",
   "prune_memories",
 ] as const;

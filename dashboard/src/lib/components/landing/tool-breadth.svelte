@@ -2,15 +2,16 @@
 	import { BarChart, defaultChartPadding } from 'layerchart';
 
 	// Honest operation counts per MCP tool, straight from src/tools/*.ts.
-	// manage_memory gained `ingest` (conversation handoff) — 7 actions now.
+	// manage_memory has 8 actions (briefing + ingest among them); traverse moved
+	// from its own tool into manage_relation in 1.15.0; wake was added.
 	const data = [
-		{ tool: 'manage_memory', ops: 7 },
+		{ tool: 'manage_memory', ops: 8 },
 		{ tool: 'manage_entity', ops: 6 },
 		{ tool: 'manage_namespace', ops: 4 },
-		{ tool: 'manage_relation', ops: 3 },
+		{ tool: 'manage_relation', ops: 4 },
 		{ tool: 'prune_memories', ops: 1 },
 		{ tool: 'search', ops: 1 },
-		{ tool: 'traverse_graph', ops: 1 }
+		{ tool: 'wake', ops: 1 }
 	];
 </script>
 

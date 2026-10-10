@@ -1,5 +1,5 @@
 ---
-version: "1.14.0"
+version: "1.15.0"
 name: sepia
 description: >-
   Use when the user's AI assistant should recall or persist long-term knowledge
@@ -37,8 +37,10 @@ the rules you do not yet know you need — and that is exactly why keyword searc
 them. Relevance is measured against a task you have not scoped yet, so a rule whose existence
 you have not guessed is unsearchable by construction.
 
-So this one read is **unconditional**. Before your first substantive action in a session,
-call `manage_memory` with `action: "briefing"`. No keywords.
+Before your first substantive action in a session, call `wake` — it proves the server and its
+database are both answering, and it is the one call meant to be retried when the host has been
+asleep. Then this read is **unconditional**: call `manage_memory` with `action: "briefing"`.
+No keywords. Neither repeats on later messages in the same chat.
 
 - **Core** = every memory tagged `always`, and only that (tag-only membership since
   2026-09-24). Importance ranks rules within the briefing — it never admits or removes one.
@@ -72,10 +74,14 @@ call `manage_memory` with `action: "briefing"`. No keywords.
 
 Default to `search` on every turn — only skip for trivial chitchat ("hi", "thanks", "bye") with zero durable content. If in doubt, search.
 
-1. **First, once per session**: the standing-rules briefing above — deliberately _not_
-   keyword-driven, because that is the whole point of it.
+0. **First, once per session**: call `wake`, and retry until it succeeds (up to 3×, a few
+   seconds apart). The host sleeps when idle, so the first call of a chat often lands
+   mid-boot — one failure means you called early, not that memory is down.
+1. **Then, once per session**: the standing-rules briefing above — deliberately _not_
+   keyword-driven, because that is the whole point of it. Do not repeat either one on later
+   messages in the same chat.
 2. **Before you answer** (every turn except trivial chitchat), call `search` with 2-5 keywords from the user's current message + task (e.g. `search` query="rate limiting" namespace="personal").
-3. If results are sparse, also `traverse_graph` from the most relevant entity to pull its neighborhood.
+3. If results are sparse, also `manage_relation` with `action: "traverse"` (`start_id` = the most relevant entity) to pull its neighborhood.
 4. Weave recalled facts into your answer naturally. Cite what came from memory when it matters ("From your memory: ...").
 5. Search is **best-effort**: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits, or the result says `partial: true`, retry with ONE distinctive keyword (or drop filters) BEFORE concluding nothing exists — then say so. Never fabricate memories. The result also reports `best_matched_terms` (the best coverage any hit achieved): when a broad query is drowning in common-word noise, re-ask with `min_terms` set to it to keep only that coverage class.
 
@@ -189,7 +195,7 @@ permanently deletes rows archived more than 30 days ago. It requires
   importance=0.7 entity_ids=[bun-entity-id]
 - User asks "what do we know about the memory server plan?"
   → `search` query="memory server" → read top memories/entities → answer
-  with recalled facts, then `traverse_graph` if the user wants the full picture.
+  with recalled facts, then `manage_relation` with `action: "traverse"` if the user wants the full picture.
 
 ## Edge cases
 

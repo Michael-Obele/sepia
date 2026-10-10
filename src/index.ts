@@ -13,7 +13,7 @@ import { registerEntityTools } from "./tools/entity.ts";
 import { registerRelationTools } from "./tools/relation.ts";
 import { registerMemoryTools } from "./tools/memory.ts";
 import { registerSearchTools } from "./tools/search.ts";
-import { registerTraverseTools } from "./tools/traverse.ts";
+import { registerWakeTool } from "./tools/wake.ts";
 import { registerPruneMemoriesTools } from "./tools/prune.ts";
 import { API_RATE_LIMIT, MCP_RATE_LIMIT, rateLimit } from "./rate-limit.ts";
 
@@ -60,13 +60,16 @@ const server = new McpServer(
   },
 ).withContext<{ user: UserRow }>();
 
-// The 7 tools.
+// The 7 tools. `wake` is registered FIRST so it is the first tool the client
+// sees: it is the cheapest call in the system and the only one designed to be
+// retried, so a cold-start failure lands on it rather than on `briefing` — the
+// heaviest read (BRIEFING_FETCH_MAX rows, compacted, plus namespace resolution).
+registerWakeTool(server);
 registerNamespaceTools(server);
 registerEntityTools(server);
 registerRelationTools(server);
 registerMemoryTools(server);
 registerSearchTools(server);
-registerTraverseTools(server);
 registerPruneMemoriesTools(server);
 
 // Streamable HTTP transport mounted at /mcp inside this Bun.serve process.

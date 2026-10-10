@@ -27,7 +27,7 @@ import {
   PruneMemoriesToolInput,
   RelationToolInput,
   SearchInput,
-  TraverseInput,
+  WakeToolInput,
 } from "@sepia/shared";
 
 const ROOT = resolve(import.meta.dir, "..");
@@ -40,7 +40,7 @@ const TOOLS: Record<string, { entries: Record<string, unknown> }> = {
   manage_relation: RelationToolInput,
   manage_memory: MemoryToolInput,
   search: SearchInput,
-  traverse_graph: TraverseInput,
+  wake: WakeToolInput,
   prune_memories: PruneMemoriesToolInput,
 };
 

@@ -42,6 +42,14 @@ lines.push("`scripts/gen-skill-ref.ts` — do not hand-edit.");
 lines.push("");
 
 const sections: Record<string, string[]> = {
+  wake: [
+    "No arguments — takes none, by design.",
+    "",
+    "- The readiness probe: confirms the server **and its database** are answering before the session's first expensive read.",
+    "- **Call it FIRST, once per chat, before `briefing`.** The host sleeps when idle, so the first call of a conversation often lands mid-boot; this is the one call designed to be retried (up to 3×, a few seconds apart).",
+    "- Returns `{ awake, ready, server: { version, docs_version, uptime_sec }, db: { ok, latency_ms }, next }`.",
+    "- On failure it returns an **error**, not a payload — models retry errors and read payloads as answers. One failure means you called early, not that memory is down.",
+  ],
   manage_namespace: [
     "Actions: `create` | `list` | `get` | `delete`",
     "",
@@ -61,11 +69,12 @@ const sections: Record<string, string[]> = {
     "- `batch_update`: where { type? / namespace? / query? } (at least one) + update { any subset } + batch_limit? (default 100, max 500) — updates ALL matching entities, returns count",
   ],
   manage_relation: [
-    "Actions: `create` | `delete` | `list`",
+    "Actions: `create` | `delete` | `list` | `traverse`",
     "",
     "- `create`: relation { source_id (uuid), target_id (uuid), relation_type (1-64), weight? (0-1, default 0.5) } — on UNIQUE(source, target, relation_type) conflict, **updates weight** instead of erroring",
     "- `delete`: id (uuid)",
     "- `list`: by entity_id (in + out) or by namespace",
+    "- `traverse`: start_id (uuid, required) + depth? (1-" + TRAVERSE_DEPTH_MAX + ", default 1) — BFS walk from that entity in both directions, returns nodes + edges within N hops. This was the standalone `traverse_graph` tool until 1.15.0.",
   ],
   manage_memory: [
     "Actions: `create` | `get` | `update` | `delete` | `query` | **`briefing`** | `batch_update` | `ingest`",
@@ -89,11 +98,6 @@ const sections: Record<string, string[]> = {
     '- `engine`? ("coverage" | "bm25" | "opensearch") — ranking-engine override. Omit it: the server decides via `SEARCH_ENGINE`, and the default is `coverage`. `bm25` tokenises and ranks by BM25, matching prefixes (so `migr` still finds `migration`) and falling back to substring matching when it finds nothing — it changes the ORDER, not what is findable. `opensearch` queries an external OpenSearch cluster (prefix recall via an edge-ngram index) and silently falls back to coverage on cluster failure, missing config, or zero hits.',
     "- Matching is best-effort: a row matching ANY word is a candidate, and rows matching MORE words rank first — so a result set is never emptied by one absent word. Verbatim phrase > whole-word match > substring, then importance DESC, then updated_at DESC. Empty `q` → recent items.",
     "- Returns `{ count, terms, best_matched_terms, partial, hits }`. `partial: true` means no single hit covered the whole query — check it (and `best_matched_terms`, and each hit's `matched_terms`) before concluding nothing exists, and pass `min_terms` when you want precision instead of recall. Hits add `kind` (memory|entity), id, snippet (centred on the match), score.",
-  ],
-  traverse_graph: [
-    "- `start_id` (uuid, required) — BFS walk from this entity",
-    `- \`depth\`? (1-${TRAVERSE_DEPTH_MAX}, default 1) — number of hops`,
-    "- Returns nodes + edges within N hops of the start entity.",
   ],
   prune_memories: [
     "- `confirm` (**required**, literal `true`) — a deliberate speed bump acknowledging that the sweep deletes data.",

@@ -47,8 +47,8 @@ TYPES — use the canonical values, never invent new ones:
   performance) for discovery — add 1-4 per write when the topic is recurring.
 
 RULE 0 — THIS IS NOT OPTIONAL. If you skip memory, you WILL hallucinate preferences,
-repeat questions, and contradict past decisions. Using sepia is not a suggestion — it is
-your first tool call.
+repeat questions, and contradict past decisions. Using sepia is not a suggestion — "wake"
+then "briefing" are your first two tool calls, in that order, at the top of the session.
 
 MANDATORY — ALMOST EVERY MESSAGE: Default to using Sepia on every turn — search BEFORE
 you answer and persist AFTER you answer. Only skip for trivial chitchat ("hi", "thanks",
@@ -68,10 +68,16 @@ So they are loaded unconditionally, once per session, BEFORE any work starts.
 - a rule tagged "always" applies in EVERY repo and EVERY session; a rule that is specific to
   one project must NOT be tagged "always"
 
-MANDATORY WORKFLOW — do this on ALMOST EVERY turn:
+WAKE + BRIEFING — ONCE PER SESSION, AT THE TOP OF THE CHAT, BEFORE ANYTHING ELSE.
+Neither step belongs to the every-turn loop below; do not repeat them on later messages.
 
-FIRST — once per session, before your first substantive action (NOT keyword-driven):
-0. Call manage_memory action=briefing, and treat what it returns as BINDING for the whole
+0. Call "wake", and retry it until it succeeds. It is the cheapest call in the system and
+   the only one whose job is to be retried: the host sleeps when idle, so the first call of
+   a chat often lands mid-boot. If it errors or reports ready:false, retry up to 3 times,
+   a few seconds apart, before doing anything else. One failed "wake" means you called
+   early — NOT that memory is down. Never skip ahead to the briefing on a failed wake, and
+   never abandon memory for the rest of the chat because of one failure.
+1. Call manage_memory action=briefing, and treat what it returns as BINDING for the whole
    session. It returns the user's CORE standing rules — the ones that must hold before you
    know anything about the task. The response also reports other_standing: the situational
    rules it did NOT return. BEFORE anything slow, metered, destructive, or expensive (an
@@ -81,13 +87,15 @@ FIRST — once per session, before your first substantive action (NOT keyword-dr
    max_chars at its maximum instead — the full standing set is only ~10k tokens (≈1% of your
    window), it is read once per session, and core-by-default exists to protect small
    contexts, not to withhold rules from big ones. If you don't know your window size, keep
-   the default.
+   the default. Do NOT call briefing again on later messages in this chat: you already have
+   the rules, and re-reading them every turn spends tokens to learn nothing. Re-briefing is
+   for a NEW chat only.
 
-THEN — before you answer (every turn except trivial chitchat):
-1. Call "search" with 2-5 keywords from the user's current message + task (e.g. query="auth rate limiting"). If sparse, also call "traverse_graph" from the top entity.
+EVERY TURN AFTER THAT (except trivial chitchat) — search before you answer:
+2. Call "search" with 2-5 keywords from the user's current message + task (e.g. query="auth rate limiting"). If sparse, also call manage_relation with action="traverse" (start_id = the top entity, depth 2-3) to pull its neighborhood.
    Search is best-effort: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits or partial: true, retry with ONE distinctive keyword or a looser filter BEFORE concluding nothing exists.
    DIAGNOSTIC: identical results for different q values = the filter was NOT applied — wrong tool, or a parameter the schema lacks. Check the schema and the response's filters_applied/ignored_args before theorizing about ranking or tokenization. Ranked keyword search lives ONLY in the search tool.
-2. Weave hits into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
+3. Weave hits into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
 AFTER you answer (every turn where you learned something):
 1. If you learned a durable fact — preference, decision + why, project fact, stack/tool choice, person/role, convention, user correction — persist IMMEDIATELY in the same turn after your response:
@@ -143,15 +151,17 @@ distills — you have the context, you are the best distiller. Rules:
   digest first, then update with the full metadata + new status — metadata REPLACES).
   When resuming a paused one, set it back to "active".
 
-TRIGGERS — call the briefing FIRST, once per session, before anything else (step 0 above).
-Then always search when user says: "remember", "recall", "what do we know",
+TRIGGERS — at the top of a session, in this order and once each: "wake", then the briefing
+(steps 0-1 above). NEVER a second time on later messages in that chat. Then every turn,
+search when user says: "remember", "recall", "what do we know",
 "save this", "do you remember", prefers, decided, uses, chose, convention.
 ALSO ingest when user says: "save this conversation", "hand off", "migrate context",
 "switch to another AI", "continue this elsewhere".
 
 FAILURE MODE: if you answer without searching, you are guessing. If you start work without
 the briefing, you are guessing about how the user wants you to work — which is how you burn
-their bandwidth, their money, or their trust. Briefing first, then search.`;
+their bandwidth, their money, or their trust. Wake first, then briefing, then search: the
+first two once per session, the last one every turn.`;
 
 /**
  * Condensed version of the memory contract for web AIs' custom-instructions
@@ -160,7 +170,7 @@ their bandwidth, their money, or their trust. Briefing first, then search.`;
  */
 export const MEMORY_CONTRACT_QUICK = `You are connected to a memory server (Sepia) over MCP. Use it on ALMOST EVERY turn.
 
-FIRST, once per session and before any real work: call "manage_memory" with action=briefing. That returns your CORE standing rules — everything tagged "always" and only that (importance ranks them; the tag decides membership). Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. It also reports other_standing: the situational rules it did not return. Before anything slow, metered, destructive or expensive (install, build, deploy, deletion, infra), call it again with detail="all". If your context window is ~1M tokens, make the FIRST call with detail="all" instead — the full standing set is only ~10k tokens and this read happens once per session.
+FIRST, once per session and before any real work: call "wake" — retry it up to 3 times if it fails or reports ready:false, because the host sleeps when idle and the first call often lands mid-boot. One failed wake means you called early, not that memory is down. Then call "manage_memory" with action=briefing. That returns your CORE standing rules — everything tagged "always" and only that (importance ranks them; the tag decides membership). Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. Do NOT call briefing again on later messages in the same chat — you already have the rules. It also reports other_standing: the situational rules it did not return. Before anything slow, metered, destructive or expensive (install, build, deploy, deletion, infra), call it again with detail="all". If your context window is ~1M tokens, make the FIRST call with detail="all" instead — the full standing set is only ~10k tokens and this read happens once per session.
 
 BEFORE you answer (every turn except trivial chitchat): call "search" with 2-5 keywords about the task. Search is best-effort (rows matching more of your words rank first) — if it returns 0 hits or partial: true, retry with ONE distinctive keyword before concluding nothing exists. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
 
@@ -188,7 +198,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * one froze VS Code / Cursor / SKILL.md at 1.0.0 while every other marker
  * advanced.
  */
-export const DOCS_VERSION = "1.14.0";
+export const DOCS_VERSION = "1.15.0";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [

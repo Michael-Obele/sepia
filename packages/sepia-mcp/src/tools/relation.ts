@@ -13,7 +13,7 @@ export function registerRelationTools(
       name: "manage_relation",
       title: "Manage Relations",
       description:
-        "Create, delete, or list relations — directed, weighted edges between entities.",
+        "Create, delete, list, or traverse relations — directed, weighted edges between entities. `traverse` BFS-walks the graph from an entity in both directions.",
       icons: [SEPIA_ICON],
       schema: RelationToolInput,
     },
@@ -48,6 +48,16 @@ export function registerRelationTools(
                 })
               ).relations,
             };
+          case "traverse": {
+            if (!args.start_id)
+              throw new Error("action=traverse requires start_id");
+            const graph = await client.traverseGraph(args.start_id, args.depth);
+            return {
+              action: "traverse",
+              start_id: args.start_id,
+              ...(graph as Record<string, unknown>),
+            };
+          }
         }
       },
     ),

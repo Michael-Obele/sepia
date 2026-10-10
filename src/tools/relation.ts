@@ -7,6 +7,7 @@ import {
   deleteRelation,
   listRelations,
   recordTelemetrySafe,
+  traverseGraph,
 } from "@sepia/shared";
 import { safe, SEPIA_ICON, telemetrySession } from "./util.ts";
 
@@ -16,7 +17,7 @@ export function registerRelationTools(server: McpServer<any, any>) {
       name: "manage_relation",
       title: "Manage Relations",
       description:
-        "Create, delete, or list relations — directed, weighted edges between entities.",
+        "Create, delete, list, or traverse relations — directed, weighted edges between entities. `traverse` BFS-walks the graph from an entity in both directions.",
       icons: [SEPIA_ICON],
       schema: RelationToolInput,
     },
@@ -58,6 +59,24 @@ export function registerRelationTools(server: McpServer<any, any>) {
                 offset: args.offset,
               }),
             };
+          case "traverse": {
+            if (!args.start_id)
+              throw new Error("action=traverse requires start_id");
+            // Read-only walk (was the standalone `traverse_graph` tool):
+            // counters only — the start node/depth is derived from the row,
+            // never from the entity's name or contents.
+            const graph = await traverseGraph(
+              sql,
+              user.id,
+              args.start_id,
+              args.depth,
+            );
+            return {
+              action: "traverse",
+              start_id: args.start_id,
+              ...graph,
+            };
+          }
         }
       },
     ),

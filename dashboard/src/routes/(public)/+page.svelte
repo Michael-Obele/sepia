@@ -454,11 +454,11 @@
 					Seven tools. One server.
 				</h3>
 				<p class="mt-3 text-muted-foreground">
-					23 operations across 7 MCP tools. Rich CRUD for entities, memories, and namespaces — plus
+					25 operations across 7 MCP tools. Rich CRUD for entities, memories, and namespaces — plus
 					focused search, traversal, and maintenance. All pure SQL, no LLM calls.
 				</p>
 				<div class="mt-6 flex flex-wrap gap-2">
-					{#each ['manage_entity', 'manage_memory', 'manage_namespace', 'manage_relation', 'search', 'traverse_graph', 'prune_memories'] as tool (tool)}
+					{#each ['manage_entity', 'manage_memory', 'manage_namespace', 'manage_relation', 'search', 'wake', 'prune_memories'] as tool (tool)}
 						<Badge variant="outline" class="font-mono">{tool}</Badge>
 					{/each}
 				</div>
