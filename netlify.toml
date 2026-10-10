@@ -12,9 +12,23 @@ publish = "build"
 directory = ".netlify/functions-internal"
 
 [build.environment]
-# The dashboard's remote functions need the same DATABASE_URL as the server.
-# Set these in the Netlify UI (Site settings → Environment variables) instead
-# of committing secrets:
+# Pin the BUILD runtime. `command` runs `bun run build` against a lockfile that
+# is lockfileVersion 1, and this repo develops on Bun 1.4.0 — Netlify's default
+# Bun version moves independently of both, and a mismatch is a classic
+# intermittent build failure. BUN_VERSION is a reserved config var, so it
+# belongs here and not in the UI.
+#
+# This governs the BUILD ONLY. The deployed SvelteKit render function runs on
+# `nodejs24.x` (Netlify's function runtime, visible in the deploy's
+# available_functions[].r), which BUN_VERSION does not affect; that is set with
+# AWS_LAMBDA_JS_RUNTIME, and only in the UI/CLI/API — values in this file are
+# read after the repo is cloned, so a runtime var here would be ignored.
+BUN_VERSION = "1.4.0"
+
+# SECRETS DO NOT GO IN THIS FILE. Variables declared here are committed to the
+# repo, reach builds + snippet injection only (never functions/runtime/forms),
+# and OVERRIDE same-named UI variables — so a secret here is both public and
+# silently authoritative. Configure these in the Netlify UI instead:
 #   DATABASE_URL      — Neon Postgres connection string
 #   DASHBOARD_TOKEN   — token the sign-in screen validates against
 #                       (falls back to MCP_BEARER_TOKEN if unset)
