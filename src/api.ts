@@ -197,7 +197,8 @@ export async function handleApi(
   const path = url.pathname;
   const method = request.method;
 
-  try {    // ── Wake ────────────────────────────────────────────────────────────────
+  try {
+    // ── Wake ────────────────────────────────────────────────────────────────
     // Readiness probe behind the MCP `wake` tool, and the twin the stdio
     // client (packages/sepia-mcp) proxies. One `select 1`, no writes — a cold
     // start should be cheap to discover. Auth already ran in the caller, so

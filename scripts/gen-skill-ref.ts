@@ -74,7 +74,9 @@ const sections: Record<string, string[]> = {
     "- `create`: relation { source_id (uuid), target_id (uuid), relation_type (1-64), weight? (0-1, default 0.5) } — on UNIQUE(source, target, relation_type) conflict, **updates weight** instead of erroring",
     "- `delete`: id (uuid)",
     "- `list`: by entity_id (in + out) or by namespace",
-    "- `traverse`: start_id (uuid, required) + depth? (1-" + TRAVERSE_DEPTH_MAX + ", default 1) — BFS walk from that entity in both directions, returns nodes + edges within N hops. This was the standalone `traverse_graph` tool until 1.15.0.",
+    "- `traverse`: start_id (uuid, required) + depth? (1-" +
+      TRAVERSE_DEPTH_MAX +
+      ", default 1) — BFS walk from that entity in both directions, returns nodes + edges within N hops. This was the standalone `traverse_graph` tool until 1.15.0.",
   ],
   manage_memory: [
     "Actions: `create` | `get` | `update` | `delete` | `query` | **`briefing`** | `batch_update` | `ingest`",

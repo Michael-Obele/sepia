@@ -26,15 +26,12 @@ export function registerWakeTool(
       schema: WakeToolInput,
       annotations: { readOnlyHint: true },
     },
-    safe(
-      WakeToolInput,
-      async (_args: v.InferInput<typeof WakeToolInput>) => {
-        const result = await client.wake();
-        return {
-          ...result,
-          hint: "Succeeded → call manage_memory action=briefing next, once, then search on later turns. Failed → retry this up to 3 times a few seconds apart; do not skip the briefing and do not conclude sepia is down from one failed call.",
-        };
-      },
-    ),
+    safe(WakeToolInput, async (_args: v.InferInput<typeof WakeToolInput>) => {
+      const result = await client.wake();
+      return {
+        ...result,
+        hint: "Succeeded → call manage_memory action=briefing next, once, then search on later turns. Failed → retry this up to 3 times a few seconds apart; do not skip the briefing and do not conclude sepia is down from one failed call.",
+      };
+    }),
   );
 }

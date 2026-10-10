@@ -107,7 +107,10 @@ describe("G8: docs and descriptions only name params that exist", () => {
     expect(start).toBeGreaterThan(-1);
     const bullet = text.slice(start, end);
     const missing = MEMORY_QUERY_FILTERS.filter((k) => !bullet.includes(k));
-    expect(missing, `llms.txt manage_memory bullet missing: ${missing.join(", ")}`).toEqual([]);
+    expect(
+      missing,
+      `llms.txt manage_memory bullet missing: ${missing.join(", ")}`,
+    ).toEqual([]);
   });
 
   test("generated tools.md names every declared memory-query filter", () => {
@@ -116,7 +119,10 @@ describe("G8: docs and descriptions only name params that exist", () => {
     expect(start).toBeGreaterThan(-1);
     const line = text.slice(start, text.indexOf("\n", start));
     const missing = MEMORY_QUERY_FILTERS.filter((k) => !line.includes(k));
-    expect(missing, `tools.md query line missing: ${missing.join(", ")}`).toEqual([]);
+    expect(
+      missing,
+      `tools.md query line missing: ${missing.join(", ")}`,
+    ).toEqual([]);
   });
 
   test("tools.md query line names NOTHING the schema lacks (reverse)", () => {
@@ -145,7 +151,10 @@ describe("G8: docs and descriptions only name params that exist", () => {
     const desc = entry.pipe?.find((p) => p.type === "description")?.description;
     expect(desc).toBeDefined();
     const m = desc!.match(/query \(filters: ([^)]+)\)/);
-    expect(m, "action description lost its query-filters segment").not.toBeNull();
+    expect(
+      m,
+      "action description lost its query-filters segment",
+    ).not.toBeNull();
     const named = m![1]!
       .split("|")
       .map((s) => s.trim().split(/[\s`]/)[0]!)
@@ -168,7 +177,10 @@ describe("G8: docs and descriptions only name params that exist", () => {
     const surfaces: Array<[string, string]> = [
       ["llms.txt", read("llms.txt")],
       ["skills/sepia/SKILL.md", read("skills/sepia/SKILL.md")],
-      ["packages/shared/src/types.ts (MEMORY_CONTRACT)", read("packages/shared/src/types.ts")],
+      [
+        "packages/shared/src/types.ts (MEMORY_CONTRACT)",
+        read("packages/shared/src/types.ts"),
+      ],
     ];
     for (const [name, text] of surfaces) {
       // "identical" (not "identical results") — llms.txt writes *identical*

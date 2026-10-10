@@ -90,15 +90,15 @@ flowchart LR
 
 7 tools, not 17 — resource-oriented (`action` enum).
 
-| #   | Tool               | Actions                                                  | What it does                                                                 |
-| --- | ------------------ | -------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| 1   | `wake`             | —                                                        | Readiness probe: server + database answering? Call first, once per chat      |
-| 2   | `manage_namespace` | create, list, get, delete                                | Organize memory into isolated spaces                                         |
-| 3   | `manage_entity`    | create, get, update, delete, find, batch_update          | Knowledge graph nodes (people, concepts, projects, tools)                    |
-| 4   | `manage_relation`  | create, delete, list, traverse                           | Directed, weighted edges; `traverse` BFS-walks the graph from an entity      |
+| #   | Tool               | Actions                                                            | What it does                                                                 |
+| --- | ------------------ | ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| 1   | `wake`             | —                                                                  | Readiness probe: server + database answering? Call first, once per chat      |
+| 2   | `manage_namespace` | create, list, get, delete                                          | Organize memory into isolated spaces                                         |
+| 3   | `manage_entity`    | create, get, update, delete, find, batch_update                    | Knowledge graph nodes (people, concepts, projects, tools)                    |
+| 4   | `manage_relation`  | create, delete, list, traverse                                     | Directed, weighted edges; `traverse` BFS-walks the graph from an entity      |
 | 5   | `manage_memory`    | create, get, update, delete, query, briefing, batch_update, ingest | Facts/observations/preferences with importance scoring; conversation digests |
-| 6   | `search`           | —                                                        | Unified keyword + metadata search across all data                            |
-| 7   | `prune_memories`   | confirm: true                                            | Decay sweep + dedup + purge (destructive maintenance, never a save)          |
+| 6   | `search`           | —                                                                  | Unified keyword + metadata search across all data                            |
+| 7   | `prune_memories`   | confirm: true                                                      | Decay sweep + dedup + purge (destructive maintenance, never a save)          |
 
 **Why 7 instead of 17:** FlarelyLegal's 17 tools split entity search, memory queries, conversations, and admin into separate tools. By using `action` enums inside `manage_*` tools, the LLM surface stays clean while covering all capabilities — including conversation migration (`manage_memory` action=ingest) and bulk updates (`batch_update`). No RBAC, no audit trails — those are team features a personal server doesn't need. Semantic/vector search is a deliberate future upgrade; `search` ships keyword + metadata for v1.
 
@@ -368,7 +368,7 @@ account starts off.
     for), and a **salted, day-rotating
     fingerprint** of the query. Equivalent queries can be grouped, but the query text is not
     stored and cannot be recovered, and the daily salt rotation makes cross-day profiling
-    impossible by construction. The options are what let an *empty* result be told apart from
+    impossible by construction. The options are what let an _empty_ result be told apart from
     one the caller deliberately narrowed — without them every miss looks identical.
   - `transcripts` — additionally stores the raw **query text and returned ids**, deleted
     after the retention window (1–365 days, default 30). This is the tier that turns a real
