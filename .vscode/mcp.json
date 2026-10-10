@@ -8,12 +8,20 @@
     }
   ],
   "servers": {
-    // "rem": {
-    //   "type": "http",
-    //   "url": "http://localhost:9630/mcp",
-    //   "headers": {
-    //     "Authorization": "Bearer ${input:memory-token}"
-    //   }
-    // }
+    // Local Sepia, running in Docker against the prod data plane (Neon +
+    // OpenSearch) — see docker-compose.yml. Pointing here instead of
+    // https://sepia.fly.dev means daily traffic never wakes the Fly Machine,
+    // which stays asleep for the endpoints that must be public.
+    //
+    // The port comes from docker-compose.yml (`ports: 8080:8080` + the pinned
+    // `PORT: 8080`), NOT from .env — .env defines PORT twice (8080 at line 11,
+    // 9630 at line 51) and Compose takes the last, which is why the pin exists.
+    "sepia-local": {
+      "type": "http",
+      "url": "http://localhost:8080/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:memory-token}"
+      }
+    }
   }
 }

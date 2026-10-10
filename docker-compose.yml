@@ -1,0 +1,61 @@
+# Local Sepia, pointed at the PROD data plane (Neon + Aiven OpenSearch).
+#
+# Why this file exists: so daily MCP traffic can run on this machine instead of
+# waking the Fly Machine on every session. The Fly instance keeps sleeping and
+# stays reserved for the endpoints that must be public (web-AI connectors).
+#
+# SECRETS LIVE IN .env ONLY — that file is both gitignored and dockerignored,
+# and it is read here rather than copied into the image, so nothing in this
+# file can leak. Do not ever paste a value into this document.
+#
+# Env precedence, deliberately split:
+#   env_file     → the 26 unique prod keys, parsed by Compose's dotenv reader
+#                  (strips quotes, skips # comments, last duplicate wins for
+#                  the twice-defined PORT).
+#   environment  → the local overrides. Compose guarantees this block wins over
+#                  env_file, which is what we need for the URL vars.
+#
+# The overrides are NOT optional — see the standing local-dev rule. Two of them
+# are subtle and the comment on each records why, because both look redundant:
+#   OAUTH_ISSUER_URL / BETTER_AUTH_URL → localhost, not the Fly origin.
+#     BETTER_AUTH_URL must be *set to localhost*, never blanked: src/auth.ts
+#     reads `process.env.BETTER_AUTH_URL ?? process.env.OAUTH_ISSUER_URL`, and
+#     `??` only falls back on null/undefined, so an empty string would win and
+#     hand Better Auth a baseURL of "".
+#   RESEND_API_KEY → "" (not unset) — it comes from env_file with a real key,
+#     and src/lib/email.ts gates on `if (!apiKey)`, so "" cleanly disables
+#     outbound mail from the local instance instead of sending prod email.
+
+services:
+  sepia:
+    build: .
+    image: sepia:local
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      # Pinned, because .env defines PORT TWICE (8080 at line 11, 9630 at line
+      # 51) and Compose takes the last — which silently bound the server to 9630
+      # while `ports` sent traffic to 8080. 8080 is the value everything else
+      # assumes: fly.toml internal_port, .env.example, scripts/smoke.ts. Remove
+      # the stray line 51 from .env and this pin becomes redundant.
+      PORT: 8080
+      OAUTH_ISSUER_URL: http://localhost:8080
+      BETTER_AUTH_URL: http://localhost:8080
+      APP_URL: http://localhost:8080
+      RESEND_API_KEY: ""
+    restart: unless-stopped
+    healthcheck:
+      # oven/bun:1-slim ships no curl or wget — ask Bun instead.
+      test:
+        [
+          "CMD",
+          "bun",
+          "-e",
+          "fetch('http://localhost:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
