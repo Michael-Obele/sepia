@@ -354,7 +354,7 @@ export const SearchInput = v.looseObject({
     v.pipe(
       v.picklist([...SEARCH_ENGINES]),
       v.description(
-        'Ranking engine: "coverage" (substring, coverage-first), "bm25" (tokenised, BM25-ranked), or "opensearch" (external cluster; falls back to coverage when unavailable or empty). Omit to use the server default.',
+        'Ranking engine: "coverage" (substring, coverage-first) or "bm25" (tokenised, BM25-ranked; matches prefixes and falls back to substring matching when it finds nothing). Omit to use the server default.',
       ),
     ),
   ),

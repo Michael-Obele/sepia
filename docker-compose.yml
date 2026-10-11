@@ -1,4 +1,4 @@
-# Local Sepia, pointed at the PROD data plane (Neon + Aiven OpenSearch).
+# Local Sepia, pointed at the PROD data plane (Neon).
 #
 # Why this file exists: so daily MCP traffic can run on this machine instead of
 # waking the Fly Machine on every session. The Fly instance keeps sleeping and

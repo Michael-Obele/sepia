@@ -1,12 +1,12 @@
 ---
-version: "1.15.1"
+version: "1.15.2"
 applyTo: "**"
 description: "Sepia memory — MANDATORY recall before work, persist after. Always-on."
 ---
 
 # Sepia memory (always-on) — VS Code / Copilot
 
-<!-- sepia-docs-version: 1.15.1 -->
+<!-- sepia-docs-version: 1.15.2 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (`servers.sepia` in `.vscode/mcp.json`: `type: "http"`, `url: "https://sepia.fly.dev/mcp"`, `headers.Authorization`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 

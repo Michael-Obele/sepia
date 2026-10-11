@@ -21,7 +21,6 @@ import {
 import { normalizeEntityType, normalizeTags } from "../../types.ts";
 import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
 import { ENTITY_LIST_COLUMNS } from "./list-columns.ts";
-import { syncEntity, syncEntityIds, unsyncEntity } from "./index-sync.ts";
 
 export interface EntityCreate {
   name: string;
@@ -141,7 +140,6 @@ export async function createEntity(
     }
     throw error;
   }
-  if (rows[0]) await syncEntity(db, String(rows[0].id));
   return rows[0];
 }
 
@@ -272,7 +270,6 @@ export async function updateEntity(
   }
   const row = rows[0];
   if (!row) throw new MemoryError("not_found", `entity '${id}' not found`);
-  await syncEntity(db, id);
   return row;
 }
 
@@ -287,7 +284,6 @@ export async function deleteEntity(db: Db, ownerId: string, id: string) {
     .returning({ id: entities.id, name: entities.name });
   const row = res[0];
   if (!row) throw new MemoryError("not_found", `entity '${id}' not found`);
-  await unsyncEntity(db, id);
   return row;
 }
 
@@ -524,9 +520,5 @@ export async function batchUpdateEntities(
     }
     throw error;
   }
-  await syncEntityIds(
-    db,
-    res.map((r) => String(r.id)),
-  );
   return { count: res.length };
 }

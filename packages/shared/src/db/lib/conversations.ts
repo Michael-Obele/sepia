@@ -9,7 +9,6 @@ import {
 } from "../schema.ts";
 import { normalizeEntityType, normalizeTags } from "../../types.ts";
 import { resolveNamespaceId } from "./util.ts";
-import { syncEntityIds, syncMemoryIds } from "./index-sync.ts";
 
 export interface ConversationEntityInput {
   name: string;
@@ -128,8 +127,6 @@ export async function ingestConversation(
 
   // ── Build the bundle: digest + constituents ──────────────────────────────
   const digestId = crypto.randomUUID();
-  /** Every memory id this ingest creates — fed to index sync after the batch. */
-  const allIds: string[] = [digestId];
   const digestMetadata: Record<string, unknown> = {
     kind: "conversation",
     conversation_id: conversationId,
@@ -194,7 +191,6 @@ export async function ingestConversation(
   const linkIds = entityIds.slice(0, 3);
   for (const c of constituents) {
     const id = crypto.randomUUID();
-    allIds.push(id);
     queries.push(
       db.insert(memories).values({
         id,
@@ -220,11 +216,6 @@ export async function ingestConversation(
   }
 
   await db.batch(queries as [BatchItem<"pg">, ...BatchItem<"pg">[]]);
-
-  // Write-through index sync for the whole bundle (digest + constituents +
-  // any entities created above) — no-op when OpenSearch is unconfigured.
-  await syncMemoryIds(db, allIds);
-  if (entityIds.length) await syncEntityIds(db, entityIds);
 
   return {
     digest_id: digestId,

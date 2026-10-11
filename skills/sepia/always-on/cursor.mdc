@@ -1,11 +1,11 @@
 ---
-version: "1.15.1"
+version: "1.15.2"
 description: "Sepia memory — MANDATORY recall before work, persist after. Always-on."
 alwaysApply: true
 ---
 
 # Sepia memory (always-on) — Cursor
-<!-- sepia-docs-version: 1.15.1 -->
+<!-- sepia-docs-version: 1.15.2 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (`mcpServers.sepia` in `.cursor/mcp.json` or `~/.cursor/mcp.json`: `type: "http"`, `url: "https://sepia.fly.dev/mcp"`, `headers.Authorization`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 

@@ -1,6 +1,6 @@
 ## Sepia memory (always-on) — OpenCode
 
-<!-- sepia-docs-version: 1.15.1 -->
+<!-- sepia-docs-version: 1.15.2 -->
 
 You are connected to the user's personal Sepia memory server over MCP (`sepia` remote at `https://sepia.fly.dev/mcp`). Model: `sepia` in `opencode.json` (`type: "remote"`, `headers.Authorization: "Bearer TOKEN"`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 
