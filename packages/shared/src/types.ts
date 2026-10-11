@@ -198,7 +198,7 @@ Two Sepia calls per turn is normal. If you answer without searching, you are gue
  * one froze VS Code / Cursor / SKILL.md at 1.0.0 while every other marker
  * advanced.
  */
-export const DOCS_VERSION = "1.15.0";
+export const DOCS_VERSION = "1.15.1";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [

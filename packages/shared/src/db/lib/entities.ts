@@ -1,5 +1,5 @@
 import type { Db } from "../client.ts";
-import { MemoryError } from "../errors.ts";
+import { isUniqueViolation, MemoryError } from "../errors.ts";
 import {
   and,
   desc,
@@ -7,6 +7,7 @@ import {
   getTableColumns,
   ilike,
   inArray,
+  ne,
   sql,
   type SQL,
 } from "drizzle-orm";
@@ -69,6 +70,46 @@ function normalizeTypeAndTags(
   return out;
 }
 
+/**
+ * The entities table has exactly ONE unique key besides the PK, and the PK is a
+ * random uuid that never collides: the per-namespace name. So a unique
+ * violation on an entity write IS a name conflict.
+ */
+const ENTITY_NAME_KEY = "entities_namespace_id_name_key";
+
+/**
+ * The `already_exists` error for a taken entity name, naming the row that holds
+ * it so the caller can go straight to `action=update`. `namespaceId` is
+ * optional because the update path may not know it without an extra read; the
+ * message degrades to a name-only form when it is absent.
+ */
+async function entityNameTaken(
+  db: Db,
+  namespaceId: string | undefined,
+  name: string,
+  exceptId?: string,
+): Promise<MemoryError> {
+  let holder: string | undefined;
+  if (namespaceId) {
+    const conditions: SQL[] = [
+      eq(entities.namespaceId, namespaceId),
+      eq(entities.name, name),
+    ];
+    if (exceptId) conditions.push(ne(entities.id, exceptId));
+    const rows = await db
+      .select({ id: entities.id })
+      .from(entities)
+      .where(and(...conditions))
+      .limit(1);
+    if (rows[0]) holder = String(rows[0].id);
+  }
+  const at = holder ? ` (id ${holder})` : "";
+  return new MemoryError(
+    "already_exists",
+    `entity '${name}' already exists${at}; use action=update to change it`,
+  );
+}
+
 export async function createEntity(
   db: Db,
   ownerId: string,
@@ -80,18 +121,26 @@ export async function createEntity(
     type: input.type,
     tags: input.tags ?? [],
   });
-  const rows = await db
-    .insert(entities)
-    .values({
-      namespaceId,
-      name: input.name,
-      type: normalized.type ?? "concept",
-      summary: input.summary ?? "",
-      metadata: input.metadata ?? {},
-      importance: input.importance ?? 0.5,
-      tags: normalized.tags ?? [],
-    })
-    .returning();
+  let rows: Entity[];
+  try {
+    rows = await db
+      .insert(entities)
+      .values({
+        namespaceId,
+        name: input.name,
+        type: normalized.type ?? "concept",
+        summary: input.summary ?? "",
+        metadata: input.metadata ?? {},
+        importance: input.importance ?? 0.5,
+        tags: normalized.tags ?? [],
+      })
+      .returning();
+  } catch (error) {
+    if (isUniqueViolation(error, ENTITY_NAME_KEY)) {
+      throw await entityNameTaken(db, namespaceId, input.name);
+    }
+    throw error;
+  }
   if (rows[0]) await syncEntity(db, String(rows[0].id));
   return rows[0];
 }
@@ -195,11 +244,32 @@ export async function updateEntity(
     .select({ id: namespaces.id })
     .from(namespaces)
     .where(eq(namespaces.ownerId, ownerId));
-  const rows = await db
-    .update(entities)
-    .set({ ...sets, ...normalized, updatedAt: sql`now()` })
-    .where(and(eq(entities.id, id), inArray(entities.namespaceId, owned)))
-    .returning();
+  let rows: Entity[];
+  try {
+    rows = await db
+      .update(entities)
+      .set({ ...sets, ...normalized, updatedAt: sql`now()` })
+      .where(and(eq(entities.id, id), inArray(entities.namespaceId, owned)))
+      .returning();
+  } catch (error) {
+    if (isUniqueViolation(error, ENTITY_NAME_KEY) && update.name !== undefined) {
+      // The rename collided with a DIFFERENT row. Resolve which namespace the
+      // row being renamed lives in, so the reported holder is the right one
+      // (the same name can exist in another namespace and must not be blamed).
+      const target = await db
+        .select({ namespaceId: entities.namespaceId })
+        .from(entities)
+        .where(and(eq(entities.id, id), inArray(entities.namespaceId, owned)))
+        .limit(1);
+      throw await entityNameTaken(
+        db,
+        target[0] ? String(target[0].namespaceId) : undefined,
+        update.name,
+        id,
+      );
+    }
+    throw error;
+  }
   const row = rows[0];
   if (!row) throw new MemoryError("not_found", `entity '${id}' not found`);
   await syncEntity(db, id);
@@ -426,21 +496,34 @@ export async function batchUpdateEntities(
     ? sql`array(SELECT DISTINCT unnest(${entities.tags} || ARRAY[${fallbackTag}]::text[]))`
     : undefined;
 
-  const res = await db
-    .update(entities)
-    .set({
-      ...sets,
-      ...normalized,
-      ...(tagExpr ? { tags: tagExpr } : {}),
-      updatedAt: sql`now()`,
-    })
-    .where(
-      inArray(
-        entities.id,
-        ids.map((r) => r.id),
-      ),
-    )
-    .returning({ id: entities.id });
+  let res: { id: string }[];
+  try {
+    res = await db
+      .update(entities)
+      .set({
+        ...sets,
+        ...normalized,
+        ...(tagExpr ? { tags: tagExpr } : {}),
+        updatedAt: sql`now()`,
+      })
+      .where(
+        inArray(
+          entities.id,
+          ids.map((r) => r.id),
+        ),
+      )
+      .returning({ id: entities.id });
+  } catch (error) {
+    if (isUniqueViolation(error, ENTITY_NAME_KEY) && update.name !== undefined) {
+      // A batch rename targets many rows at once, so it can span namespaces;
+      // a name-only message is the honest one here (no single holder to name).
+      throw new MemoryError(
+        "already_exists",
+        `batch update would rename entities to '${update.name}', but that name is already taken (entity names are unique per namespace); update entities individually`,
+      );
+    }
+    throw error;
+  }
   await syncEntityIds(
     db,
     res.map((r) => String(r.id)),

@@ -88,6 +88,22 @@ async function callTool(name: string, args: Record<string, unknown>) {
   return JSON.parse(text) as Record<string, unknown>;
 }
 
+/**
+ * Call a tool that is EXPECTED to fail and return its error text. `callTool`
+ * throws on isError, so negative cases (a duplicate name, a missing row) need
+ * their own path — and their assertions are the point of the check.
+ */
+async function callToolError(name: string, args: Record<string, unknown>) {
+  const result = (await rpc("tools/call", { name, arguments: args })) as {
+    content?: Array<{ type: string; text?: string }>;
+    isError?: boolean;
+  };
+  const text = result.content?.find((c) => c.type === "text")?.text ?? "";
+  if (!result.isError)
+    throw new Error(`tool ${name} was expected to fail but succeeded: ${text}`);
+  return text;
+}
+
 console.log(
   `smoke: ${BASE} (auth: ${token ? "bearer" : "none"}, db: ${hasDb ? "yes" : "no"})`,
 );
@@ -213,6 +229,22 @@ if (hasDb) {
       Array.isArray(project.entity.tags) &&
         project.entity.tags.includes("smoke"),
       JSON.stringify(project.entity.tags),
+    );
+
+    // Duplicate name → mapped already_exists through the REAL MCP transport,
+    // never Drizzle's raw SQL (the 2026-10-11 incident).
+    const dupText = await callToolError("manage_entity", {
+      action: "create",
+      namespace: ns,
+      entity: { name: "Smoke Project", type: "project" },
+    });
+    check(
+      "entity duplicate name → clean already_exists (no raw SQL)",
+      dupText.startsWith("[already_exists]") &&
+        dupText.includes("use action=update") &&
+        !dupText.includes("insert into") &&
+        !dupText.includes("Failed query"),
+      dupText.slice(0, 120),
     );
 
     // Type normalization: unknown type → concept + tag.
