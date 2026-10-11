@@ -34,6 +34,12 @@ services:
     env_file:
       - .env
     environment:
+      # Load-bearing: `ports: "8080:8080"` maps host→container 8080 and
+      # fly.toml's http_service.internal_port is 8080, so the container MUST
+      # bind 8080. .env's PORT is the DEV port (9630, for `bun run dev`), so it
+      # is deliberately overridden here — dev and the container then run side by
+      # side on 9630 and 8080.
+      PORT: 8080
       OAUTH_ISSUER_URL: http://localhost:8080
       BETTER_AUTH_URL: http://localhost:8080
       APP_URL: http://localhost:8080

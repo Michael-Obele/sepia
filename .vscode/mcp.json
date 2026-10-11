@@ -13,9 +13,9 @@
     // https://sepia.fly.dev means daily traffic never wakes the Fly Machine,
     // which stays asleep for the endpoints that must be public.
     //
-    // Port 8080 comes from .env (the single PORT) and docker-compose.yml's
-    // `ports: "8080:8080"` — the same value as fly.toml internal_port,
-    // .env.example and scripts/smoke.ts's default SMOKE_URL.
+    // Port 8080 is the CONTAINER's: docker-compose.yml pins `PORT: 8080` for the
+    // service and maps `ports: "8080:8080"`. .env's PORT is the separate
+    // `bun run dev` port (9630), so dev and the container can run together.
     "sepia-local": {
       "type": "http",
       "url": "http://localhost:8080/mcp",
