@@ -9,9 +9,8 @@
 # file can leak. Do not ever paste a value into this document.
 #
 # Env precedence, deliberately split:
-#   env_file     → the 26 unique prod keys, parsed by Compose's dotenv reader
-#                  (strips quotes, skips # comments, last duplicate wins for
-#                  the twice-defined PORT).
+#   env_file     → the prod keys, parsed by Compose's dotenv reader
+#                  (strips quotes, skips # comments).
 #   environment  → the local overrides. Compose guarantees this block wins over
 #                  env_file, which is what we need for the URL vars.
 #
@@ -35,12 +34,6 @@ services:
     env_file:
       - .env
     environment:
-      # Pinned, because .env defines PORT TWICE (8080 at line 11, 9630 at line
-      # 51) and Compose takes the last — which silently bound the server to 9630
-      # while `ports` sent traffic to 8080. 8080 is the value everything else
-      # assumes: fly.toml internal_port, .env.example, scripts/smoke.ts. Remove
-      # the stray line 51 from .env and this pin becomes redundant.
-      PORT: 8080
       OAUTH_ISSUER_URL: http://localhost:8080
       BETTER_AUTH_URL: http://localhost:8080
       APP_URL: http://localhost:8080
