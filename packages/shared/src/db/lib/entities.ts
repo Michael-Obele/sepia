@@ -250,7 +250,10 @@ export async function updateEntity(
       .where(and(eq(entities.id, id), inArray(entities.namespaceId, owned)))
       .returning();
   } catch (error) {
-    if (isUniqueViolation(error, ENTITY_NAME_KEY) && update.name !== undefined) {
+    if (
+      isUniqueViolation(error, ENTITY_NAME_KEY) &&
+      update.name !== undefined
+    ) {
       // The rename collided with a DIFFERENT row. Resolve which namespace the
       // row being renamed lives in, so the reported holder is the right one
       // (the same name can exist in another namespace and must not be blamed).
@@ -510,7 +513,10 @@ export async function batchUpdateEntities(
       )
       .returning({ id: entities.id });
   } catch (error) {
-    if (isUniqueViolation(error, ENTITY_NAME_KEY) && update.name !== undefined) {
+    if (
+      isUniqueViolation(error, ENTITY_NAME_KEY) &&
+      update.name !== undefined
+    ) {
       // A batch rename targets many rows at once, so it can span namespaces;
       // a name-only message is the honest one here (no single holder to name).
       throw new MemoryError(
