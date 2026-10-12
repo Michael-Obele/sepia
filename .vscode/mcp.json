@@ -13,12 +13,12 @@
     // https://sepia.fly.dev means daily traffic never wakes the Fly Machine,
     // which stays asleep for the endpoints that must be public.
     //
-    // Port 8080 is the CONTAINER's: docker-compose.yml pins `PORT: 8080` for the
-    // service and maps `ports: "8080:8080"`. .env's PORT is the separate
+    // Port 8484 is the CONTAINER's: docker-compose.yml pins `PORT: 8484` for the
+    // service and maps `ports: "8484:8484"`. .env's PORT is the separate
     // `bun run dev` port (9630), so dev and the container can run together.
     "sepia-local": {
       "type": "http",
-      "url": "http://localhost:8080/mcp",
+      "url": "http://localhost:8484/mcp",
       "headers": {
         "Authorization": "Bearer ${input:memory-token}"
       }

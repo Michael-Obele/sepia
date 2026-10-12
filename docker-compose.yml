@@ -30,19 +30,20 @@ services:
     build: .
     image: sepia:local
     ports:
-      - "8080:8080"
+      - "8484:8484"
     env_file:
       - .env
     environment:
-      # Load-bearing: `ports: "8080:8080"` maps host→container 8080 and
-      # fly.toml's http_service.internal_port is 8080, so the container MUST
-      # bind 8080. .env's PORT is the DEV port (9630, for `bun run dev`), so it
-      # is deliberately overridden here — dev and the container then run side by
-      # side on 9630 and 8080.
-      PORT: 8080
-      OAUTH_ISSUER_URL: http://localhost:8080
-      BETTER_AUTH_URL: http://localhost:8080
-      APP_URL: http://localhost:8080
+      # Load-bearing: `ports: "8484:8484"` maps host→container 8484.
+      # fly.toml's http_service.internal_port stays 8080 (prod only) — the
+      # local container deliberately binds 8484 to avoid the crowded 8080/3000/
+      # 8000 range. .env's PORT is the DEV port (9630, for `bun run dev`), so
+      # it is overridden here — dev and the container run side by side on 9630
+      # and 8484.
+      PORT: 8484
+      OAUTH_ISSUER_URL: http://localhost:8484
+      BETTER_AUTH_URL: http://localhost:8484
+      APP_URL: http://localhost:8484
       RESEND_API_KEY: ""
     restart: unless-stopped
     healthcheck:
@@ -52,7 +53,7 @@ services:
           "CMD",
           "bun",
           "-e",
-          "fetch('http://localhost:8080/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://localhost:8484/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 5s
