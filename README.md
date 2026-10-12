@@ -185,13 +185,13 @@ bun run dev:dashboard
 
 ```bash
 # Save a fact (same auth as /mcp)
-curl -X POST http://localhost:8080/api/memories \
+curl -X POST http://localhost:8484/api/memories \
   -H "Authorization: Bearer $MCP_BEARER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"content": "User prefers Bun over Node", "type": "preference", "importance": 0.8}'
 
 # Recall it
-curl "http://localhost:8080/api/search?q=Bun+preference" \
+curl "http://localhost:8484/api/search?q=Bun+preference" \
   -H "Authorization: Bearer $MCP_BEARER_TOKEN"
 ```
 
@@ -204,7 +204,7 @@ No extra flags needed — `search` covers memories, entities, and relations. To 
 | `DATABASE_URL`       | Neon Postgres pooled connection string (`-pooler`, port 5432)                                                                                                                                                  |
 | `MCP_BEARER_TOKEN`   | Phase 1 auth token for `/mcp` and `/api/*` (`openssl rand -hex 32`)                                                                                                                                            |
 | `DASHBOARD_PASSWORD` | OAuth 2.1 consent-page password — setting it **enables** the OAuth endpoints (single user; hosted accounts with plans are in progress). The dashboard itself signs in with the bearer token, not this password |
-| `OAUTH_ISSUER_URL`   | OAuth issuer URL (defaults to `https://sepia.fly.dev`; set to `http://localhost:8080` for local dev)                                                                                                           |
+| `OAUTH_ISSUER_URL`   | OAuth issuer URL (defaults to `https://sepia.fly.dev`; set to `http://localhost:8484` for local dev)                                                                                                           |
 | `PUBLIC_API_URL`     | Dashboard build-time REST base (e.g. `https://sepia.fly.dev`)                                                                                                                                                  |
 | `PUBLIC_MCP_URL`     | Dashboard build-time MCP URL shown on `/connect`                                                                                                                                                               |
 

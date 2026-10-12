@@ -5,7 +5,7 @@
  * Usage:
  *   bun run scripts/check-docs-version.ts --source-only   # repo only, no network (CI)
  *   bun run scripts/check-docs-version.ts                 # + installed copies vs /version
- *   bun run scripts/check-docs-version.ts http://localhost:8080
+ *   bun run scripts/check-docs-version.ts http://localhost:8484
  *
  * Fails on four things, and names them apart:
  *   - DISAGREEMENT — one file carrying two different versions (frontmatter

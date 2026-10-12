@@ -35,7 +35,7 @@ services:
       - .env
     environment:
       # Load-bearing: `ports: "8484:8484"` maps host→container 8484.
-      # fly.toml's http_service.internal_port stays 8080 (prod only) — the
+      # fly.toml's http_service.internal_port stays 8080 (prod) — the
       # local container deliberately binds 8484 to avoid the crowded 8080/3000/
       # 8000 range. .env's PORT is the DEV port (9630, for `bun run dev`), so
       # it is overridden here — dev and the container run side by side on 9630

@@ -25,7 +25,7 @@ bun run dev:dashboard  # http://localhost:5173
 The dev server needs the Sepia API running locally for auth and data:
 
 ```bash
-bun run dev            # API on http://localhost:8080 (MCP + REST + auth)
+bun run dev            # API on http://localhost:8484 (MCP + REST + auth)
 ```
 
 ### Environment variables
@@ -33,8 +33,8 @@ bun run dev            # API on http://localhost:8080 (MCP + REST + auth)
 | Variable         | Purpose                                                                               |
 | ---------------- | ------------------------------------------------------------------------------------- |
 | `DATABASE_URL`   | Neon Postgres connection string (server-side, via `$env/dynamic/private`)             |
-| `AUTH_URL`       | Server-side auth base (default `https://sepia.fly.dev`; dev: `http://localhost:8080`) |
-| `VITE_AUTH_URL`  | Client-side auth base (dev: `http://localhost:8080`)                                  |
+| `AUTH_URL`       | Server-side auth base (default `https://sepia.fly.dev`; dev: `http://localhost:8484`) |
+| `VITE_AUTH_URL`  | Client-side auth base (dev: `http://localhost:8484`)                                  |
 | `PUBLIC_API_URL` | Build-time REST base shown on the Connect page                                        |
 | `PUBLIC_MCP_URL` | Build-time MCP URL shown on the Connect page                                          |
 

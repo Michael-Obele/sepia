@@ -50,7 +50,7 @@ MCP client config:
 ```bash
 export SEPIA_URL=https://sepia.fly.dev
 export SEPIA_API_KEY=your_token
-sepia-mcp --http        # serves Streamable HTTP at /mcp on PORT (default 8080)
+sepia-mcp --http        # serves Streamable HTTP at /mcp on PORT (default 8484)
 ```
 
 ## Environment variables

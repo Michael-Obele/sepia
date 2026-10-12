@@ -6,7 +6,7 @@
  * DATABASE_URL is set. Exits non-zero on any failure.
  *
  * Usage:
- *   bun run smoke                          # protocol tests against localhost:8080
+ *   bun run smoke                          # protocol tests against localhost:8484
  *   SMOKE_URL=https://... bun run smoke    # against a deployed server
  */
 import { dirname, join, resolve } from "node:path";
@@ -16,7 +16,7 @@ import { DOCS_VERSION, TOOL_NAMES } from "@sepia/shared";
 import { AGENT_DOCS, describeMarkers, verdict } from "./docs-manifest.ts";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const BASE = process.env.SMOKE_URL ?? "http://localhost:8080/mcp";
+const BASE = process.env.SMOKE_URL ?? "http://localhost:8484/mcp";
 const token = process.env.MCP_BEARER_TOKEN;
 const hasDb = Boolean(process.env.DATABASE_URL);
 

@@ -8,7 +8,7 @@ import { dev } from '$app/environment';
  * bearer token by the remote functions — the bearer plugin makes that work.
  *
  * Defaults to the deployed server (it has CORS for localhost:5173). For
- * local-server dev, set VITE_AUTH_URL=http://localhost:8080 explicitly.
+ * local-server dev, set VITE_AUTH_URL=http://localhost:8484 explicitly.
  */
 export const authClient = createAuthClient({
 	baseURL: import.meta.env.VITE_AUTH_URL,
