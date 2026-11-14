@@ -31,6 +31,16 @@ services:
     image: sepia:local
     ports:
       - "8484:8484"
+    # Docker's embedded resolver (127.0.0.11) forwards to the servers listed
+    # here instead of the host's chain. That matters: on Docker Desktop the
+    # host hop goes through the VM's systemd-resolved, and it intermittently
+    # fails EVERY external lookup — `getaddrinfo EAI_AGAIN
+    # api.c-5.us-east-2.aws.neon.tech`, 72 occurrences between 2026-10-16 and
+    # 2026-11-14. Public resolvers remove that hop. See src/lib/failure-response.ts
+    # for the app-side half (retry + 503 instead of an HTML 500).
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     env_file:
       - .env
     environment:

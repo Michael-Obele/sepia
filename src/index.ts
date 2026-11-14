@@ -1,8 +1,14 @@
 import { McpServer } from "tmcp";
 import { HttpTransport } from "@tmcp/transport-http";
 import { ValibotJsonSchemaAdapter } from "@tmcp/adapter-valibot";
-import { DOCS_VERSION, type UserRow } from "@sepia/shared";
+import {
+  DOCS_VERSION,
+  describeError,
+  isPreSendNetworkError,
+  type UserRow,
+} from "@sepia/shared";
 import { MEMORY_CONTRACT } from "./instructions.ts";
+import { withErrorBoundary } from "./lib/failure-response.ts";
 import { SERVER_VERSION } from "./version.ts";
 import { auth, authEnabled, ensureAdmin, requireAuth } from "./auth.ts";
 import { handleOAuthRequest, oauthEnabled } from "./oauth.ts";
@@ -112,7 +118,9 @@ Bun.serve({
   // request that produces no bytes for 10s — a slow tool call, a cold DB
   // query — gets its connection dropped mid-flight.
   idleTimeout: 0,
-  async fetch(request) {
+  // The boundary matters as much as the routes: an uncaught throw makes Bun
+  // render its HTML crash page, which an MCP client cannot parse (2026-11-14).
+  fetch: withErrorBoundary(async (request: Request): Promise<Response> => {
     const url = new URL(request.url);
 
     // Health check for Fly's optional TCP check (NOT an HTTP smoke check —
@@ -339,11 +347,29 @@ Bun.serve({
     }
 
     return new Response("Not Found", { status: 404 });
+  }),
+  // Backstop for anything thrown outside the handler (e.g. a response stream
+  // error). Bun's default is an HTML error page; this is JSON.
+  error(error) {
+    console.error(`[error] unhandled: ${describeError(error)}`);
+    return Response.json(
+      { error: { code: "internal_error", message: "internal server error" } },
+      { status: 500 },
+    );
   },
 });
 
 // Bootstrap the admin account + adopt pre-tenant data (idempotent).
-await ensureAdmin();
+// A transient network failure must NOT crash-loop the process: the server can
+// listen and answer 503 + Retry-After until the database is reachable, which
+// beats having no listener at all. Configuration errors still throw loudly
+// (an auth-mode boot without ADMIN_* must never run ownerless).
+try {
+  await ensureAdmin();
+} catch (error) {
+  if (!isPreSendNetworkError(error)) throw error;
+  console.error(`[boot] admin bootstrap deferred: ${describeError(error)}`);
+}
 
 console.log(
   `memory MCP server listening on :${PORT} (/mcp) — auth: ${

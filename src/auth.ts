@@ -41,6 +41,7 @@ import {
   getUserByApiKey,
   getUserByEmail,
   getUserById,
+  isPreSendNetworkError,
   namespaces,
   oauthClients,
   oauthTokens,
@@ -51,6 +52,7 @@ import {
 } from "@sepia/shared";
 import { oauth, oauthEnabled } from "./oauth.ts";
 import { sendEmail } from "./lib/email.ts";
+import { failureResponse } from "./lib/failure-response.ts";
 
 const TRUSTED_ORIGINS = [
   "https://sepia.svelte-apps.me",
@@ -168,42 +170,61 @@ function unauthorized(): Response {
 /**
  * Resolve the authenticated user for a request, or return a 401 Response.
  * The returned user drives ALL data scoping downstream.
+ *
+ * A transient database failure is NOT a 401 and must not become a 500: the API
+ * key may be perfectly valid and the database simply unreachable. It is a 503
+ * with Retry-After — the one status that tells an MCP client to try again
+ * instead of showing the user an unattributed error (2026-11-14).
  */
 export async function requireAuth(request: Request): Promise<AuthResult> {
   const authHeader = request.headers.get("authorization") ?? "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
 
-  // Dev mode — no auth configured; every request acts as the dev user.
-  if (devMode) {
-    return { user: await ensureAdmin() };
+  try {
+    const user = await resolveUser(token, request);
+    return user ? { user } : unauthorized();
+  } catch (error) {
+    if (!isPreSendNetworkError(error)) throw error;
+    return failureResponse(
+      error,
+      new URL(request.url).pathname,
+      "authentication temporarily unavailable — the database is unreachable; retrying is safe",
+    );
   }
+}
 
-  if (token) {
-    // 1. Legacy global token → admin (self-host backward compat).
-    if (
-      process.env.MCP_BEARER_TOKEN &&
-      token === process.env.MCP_BEARER_TOKEN
-    ) {
-      return { user: await ensureAdmin() };
-    }
-    // 2. Better Auth API key (local editors: Claude Code, Cursor, …).
-    const keyUser = await getUserByApiKey(db(), token);
-    if (keyUser) return { user: keyUser };
-    // 3. OAuth 2.1 access token (web AIs).
-    if (oauthEnabled()) {
-      try {
-        const info = await oauth.verify(request);
-        const userId = info?.extra?.userId;
-        if (typeof userId === "string") {
-          const user = await getUserById(db(), userId);
-          if (user) return { user };
-        }
-      } catch {
-        // Not an OAuth token — fall through to 401.
+/** The token chain, in priority order. Returns the user, or undefined for 401. */
+async function resolveUser(
+  token: string,
+  request: Request,
+): Promise<UserRow | undefined> {
+  // Dev mode — no auth configured; every request acts as the dev user.
+  if (devMode) return ensureAdmin();
+
+  if (!token) return undefined;
+
+  // 1. Legacy global token → admin (self-host backward compat).
+  if (process.env.MCP_BEARER_TOKEN && token === process.env.MCP_BEARER_TOKEN) {
+    return ensureAdmin();
+  }
+  // 2. Better Auth API key (local editors: Claude Code, Cursor, …).
+  const keyUser = await getUserByApiKey(db(), token);
+  if (keyUser) return keyUser;
+  // 3. OAuth 2.1 access token (web AIs).
+  if (oauthEnabled()) {
+    try {
+      const info = await oauth.verify(request);
+      const userId = info?.extra?.userId;
+      if (typeof userId === "string") {
+        return await getUserById(db(), userId);
       }
+    } catch (error) {
+      // Not an OAuth token — fall through to 401. A network failure is no
+      // verdict on the token, so let it reach the caller's 503 boundary.
+      if (isPreSendNetworkError(error)) throw error;
     }
   }
-  return unauthorized();
+  return undefined;
 }
 
 let adminCache: UserRow | null = null;

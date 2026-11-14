@@ -14,7 +14,13 @@
  * Run from the repo root:  bun test
  */
 import { describe, expect, test } from "bun:test";
-import { isUniqueViolation, MemoryError, pgError } from "./errors.ts";
+import {
+  describeError,
+  isPreSendNetworkError,
+  isUniqueViolation,
+  MemoryError,
+  pgError,
+} from "./errors.ts";
 
 /** A stand-in for the driver error, carrying only the fields we read. */
 function driverError(code: string, constraint?: string) {
@@ -93,5 +99,99 @@ describe("isUniqueViolation", () => {
 
   test("false for a plain error", () => {
     expect(isUniqueViolation(new Error("nope"))).toBe(false);
+  });
+});
+
+/**
+ * The REAL chain a DNS failure produces — verified against
+ * `@neondatabase/serverless` 1.1.0 on 2026-11-14:
+ *
+ *   DrizzleQueryError          (.cause)
+ *     -> NeonDbError           (.sourceError — the driver does NOT use .cause)
+ *       -> TypeError           (code: EAI_AGAIN)
+ *
+ * Reading `.cause` twice finds nothing, which is why the app could not see the
+ * reason during that incident.
+ */
+function dnsFailureChain() {
+  const syscall = Object.assign(
+    new TypeError("getaddrinfo EAI_AGAIN api.c-5.us-east-2.aws.neon.tech"),
+    { code: "EAI_AGAIN", errno: -3001, syscall: "getaddrinfo" },
+  );
+  const driver = Object.assign(
+    new Error(`Error connecting to database: ${syscall}`),
+    { name: "NeonDbError", code: undefined, sourceError: syscall },
+  );
+  const drizzle = Object.assign(
+    new Error('Failed query: select "users"."id" from "apikey" …'),
+    { name: "DrizzleQueryError", cause: driver },
+  );
+  return drizzle;
+}
+
+describe("isPreSendNetworkError", () => {
+  test("true for a DNS failure hidden two layers down", () => {
+    expect(isPreSendNetworkError(dnsFailureChain())).toBe(true);
+  });
+
+  test("true for a raw connect failure", () => {
+    const refused = Object.assign(new Error("connect ECONNREFUSED"), {
+      code: "ECONNREFUSED",
+    });
+    expect(isPreSendNetworkError(refused)).toBe(true);
+  });
+
+  test("false for a reset after send — it may have been processed", () => {
+    // Retrying this class is how a transient blip duplicates a write.
+    const reset = Object.assign(new Error("socket hang up"), {
+      code: "ECONNRESET",
+    });
+    expect(isPreSendNetworkError(reset)).toBe(false);
+  });
+
+  test("false for ordinary errors, MemoryErrors, and non-errors", () => {
+    expect(isPreSendNetworkError(new Error("boom"))).toBe(false);
+    expect(
+      isPreSendNetworkError(new MemoryError("not_found", "x not found")),
+    ).toBe(false);
+    expect(isPreSendNetworkError(undefined)).toBe(false);
+    expect(isPreSendNetworkError("EAI_AGAIN")).toBe(false);
+  });
+});
+
+describe("describeError", () => {
+  test("leads with the root cause, not Drizzle's wrapper", () => {
+    const described = describeError(dnsFailureChain());
+    expect(described).toContain("getaddrinfo EAI_AGAIN");
+    expect(described.indexOf("getaddrinfo")).toBeLessThan(
+      described.indexOf("Failed query"),
+    );
+  });
+
+  test("adds a code the message does not already carry", () => {
+    const refused = Object.assign(new Error("connect failed"), {
+      code: "ECONNREFUSED",
+    });
+    expect(describeError(refused)).toBe("Error: connect failed (ECONNREFUSED)");
+  });
+
+  test("does not repeat a code the message already contains", () => {
+    const error = Object.assign(
+      new TypeError("getaddrinfo EAI_AGAIN api.example"),
+      { code: "EAI_AGAIN" },
+    );
+    expect(describeError(error)).toBe(
+      "TypeError: getaddrinfo EAI_AGAIN api.example",
+    );
+  });
+
+  test("truncates a link instead of dumping the whole SQL", () => {
+    const described = describeError(new Error("x".repeat(500)));
+    expect(described.endsWith("…")).toBe(true);
+    expect(described.length).toBeLessThan(250);
+  });
+
+  test("handles a thrown non-error", () => {
+    expect(describeError("boom")).toBe("boom");
   });
 });

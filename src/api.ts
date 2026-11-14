@@ -45,6 +45,9 @@ import {
   listTelemetry,
   deleteTelemetry,
   purgeExpiredTelemetry,
+  // Failure classification: a pre-send network error is transient, never a 500.
+  describeError,
+  isPreSendNetworkError,
   // Valibot schemas (single source of truth for input validation)
   NamespaceInput,
   EntityInput,
@@ -688,7 +691,18 @@ export async function handleApi(
     if (err instanceof MemoryError) {
       return error(err.code, err.message, statusFor(err));
     }
-    const message = err instanceof Error ? err.message : String(err);
-    return error("internal_error", message, 500);
+    // A transient connection failure never reached the database: it is not a
+    // 500 and the caller's request was fine. Say so, with the status that
+    // invites a retry (2026-11-14).
+    if (isPreSendNetworkError(err)) {
+      console.error(`[api] transient: ${describeError(err)}`);
+      return error(
+        "database_unreachable",
+        "database temporarily unreachable — the request did not run; retrying is safe",
+        503,
+      );
+    }
+    console.error(`[api] error: ${describeError(err)}`);
+    return error("internal_error", "internal server error", 500);
   }
 }

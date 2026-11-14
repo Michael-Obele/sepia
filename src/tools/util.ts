@@ -1,6 +1,10 @@
 import { McpError } from "tmcp";
 import { tool } from "tmcp/utils";
-import { fingerprintSession } from "@sepia/shared";
+import {
+  describeError,
+  fingerprintSession,
+  isPreSendNetworkError,
+} from "@sepia/shared";
 import { MemoryError } from "../db.ts";
 
 /**
@@ -69,8 +73,16 @@ export function safe<Schema extends { entries: Record<string, unknown> }, T>(
       if (error instanceof MemoryError) {
         return tool.error(`[${error.code}] ${error.message}`);
       }
-      const message = error instanceof Error ? error.message : String(error);
-      return tool.error(message);
+      // A pre-send connection failure did NOT run the operation, so say that
+      // plainly: the model retries instead of inventing a result. The raw
+      // Drizzle message (`Failed query: select …`) tells it nothing it can use.
+      if (isPreSendNetworkError(error)) {
+        return tool.error(
+          "[database_unreachable] the database was briefly unreachable and this " +
+            "operation did NOT run — retrying the same call is safe.",
+        );
+      }
+      return tool.error(describeError(error));
     }
   };
 }
