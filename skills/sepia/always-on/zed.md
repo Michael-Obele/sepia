@@ -1,50 +1,52 @@
 ## Sepia memory (always-on) — Zed
 
-<!-- sepia-docs-version: 1.15.2 -->
+<!-- sepia-docs-version: 1.16.1 -->
 
-You are connected to the user's personal Sepia memory server over MCP (`context_servers.sepia` in `~/.config/zed/settings.json`: `url: "https://sepia.fly.dev/mcp"` + `headers.Authorization: "Bearer TOKEN"`; or stdio bridge via `mcp-remote`). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
+You have **Sepia**, the user's memory server (MCP `sepia`): a knowledge graph in
+**namespaces** — entities, relations, memories. This file loads on every
+request, so it carries only the per-turn rules; the `sepia` Agent Skill has the
+full contract and the tool reference.
 
-> **MANDATORY for Zed — ALMOST EVERY MESSAGE:** Zed's Agent Panel does not auto-recall — you must `search` yourself. **Default to using Sepia on every turn** — `search` BEFORE you answer and persist AFTER you answer. Only skip for trivial chitchat ("hi", "thanks", "bye") with zero durable content. If in doubt, call Sepia. No search = guessing.
+### Once per session
 
-### Workflow — wake + briefing once at the top, then search every turn
+1. `wake` — retry up to 3×, seconds apart. The host sleeps when idle, so one
+   failure means you called during boot, not that memory is down.
+2. `manage_memory action="briefing"` — the user's standing rules. No keywords: a
+   rule you have not guessed cannot be found by search, which is why this read is
+   unconditional. Treat what it returns as binding. Before anything slow, metered,
+   destructive or expensive (install, build, deploy, delete, infra change), repeat
+   with `detail="all"`.
 
-**TOP OF THE SESSION — steps 0-1 run ONCE, before your first substantive action. Do NOT repeat them on later messages:**
+### Scope every call to the project
 
-0. Call `wake`, and retry until it succeeds. It is the cheapest call in the system and the only one built to be retried — the host sleeps when idle, so the first call of a chat often lands mid-boot. One failure means you called early, not that memory is down: retry up to 3×, a few seconds apart, and never skip to the briefing or abandon memory for the chat because of one.
-1. Call `manage_memory` with `action: "briefing"` — the user's **core standing rules** (everything tagged `always`, and only that — importance ranks rules, it never admits one). No keywords: a standing constraint cannot be found by keyword search, which is exactly why this read is unconditional. Treat what it returns as binding for the whole session. It also reports `other_standing` — the situational rules it did NOT return. **Before anything slow, metered, destructive, or expensive** (an install, build, deploy, deletion, or infra change), call it again with `detail: "all"`: the rule that bites in those moments is exactly the one a default load leaves out. **~1M-token context window?** Make that FIRST call with `detail: "all"` (and `max_chars` at its maximum) instead — the whole standing set is ~10k tokens (≈1% of your window), read once per session, priority-ordered with core first; core-by-default protects small contexts, it does not withhold rules from big ones. If you don't know your window size, keep the default.
+One namespace per project, named by **repo slug** — `kazoeru`, `ikoro`,
+`tomoshibi`. `personal` is the cross-project bucket, and the only one the free
+plan has.
 
-**EVERY TURN AFTER THAT (except trivial chitchat) — search before you answer:**
+1. `manage_namespace action="ensure" name="<repo-slug>"` once per session. It is
+   get-or-create, so it cannot fail on "already exists".
+2. Pass `namespace="<repo-slug>"` on **every** memory, entity, relation and
+   briefing call. An unscoped write lands in `personal` — the one mistake that
+   rebuilds the noise this split exists to remove.
+3. Tag a rule `always` only when it applies in **every** repo and session; those
+   load everywhere. Anything project-specific stays in that project.
+4. `plan_limit` from `ensure`? Stay in `personal` and carry on. Do not retry, and
+   do not ask the user to upgrade mid-task.
 
-2. Call `search` with 2-5 keywords from the user's current message + task (e.g. `search query="auth rate limiting"`). If sparse, also call `manage_relation` with `action: "traverse"` (`start_id` = the top entity, `depth` 2-3) to pull its neighborhood.
-3. Weave hits into your answer (`From your memory: ...`). If nothing, say so — never fabricate.
+### Every turn
 
-**AFTER you answer (every turn where you learned something):**
+3. `search` with 2–5 keywords **before** you answer. Zero hits or `partial: true`
+   means retry with one distinctive word before concluding nothing exists. Never
+   fabricate a memory.
+4. After you answer, persist anything durable **in the same turn**: a preference,
+   a decision and why, a project fact, a convention, a correction. A correction or
+   complaint is a rule — `instruction`/`preference`, importance ≥ 0.8. Search
+   first, then `action=update` rather than writing a duplicate.
 
-1. If you learned a durable fact — preference, decision + why, project fact, stack/tool choice, person/role, convention, user correction — persist IMMEDIATELY in the same turn after your response:
-   - `manage_entity` find → create (with `summary`) if missing
-   - `manage_memory` create (`content`, `type`, `importance`, `entity_ids` 1-3)
-   - `manage_relation` to link graph (`project —uses→ tool`)
-2. **A constraint is always worth storing — including a complaint.** A stated preference, a correction, or an objection to how you just worked is a durable rule: store it in the **same turn**, `instruction` for behaviour / `preference` for a choice, importance >= 0.8, tagged `always` when it applies everywhere. Storing it a turn later is too late.
-3. Prefer update over duplicate — search first, then `action=update`.
-4. **Importance 0-1:** 0.9+ identity/core pref, 0.6-0.8 project fact/decision, 0.3-0.5 observation, ≤0.2 transient.
-5. **Never store:** ephemeral chat, code snippets, credentials/secrets.
-6. **Never call `prune_memories`** unless the user explicitly asks — it is a destructive maintenance sweep (archives stale, purges archived), NOT a way to save. Saving is `manage_memory`.
+### Never
 
-> Rule of thumb: If the user sent a message with any substantive content, you should have called `search` before replying and considered a `manage_memory`/`manage_entity` write after replying. Two Sepia calls per turn is normal and expected.
-
-### "Save to memory" → Sepia (not editor memory)
-
-When the user says **"save to memory"**, **"remember this"**, **"save this"**, **"remember that"**, **"save this for later"**, or any variant — ALWAYS write to **Sepia** (`manage_memory` + `manage_entity` if needed), NOT just the editor's built-in memory. Editor memory is ephemeral/session-local; Sepia (`personal` namespace by default) is the durable source of truth across sessions, editors, and AIs. Treat "save to memory" as an explicit instruction to call `manage_memory` create immediately in the same turn.
-
-### Conversation migration (handoff digests)
-
-When the user says **"save this conversation"**, **"hand off to another AI"**, **"migrate my context"**, or switches assistants mid-task, use `manage_memory` action=ingest with a `conversation` payload. The DEPARTING agent distills — you have the context, you are the best distiller.
-
-- Payload: `summary` (≤4000, structured markdown), `conversation_id` (groups digests of one conversation), `title` (human-readable — how you tell them apart), `status` (active|paused|done), `decisions`/`preferences`/`instructions`/`observations`/`open_questions` (keep evidence VERBATIM — exact errors, paths, IDs), `entities` (find-or-create), `source` {ai, ref}, optional `transcript` (only if the raw log exists).
-- The server atomically creates: digest (tag `conversation`, importance 0.85, protected from consolidation) + typed constituents + entities. One digest per major topic, same `conversation_id` groups them.
-- **Resume**: `search` q="" tags=["conversation"] → prefer status=active → read the digest → pull constituents via `query` tags (decision, open-question, …).
-- **Mark done**: `manage_memory` action=update on the digest with `metadata: {...existing, status: "done"}` (metadata REPLACES — get first, then merge).
-
-This file has the essentials; for full tool schemas and examples, load the `sepia` skill (`SKILL.md`) if available. For the full capability overview (all 7 tools, conversation migration, REST API), fetch https://sepia.fly.dev/llms.txt. See also `src/instructions.ts` (source of truth).
-
-<!-- Source of truth: src/instructions.ts (MEMORY_CONTRACT). Keep in sync. -->
+- Write to editor memory when the user says "save this" / "remember this" — call
+  `manage_memory` in that same turn. Sepia is the durable source of truth.
+- Call `prune_memories` unless the user asks to prune. It deletes; saving is
+  `manage_memory`.
+- Store credentials, secrets, or ephemeral chat.

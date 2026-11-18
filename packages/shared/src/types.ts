@@ -7,198 +7,105 @@
 export const DEFAULT_NAMESPACE = "personal";
 
 /**
- * The API key's leading identity string — what makes a sepia credential
- * recognisable on sight, in a log, or to a secret scanner (`sepia_Ab3xk…`).
- *
- * Same convention as `ghp_` (GitHub), `sk_live_` (Stripe) and `sk-ant-`
- * (Anthropic): a fixed, greppable brand prefix followed by high-entropy
- * randomness. Read by the auth server (as the plugin's `defaultPrefix`), by
- * key generation, and by the dashboard — keys minted by any path must be
- * indistinguishable.
- *
- * Defined here rather than in `db/lib/users.ts` because the dashboard renders
- * it in a component. This module imports nothing, which is what makes
- * `@sepia/shared/types` safe to pull into a browser bundle. The barrel entry
- * point is not — see the note in `index.ts`.
+ * The `sepia_` credential prefix, so a key is recognisable in a log or to a secret
+ * scanner. Lives here, not in the DB layer, because the dashboard renders it — this
+ * module imports nothing, which is what makes it safe in a browser bundle.
  */
 export const API_KEY_PREFIX = "sepia_";
 
 /**
- * The memory usage contract — the "remember without being asked" rules.
- * Sent to the model via the MCP `instructions` field in the `initialize`
- * handshake (supporting clients inject it into the system prompt), carried
- * by the Agent Skill, and shown on the dashboard's Connect page so users
- * can paste it into web AIs' custom instructions (which may not read the
- * MCP instructions field).
- *
- * Source of truth: this constant. `src/instructions.ts` re-exports it.
+ * The memory contract: sent via the MCP `instructions` field, carried by the Agent
+ * Skill, and shown on the dashboard's Connect page for web AIs that ignore it.
+ * Source of truth is this constant; `src/instructions.ts` re-exports it.
  */
-export const MEMORY_CONTRACT = `SEPIA MEMORY — MANDATORY. You are connected to the user's personal memory server
-(sepia) over MCP at /mcp. It stores a knowledge graph in namespaces (default "personal"):
-entities (people, projects, tools, concepts, repos), relations (typed, weighted edges),
-memories (facts/observations/preferences/instructions with importance 0-1).
+export const MEMORY_CONTRACT = `SEPIA MEMORY — MANDATORY. You are connected to Sepia, the user's memory
+server, over MCP at /mcp. It stores a knowledge graph in **namespaces**: entities (people,
+projects, tools, concepts, repos), relations (directed edges) and memories
+(fact | observation | preference | instruction, each with importance 0-1).
 
-TYPES — use the canonical values, never invent new ones:
-- Entity type (manage_entity): person | project | tool | concept | repo. Unknown types
-  are auto-normalized to concept + tag, so prefer the canonical list.
-- Memory type (manage_memory): fact (verified/decided) | observation (what you saw
-  happen) | preference (user's stated or observed choice) | instruction (how to behave).
-- Tags (both): short lowercase hyphenated topical labels (e.g. user-experience, auth,
-  performance) for discovery — add 1-4 per write when the topic is recurring.
+ONCE PER SESSION, BEFORE ANY WORK
+1. wake — retry up to 3x a few seconds apart. The host sleeps when idle, so one failure means
+   you called during boot, not that memory is down.
+2. manage_memory action="briefing" — the user's standing rules. No keywords: a rule you have not
+   guessed cannot be found by search, which is why this read is unconditional. Treat what it
+   returns as binding. Before anything slow, metered, destructive or expensive (install, build,
+   deploy, delete, infra change), repeat it with detail="all".
+Neither repeats on later messages in the same chat.
 
-RULE 0 — THIS IS NOT OPTIONAL. If you skip memory, you WILL hallucinate preferences,
-repeat questions, and contradict past decisions. Using sepia is not a suggestion — "wake"
-then "briefing" are your first two tool calls, in that order, at the top of the session.
+SCOPE EVERY CALL TO THE PROJECT
+Namespaces are one per project, named by repo slug (kazoeru, ikoro, tomoshibi). "personal" is the
+cross-project bucket and the only namespace the free plan has.
+1. manage_namespace action="ensure" name="<repo-slug>" once per session. It is get-or-create, so
+   "already exists" is never an error to recover from.
+2. Pass namespace="<repo-slug>" on EVERY memory, entity, relation, briefing and query call. A write
+   with no namespace lands in "personal" — the one mistake that rebuilds the noise scoping exists
+   to remove.
+3. Tag a rule "always" only when it applies in every repo and every session; those load in every
+   namespace. Anything project-specific stays in that project.
+4. plan_limit from ensure or create? Stay in "personal" and carry on. Do not retry, and do not ask
+   the user to upgrade mid-task.
 
-MANDATORY — ALMOST EVERY MESSAGE: Default to using Sepia on every turn — search BEFORE
-you answer and persist AFTER you answer. Only skip for trivial chitchat ("hi", "thanks",
-"bye") with zero durable content. If in doubt, call Sepia. Skipping memory = hallucinating.
+EVERY TURN — RECALL
+Call search with 2-5 keywords from the request BEFORE you answer. Skip only for trivial chitchat.
+Zero hits, or partial:true, means retry with ONE distinctive word before concluding nothing exists
+— then say so. Never fabricate a memory. Cite what came from memory when it matters.
+identical results for different q values means the filter was NOT applied: check
+filters_applied / ignored_args before blaming ranking.
 
-STANDING RULES — THE THING YOU CANNOT SEARCH FOR. Some memories are standing rules: how
-the user wants you to behave, everywhere, always. They are exactly the rules you do not yet
-know you need — you cannot keyword-search for a rule whose existence you have not guessed.
-So they are loaded unconditionally, once per session, BEFORE any work starts.
-- core = every memory tagged "always" and ONLY that (importance ranks rules within the
-  briefing; it never admits or removes one — tagging "always" is the single switch)
-- read them with manage_memory action=briefing (one call, no keywords)
-- briefing returns CORE by DEFAULT. The tail (situational and project-scoped rules) is opt-in
-  via detail="all". Core is a handful of rules and stays small; the tail grows without bound,
-  so loading it every session gets steadily more expensive and less useful — and a long
-  constraint list is self-defeating, because the rules that matter stop standing out
-- a rule tagged "always" applies in EVERY repo and EVERY session; a rule that is specific to
-  one project must NOT be tagged "always"
+EVERY TURN — PERSIST
+After you answer, store anything durable in the SAME turn: a preference, a decision and its reason,
+a project fact, a person's role, a convention, a stack choice, a correction. A correction or a
+complaint about how you just worked is a rule — instruction for behaviour, preference for a choice,
+importance >= 0.8. Search first, then action=update rather than writing a duplicate. Entity before
+memory, 1-3 entity_ids, then manage_relation to wire the graph. Never store credentials, secrets,
+ephemeral chat or code snippets.
 
-WAKE + BRIEFING — ONCE PER SESSION, AT THE TOP OF THE CHAT, BEFORE ANYTHING ELSE.
-Neither step belongs to the every-turn loop below; do not repeat them on later messages.
+"SAVE THIS" MEANS SEPIA
+"save to memory", "remember this", "save this" — write to Sepia in that same turn, never the
+editor's built-in memory. It is the durable source of truth across sessions, editors and AIs.
 
-0. Call "wake", and retry it until it succeeds. It is the cheapest call in the system and
-   the only one whose job is to be retried: the host sleeps when idle, so the first call of
-   a chat often lands mid-boot. If it errors or reports ready:false, retry up to 3 times,
-   a few seconds apart, before doing anything else. One failed "wake" means you called
-   early — NOT that memory is down. Never skip ahead to the briefing on a failed wake, and
-   never abandon memory for the rest of the chat because of one failure.
-1. Call manage_memory action=briefing, and treat what it returns as BINDING for the whole
-   session. It returns the user's CORE standing rules — the ones that must hold before you
-   know anything about the task. The response also reports other_standing: the situational
-   rules it did NOT return. BEFORE anything slow, metered, destructive, or expensive (an
-   install, build, deploy, deletion, or infra change), call it again with detail="all" and
-   read the rest — the rule that bites in those moments is exactly the one a default load
-   leaves out. A ~1M-token context window? Then make THAT FIRST call detail="all" with
-   max_chars at its maximum instead — the full standing set is only ~10k tokens (≈1% of your
-   window), it is read once per session, and core-by-default exists to protect small
-   contexts, not to withhold rules from big ones. If you don't know your window size, keep
-   the default. Do NOT call briefing again on later messages in this chat: you already have
-   the rules, and re-reading them every turn spends tokens to learn nothing. Re-briefing is
-   for a NEW chat only.
+NEVER
+prune_memories is the only destructive tool. Never call it to save anything, and never proactively —
+only when the user explicitly asks to prune. Saving is manage_memory.
 
-EVERY TURN AFTER THAT (except trivial chitchat) — search before you answer:
-2. Call "search" with 2-5 keywords from the user's current message + task (e.g. query="auth rate limiting"). If sparse, also call manage_relation with action="traverse" (start_id = the top entity, depth 2-3) to pull its neighborhood.
-   Search is best-effort: rows matching MORE of your words rank first, so it never returns 0 just because one word is absent. If it returns 0 hits or partial: true, retry with ONE distinctive keyword or a looser filter BEFORE concluding nothing exists.
-   DIAGNOSTIC: identical results for different q values = the filter was NOT applied — wrong tool, or a parameter the schema lacks. Check the schema and the response's filters_applied/ignored_args before theorizing about ranking or tokenization. Ranked keyword search lives ONLY in the search tool.
-3. Weave hits into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
-
-AFTER you answer (every turn where you learned something):
-1. If you learned a durable fact — preference, decision + why, project fact, stack/tool choice, person/role, convention, user correction — persist IMMEDIATELY in the same turn after your response:
-   - ensure entity exists (manage_entity find → create with summary if missing)
-   - manage_memory create with content, type, importance, entity_ids (1-3)
-   - manage_relation to connect graph (project —uses→ tool, user —prefers→ X)
-2. A CONSTRAINT IS ALWAYS WORTH STORING — INCLUDING A COMPLAINT. A user constraint, a stated
-   preference, a correction, or a complaint about how you just worked IS a durable rule: store
-   it in the SAME turn, type="instruction" (how to behave) or type="preference" (a choice),
-   importance >= 0.8. Tag it "always" when it applies everywhere. Never file a user constraint
-   as transient. Storing it a turn later is too late — the rule exists precisely for the turn
-   in which you did not yet know you needed it.
-   A TODO is NOT a rule: work to do belongs in an observation or a project-scoped fact, never
-   in instruction/preference — those are the types the briefing loads, so filing todos as
-   instructions dilutes the rules that actually matter.
-3. PREFER update over duplicate: search first, then manage_memory/entity action=update.
-4. SCORE importance 0-1: 0.9+ identity/core preference, 0.6-0.8 active project fact/decision, 0.3-0.5 observation/person, ≤0.2 transient (will decay).
-5. NEVER store: ephemeral chat, code snippets, credentials/secrets, transient details. Sepia is not a vault — refuse secrets.
-6. NEVER call "prune_memories" to save anything — it is NOT a write tool. It is a destructive maintenance sweep (archives stale memories, permanently deletes purged rows), and it exists only for when the user explicitly asks to prune/clean up. Persisting is manage_memory.
-
-Rule of thumb: If the user sent a message with any substantive content, you should have called search before replying and considered a manage_memory/manage_entity write after replying. Two Sepia calls per turn is normal and expected.
-
-"SAVE TO MEMORY" → SEPIA (not VS Code / editor memory): When the user says "save to memory", "remember this", "save this", "remember that", "save this for later", or any variant — ALWAYS write to Sepia (manage_memory + manage_entity if needed), NOT just the editor's built-in memory. Editor memory is ephemeral/session-local; Sepia (personal namespace by default) is the durable source of truth across sessions, editors, and AIs. Treat "save to memory" as an explicit instruction to call manage_memory create immediately in the same turn.
-
-MASS EDITS — to fix many rows at once (e.g. reclassify types, add tags), use
-manage_entity/manage_memory action=batch_update with a where filter (type, namespace,
-query/q, tags) + update — it returns the count of rows changed. Prefer this over
-repeated single updates.
-
-CONVERSATION MIGRATION (handoff digests) — when the user says "save this conversation",
-"hand off to another AI", "migrate my context", or is switching assistants mid-task,
-use manage_memory action=ingest with a conversation payload. The DEPARTING agent
-distills — you have the context, you are the best distiller. Rules:
-- One digest per major topic, all grouped by the same conversation_id (metadata groups
-  them; search tags=["conversation"] lists them).
-- ALWAYS give a human-readable title (e.g. "Auth migration — Neon vs Supabase") and a
-  status: active (resume me) | paused | done. This is how conversations are told apart
-  when resuming — never skip it.
-- summary ≤4000 chars: context, decisions, open questions, pointers. Anti-dump: if it
-  doesn't fit, split into more digests — never pad.
-- Keep evidence VERBATIM in decisions/preferences/instructions/observations: exact
-  errors, paths, IDs, commands. Never soften them (summaries lose fidelity).
-- transcript is OPTIONAL — only include it if the raw log actually exists (online chat
-  models may not expose one); source.ref (session path or share URL) is the primary
-  fidelity pointer.
-- The server auto-tags digests with "conversation" and protects them from
-  consolidation. Constituents are regular memories with metadata.conversation_id.
-- When the user says "load my context" / "continue from my last conversation" /
-  "what did we do last session": search q="" tags=["conversation"] first, read the
-  digest, then pull constituents via query tags or the digest's entity links.
-- RESUME FLOW: prefer the digest with status=active (or the most recent). When a
-  conversation is finished, update its digest metadata.status to "done" (get the
-  digest first, then update with the full metadata + new status — metadata REPLACES).
-  When resuming a paused one, set it back to "active".
-
-TRIGGERS — at the top of a session, in this order and once each: "wake", then the briefing
-(steps 0-1 above). NEVER a second time on later messages in that chat. Then every turn,
-search when user says: "remember", "recall", "what do we know",
-"save this", "do you remember", prefers, decided, uses, chose, convention.
-ALSO ingest when user says: "save this conversation", "hand off", "migrate context",
-"switch to another AI", "continue this elsewhere".
-
-FAILURE MODE: if you answer without searching, you are guessing. If you start work without
-the briefing, you are guessing about how the user wants you to work — which is how you burn
-their bandwidth, their money, or their trust. Wake first, then briefing, then search: the
-first two once per session, the last one every turn.`;
+Full contract, tool reference and the scoping guide: the "sepia" Agent Skill.
+`;
 
 /**
- * Condensed version of the memory contract for web AIs' custom-instructions
- * fields (ChatGPT, Grok, Claude web, …) — short enough to fit comfortably
- * and focused on the behaviors that matter most.
+ * The short form, for surfaces that take a pasteable block (a web AI's custom
+ * instructions field). Same two loops, no reasoning.
  */
-export const MEMORY_CONTRACT_QUICK = `You are connected to a memory server (Sepia) over MCP. Use it on ALMOST EVERY turn.
+export const MEMORY_CONTRACT_QUICK = `You are connected to Sepia, the user's memory server, over MCP. Use it on almost
+every turn.
 
-FIRST, once per session and before any real work: call "wake" — retry it up to 3 times if it fails or reports ready:false, because the host sleeps when idle and the first call often lands mid-boot. One failed wake means you called early, not that memory is down. Then call "manage_memory" with action=briefing. That returns your CORE standing rules — everything tagged "always" and only that (importance ranks them; the tag decides membership). Treat them as binding. They cannot be found by keyword search, which is why they are read unconditionally. Do NOT call briefing again on later messages in the same chat — you already have the rules. It also reports other_standing: the situational rules it did not return. Before anything slow, metered, destructive or expensive (install, build, deploy, deletion, infra), call it again with detail="all". If your context window is ~1M tokens, make the FIRST call with detail="all" instead — the full standing set is only ~10k tokens and this read happens once per session.
+Once per session: call wake (retry up to 3x — the host sleeps), then
+manage_memory action="briefing" for the user's standing rules. Treat them as
+binding. Before anything slow, metered, destructive or expensive, repeat the
+briefing with detail="all".
 
-BEFORE you answer (every turn except trivial chitchat): call "search" with 2-5 keywords about the task. Search is best-effort (rows matching more of your words rank first) — if it returns 0 hits or partial: true, retry with ONE distinctive keyword before concluding nothing exists. Weave results into your answer ("From your memory: ..."). If nothing, say so — never fabricate.
+Scope to the project: call manage_namespace action="ensure" name="<repo-slug>" once,
+then pass namespace="<repo-slug>" on every read and write. "personal" is the
+cross-project bucket and the only namespace on the free plan. A plan_limit error
+means continue in "personal" — do not retry.
 
-AFTER you answer (every turn where you learned something): persist durable facts immediately — manage_entity find → create, manage_memory create (type: fact | observation | preference | instruction; importance 0-1), manage_relation to link the graph. A user constraint, correction, or complaint about how you just worked is a durable rule: store it in the SAME turn, importance >= 0.8, tagged "always" when it applies everywhere.
+Every turn: search with 2-5 keywords before you answer; persist durable facts,
+decisions and corrections in the same turn, after searching for an existing
+memory to update. Tag a rule "always" only when it applies in every repo and every
+session.
 
-"Save to memory" / "remember this" → ALWAYS write to Sepia (manage_memory), NOT editor memory. Editor memory is ephemeral; Sepia (personal namespace) is durable. Treat it as an explicit instruction to call manage_memory create immediately.
+"Save to memory" means Sepia, not the editor's built-in memory. Never call
+prune_memories unless the user asks to prune — it deletes.
+`;
 
-NEVER store: ephemeral chat, code snippets, credentials, secrets.
-NEVER call "prune_memories" — it is a destructive maintenance sweep, NOT a way to save; only on explicit user request.
-
-When the user says "save this conversation" / "hand off to another AI": manage_memory action=ingest with a conversation digest (title, status active|paused|done, decisions/preferences/instructions/observations verbatim).
-
-Two Sepia calls per turn is normal. If you answer without searching, you are guessing. Search first.`;
 
 /**
- * Version of the agent-facing docs (contract, SKILL.md, always-on files,
- * llms.txt). Bump when any of them change, then run
- * `bun run scripts/stamp-docs-version.ts` to stamp it into every file — the
- * `sepia-docs-version` comment, the `Docs version:` line and the `version:`
- * YAML frontmatter alike (declared in `scripts/docs-manifest.ts`).
- * Served at /version so installed copies can be checked for staleness.
- *
- * This is the ONLY version concept. A `version:` in a frontmatter is not a
- * separate "skill version" — nothing reads or bumps it — and treating it as
- * one froze VS Code / Cursor / SKILL.md at 1.0.0 while every other marker
- * advanced.
+ * Version of the agent-facing docs. Bump, then run `scripts/stamp-docs-version.ts` — it
+ * writes every marker declared in `scripts/docs-manifest.ts`. Served at /version so
+ * installed copies can be checked. This is the ONLY version concept: the `version:`
+ * frontmatter key is not a separate "skill version", and treating it as one froze three
+ * files at 1.0.0 while every other marker advanced.
  */
-export const DOCS_VERSION = "1.15.2";
+export const DOCS_VERSION = "1.16.1";
 
 /** The four memory types. */
 export const MEMORY_TYPES = [
@@ -220,12 +127,8 @@ export const ENTITY_TYPES = [
 export type EntityType = (typeof ENTITY_TYPES)[number];
 
 /**
- * Normalize a free-form entity type to a canonical one. Case-insensitive
- * match against the canonical list; anything unknown becomes `concept` with
- * the original value preserved as a tag so no information is lost.
- *
- * Deliberately NO alias map — semantic reclassification (e.g. "project-migration"
- * → project) is done via `manage_entity` action=batch_update, not hardcoded here.
+ * Canonical entity type, case-insensitively. Unknown becomes `concept` with the original kept as
+ * a tag. No alias map on purpose — reclassification is a `batch_update`, not a hardcoded table.
  */
 export function normalizeEntityType(type: string): {
   type: EntityType;
@@ -280,46 +183,23 @@ export const QUERY_LIMIT_MAX = 50;
 export const TRAVERSE_DEPTH_MAX = 3;
 
 /**
- * Standing rules — the "how to behave" memories that must be in context BEFORE work
- * starts, because a constraint cannot be found by relevance search: relevance is computed
- * against a task that has not been scoped yet. Read them with `manage_memory action=briefing`.
- *
- * A memory is CORE when — and ONLY when — it carries `ALWAYS_TAG` (tag-only core,
- * 2026-09-24). Importance ranks rows within the briefing; it never admits or removes one.
- * The old `importance >= CORE_IMPORTANCE` half is gone: it silently promoted any ≥0.9 row
- * (project-scoped rules included) into every session and made removal impossible without
- * corrupting rank.
+ * CORE means carrying this tag, and only that. Importance ranks within the briefing and
+ * never admits a row — the old `>= CORE_IMPORTANCE` half promoted any 0.9 row (project
+ * rules included) into every session and made removal impossible without corrupting rank.
  */
 export const ALWAYS_TAG = "always";
-/**
- * Rank boundary within the briefing — NOT membership. Rows at/above it sort at the top of
- * their slice; only `ALWAYS_TAG` decides whether a row is in core at all. Kept exported
- * because the dashboard uses it as the promote/demote step boundary.
- */
+/** Rank boundary, NOT membership — only `ALWAYS_TAG` decides core. Exported for the dashboard's promote/demote step. */
 export const CORE_IMPORTANCE = 0.9;
-/**
- * Which ranking engine `search` uses. `coverage` is the default (see search.ts);
- * `bm25` is the ranked alternative over Postgres `tsvector` columns. Both run in
- * Postgres — there is no external search service.
- */
+/** `coverage` is the default; `bm25` ranks the Postgres tsvector columns. Both in Postgres. */
 export const SEARCH_ENGINES = ["coverage", "bm25"] as const;
 export type SearchEngine = (typeof SEARCH_ENGINES)[number];
 
 /** Memory types the briefing covers. An `always`-tagged row of any type is included too. */
 export const BRIEFING_TYPES = ["instruction", "preference"] as const;
 /**
- * Which slice of the standing rules a briefing returns.
- *
- * `core` (the default) is the guarantee: the rules that must be in context BEFORE any work,
- * because relevance search cannot find a constraint you have not guessed at. `all` adds the
- * tail — situational and project-scoped rules — and is meant to be requested explicitly,
- * immediately before something slow, metered, destructive, or expensive, or on the FIRST
- * session-start call when the context window is large enough (~1M tokens) to absorb the whole
- * set once per session without competing for room.
- *
- * The split is not about saving tokens for its own sake: core is STABLE (single digits) while
- * the tail grows without bound, so anything that loads the tail by default gets worse over
- * time. Measured 2026-09-20: core 9 rules ≈ 886 tokens, tail 235 rules ≈ 8.5k tokens.
+ * `core` (default) is the guarantee — rules needed before any work, which search cannot find.
+ * `all` adds the unbounded tail; ask explicitly before anything slow, metered or destructive.
+ * Core is stable and the tail is not, so loading the tail by default degrades over time.
  */
 export const BRIEFING_DETAILS = ["core", "all"] as const;
 export type BriefingDetail = (typeof BRIEFING_DETAILS)[number];
@@ -333,15 +213,7 @@ export const BRIEFING_ITEM_CHARS = 400;
 export const BRIEFING_CHARS_DEFAULT = 8000;
 /** Hard cap on rows fetched while budgeting, so `omitted` stays bounded work. */
 export const BRIEFING_FETCH_MAX = 500;
-/**
- * Ceiling on `max_chars` — deliberately `FETCH_MAX * ITEM_CHARS`: the most any briefing can
- * physically return, so `detail: "all"` at max is *everything*, never a silent subset.
- *
- * Raised 40000 → 200000 (2026-09-24): the real standing set hit 37,527 chars — 94% of the
- * old cap and growing — which would have made "request the full briefing" (the large-context
- * instruction) truncate within weeks. ~200k chars ≈ 50k tokens: trivial for a 1M-token window,
- * still an explicit opt-in for everyone else (`detail: "core"` never reads this at all).
- */
+/** `FETCH_MAX * ITEM_CHARS` — the most a briefing can physically return, so `all` at max is everything. */
 export const BRIEFING_CHARS_MAX = BRIEFING_FETCH_MAX * BRIEFING_ITEM_CHARS;
 
 /** Consolidation policy (days). */
