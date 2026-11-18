@@ -147,6 +147,19 @@ export const MemoryUpdateInput = v.object({
     v.pipe(v.array(uuidSchema), v.maxLength(MAX_ENTITY_LINKS)),
   ),
   tags: v.optional(tagsSchema),
+  /**
+   * Move the row to another namespace. The one operation that makes a
+   * per-project split usable after the fact: a misfile is otherwise permanent,
+   * and `batch_update` could not fix a whole batch of them.
+   */
+  namespace: v.optional(
+    v.pipe(
+      v.string(),
+      v.description(
+        "Move to this namespace (repo slug). Pass with batch_update to refile many rows at once.",
+      ),
+    ),
+  ),
 });
 
 /** Batch-update entities — where filters + update fields + optional limit. */
@@ -209,14 +222,9 @@ export const ConversationEntity = v.object({
 });
 
 /**
- * A distilled conversation (handoff digest). The DEPARTING agent builds this
- * at the end of a session so the NEXT agent can continue without the raw
- * transcript. One digest per major topic — group multiple digests with the
- * same `conversation_id`.
- *
- * Technique (not dependency): query-aware compression — keep decisions,
- * preferences, instructions, and exact observations VERBATIM; drop filler.
- * The digest is the entry point; constituents are the evidence.
+ * A handoff digest built by the departing agent. Keep decisions, preferences and exact
+ * observations verbatim; the digest is the entry point, constituents are the evidence.
+ * One digest per major topic, grouped by `conversation_id`.
  */
 export const ConversationInput = v.object({
   /** The digest — structured markdown, ≤4000 chars (anti-dump: split into more digests, don't pad). */
@@ -298,7 +306,12 @@ export const SearchInput = v.looseObject({
     ),
   ),
   namespace: v.optional(
-    v.pipe(v.string(), v.description("Restrict to a namespace")),
+    v.pipe(
+      v.string(),
+      v.description(
+        "Restrict to a namespace (repo slug). Omit to search every namespace.",
+      ),
+    ),
   ),
   // Memory type (fact/observation/preference/instruction) OR entity type
   // (person/project/tool/concept/repo) — search covers both axes.
@@ -327,13 +340,7 @@ export const SearchInput = v.looseObject({
     ),
     SEARCH_LIMIT_DEFAULT,
   ),
-  /**
-   * The precision dial. Default is best-effort recall; this trades it for
-   * precision when a broad query returns common-word noise. Pair it with
-   * `best_matched_terms` from a previous call (that is the ceiling worth asking
-   * for). A too-high value returns 0 hits with `terms` present — that is the
-   * filter doing its job, not an empty memory store.
-   */
+  /** Precision dial: pair with `best_matched_terms`. Too high returns 0 hits — that is the filter working. */
   min_terms: v.optional(
     v.pipe(
       v.number(),
@@ -344,12 +351,7 @@ export const SearchInput = v.looseObject({
       ),
     ),
   ),
-  /**
-   * Ranking engine override. Normally left unset: the server decides via
-   * `SEARCH_ENGINE` so a change of ranking model is measured across real traffic
-   * rather than chosen per call. Exposed for testing and for forcing the other
-   * engine when comparing results.
-   */
+  /** Leave unset: the server picks via `SEARCH_ENGINE` so a ranking change is measured. */
   engine: v.optional(
     v.pipe(
       v.picklist([...SEARCH_ENGINES]),
@@ -361,15 +363,9 @@ export const SearchInput = v.looseObject({
 });
 
 /**
- * Params for a graph traversal: which entity to start from, and how many hops.
- *
- * NOT a tool schema — `traverse_graph` was folded into `manage_relation`
- * action="traverse" in 1.15.0, so it is absent from TOOL_NAMES and the
- * published snapshot. It stays here because the traversal itself is still a
- * real shared operation with one set of bounds: the dashboard's `getGraph`
- * remote query validates with it, and the MCP action documents the same
- * `start_id`/`depth` (declared inline inside RelationToolInput, which is a
- * looseObject covering every action).
+ * Traversal bounds. NOT a tool schema — `traverse_graph` folded into
+ * `manage_relation action=traverse`. Kept because the dashboard's `getGraph` validates
+ * with it and the MCP action documents the same `start_id`/`depth`.
  */
 export const TraverseInput = v.object({
   start_id: v.pipe(uuidSchema, v.description("Entity UUID to start from")),
@@ -394,12 +390,14 @@ export const NamespaceToolInput = v.looseObject({
   action: v.pipe(
     v.union([
       v.literal("create"),
+      v.literal("ensure"),
       v.literal("list"),
       v.literal("get"),
+      v.literal("update"),
       v.literal("delete"),
     ]),
     v.description(
-      "create (name, description?) | list | get (id or name) | delete (id or name — cascades all contents)",
+      "create (name, description?) | ensure (name — get-or-create, idempotent; the per-session call) | list (all namespaces + counts + plan) | get (id or name) | update (id or name + name?/description? — rename or describe) | delete (id or name — cascades all contents)",
     ),
   ),
   name: v.optional(
@@ -407,7 +405,7 @@ export const NamespaceToolInput = v.looseObject({
       v.string(),
       v.minLength(1),
       v.maxLength(64),
-      v.description("Namespace name (1-64 chars)"),
+      v.description("Namespace name (1-64 chars) — use the repo slug"),
     ),
   ),
   id: v.optional(
@@ -416,6 +414,15 @@ export const NamespaceToolInput = v.looseObject({
   description: v.optional(
     v.pipe(v.string(), v.description("Optional description")),
     "",
+  ),
+  /** update: the new name, when renaming (e.g. the repo was renamed). */
+  new_name: v.optional(
+    v.pipe(
+      v.string(),
+      v.minLength(1),
+      v.maxLength(64),
+      v.description("update: rename to this (repo slug)"),
+    ),
   ),
 });
 
@@ -589,7 +596,7 @@ export const MemoryToolInput = v.looseObject({
       v.literal("ingest"),
     ]),
     v.description(
-      "briefing (call ONCE at the start of a session — takes no other args) | create (memory) | get (id) | update (id + update) | delete (id) | query (filters: type|namespace|importance_min|archived|tags|q|offset|limit — `q` is a keyword filter; for ranked search use the `search` tool) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)",
+      "briefing (call ONCE at the start of a session; optional `namespace` scopes the TAIL — core rules tagged `always` load from every namespace) | create (memory) | get (id) | update (id + update) | delete (id) | query (filters: type|namespace|importance_min|archived|tags|q|offset|limit — `q` is a keyword filter; for ranked search use the `search` tool) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)",
     ),
   ),
   id: v.optional(v.pipe(uuidSchema, v.description("Memory UUID"))),
@@ -650,12 +657,9 @@ export const MemoryToolInput = v.looseObject({
     ),
   ),
   /**
-   * query: keyword filter — all terms, any order, against content. This is the
-   * parameter that was missing during the 2026-09-29 incident: agents passed
-   * `q`, valibot stripped it silently, and the query returned unfiltered rows
-   * that looked plausibly ranked. It is declared here AND forwarded by every
-   * surface (both handlers, REST, stdio client) — the surface-parity test (G3)
-   * fails the build if any surface drops it again.
+   * query: keyword filter. The 2026-09-29 incident: agents passed `q`, valibot dropped it,
+   * and unfiltered rows came back looking ranked. Every surface forwards it; G3 fails the
+   * build if one stops.
    */
   q: v.optional(
     v.pipe(
@@ -683,13 +687,7 @@ export const MemoryToolInput = v.looseObject({
     ),
     20,
   ),
-  /**
-   * briefing: which slice of the standing rules to return. `core` (the default) is the stable
-   * guarantee — the rules that must be in context before any work. `all` adds the growing tail
-   * of situational rules and is the right call immediately BEFORE something slow, metered,
-   * destructive, or expensive — and the right default for large (~1M-token) context windows,
-   * which can absorb the whole set once per session.
-   */
+  /** briefing: `core` (default) is stable; `all` adds the growing tail. Use `all` before anything slow. */
   detail: v.optional(
     v.pipe(
       v.picklist([...BRIEFING_DETAILS]),
@@ -699,11 +697,7 @@ export const MemoryToolInput = v.looseObject({
     ),
     BRIEFING_DETAIL_DEFAULT,
   ),
-  /**
-   * briefing: total character budget. Applies to `detail: "all"` only — core rules are never
-   * dropped for budget. When the budget is exhausted the result says `truncated: true` with an
-   * exact `omitted` count, so it can never quietly return a subset.
-   */
+  /** briefing: budget for `detail="all"` only. Exhausting it reports `truncated` + exact `omitted`. */
   max_chars: v.optional(
     v.pipe(
       v.number(),
@@ -745,21 +739,15 @@ export const MemoryToolInput = v.looseObject({
 export const SearchToolInput = SearchInput;
 
 /**
- * `wake` input — the readiness probe. NO arguments, on purpose: its only job is
- * to confirm the server and its database are answering BEFORE the session's
- * first expensive read (the briefing) runs, so a cold-start failure lands on a
- * tool whose documented job is to be retried instead of on the briefing.
- *
- * `looseObject({})` so any key a model invents is caught by the G2 guardrail
- * and reported as `ignored_args` rather than silently stripped.
+ * `wake` — the readiness probe, with NO arguments on purpose: a cold-start failure should
+ * land on the tool that is meant to be retried, not on the briefing. `looseObject` so an
+ * invented key surfaces as `ignored_args`.
  */
 export const WakeToolInput = v.looseObject({});
 
 /**
- * `prune_memories` input — the destructive maintenance sweep. `confirm` is a
- * deliberate speed bump: the old zero-arg `consolidate` schema was trivial to
- * call, and weak models reached for it as a default "save memory" action.
- * Renamed + gated 2026-09-18 after that was observed in VS Code.
+ * `prune_memories`. `confirm` is a deliberate speed bump — the old zero-arg form was
+ * reached for as a default "save memory" action.
  */
 export const PruneMemoriesToolInput = v.looseObject({
   confirm: v.pipe(
@@ -770,8 +758,7 @@ export const PruneMemoriesToolInput = v.looseObject({
   ),
 });
 
-/** All tool names, exported for tests and the smoke script. `wake` leads —
- *  it is registered first and is the call the contract sends models to first. */
+/** All tool names, for tests and the smoke script. `wake` leads — it is the first call. */
 export const TOOL_NAMES = [
   "wake",
   "manage_namespace",

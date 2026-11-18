@@ -13,7 +13,7 @@ export function registerNamespaceTools(
       name: "manage_namespace",
       title: "Manage Namespaces",
       description:
-        "Create, list, get, or delete namespaces — isolated memory containers.",
+        "Create, list, get, update or delete namespaces — one per project, named by repo slug. Use action=ensure once per session to scope yourself, then pass that name on every read and write.",
       icons: [SEPIA_ICON],
       schema: NamespaceToolInput,
     },
@@ -29,6 +29,11 @@ export function registerNamespaceTools(
             ),
           };
         }
+        case "ensure": {
+          if (!args.name) throw new Error("action=ensure requires name");
+          const res = await client.ensureNamespace(args.name, args.description);
+          return { action: "ensure", ...res };
+        }
         case "list":
           return {
             action: "list",
@@ -40,6 +45,19 @@ export function registerNamespaceTools(
           return {
             action: "get",
             namespace: await client.getNamespace(idOrName),
+          };
+        }
+        case "update": {
+          const idOrName = args.id ?? args.name;
+          if (!idOrName) throw new Error("action=update requires id or name");
+          if (args.new_name === undefined && !args.description)
+            throw new Error("action=update requires new_name or description");
+          return {
+            action: "update",
+            namespace: await client.updateNamespace(idOrName, {
+              name: args.new_name,
+              description: args.description,
+            }),
           };
         }
         case "delete": {

@@ -106,6 +106,24 @@ export class SepiaClient {
       `/api/namespaces/${encodeURIComponent(idOrName)}`,
     );
   }
+  /** Get-or-create. The one call a session makes to say "I am in this repo". */
+  ensureNamespace(name: string, description?: string) {
+    return this.request<{ namespace: unknown; created: boolean }>(
+      "POST",
+      "/api/namespaces",
+      { name, description, ensure: true },
+    );
+  }
+  updateNamespace(
+    idOrName: string,
+    changes: { name?: string; description?: string },
+  ) {
+    return this.request<{ namespace: unknown }>(
+      "PATCH",
+      `/api/namespaces/${encodeURIComponent(idOrName)}`,
+      changes,
+    );
+  }
   deleteNamespace(idOrName: string) {
     return this.request<{ deleted: unknown }>(
       "DELETE",

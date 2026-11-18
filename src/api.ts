@@ -5,6 +5,8 @@ import { SERVER_VERSION } from "./version.ts";
 import {
   // business logic (shared with the MCP tools)
   createNamespace,
+  ensureNamespace,
+  updateNamespace,
   listNamespaces,
   getNamespace,
   deleteNamespace,
@@ -255,7 +257,21 @@ export async function handleApi(
       );
     }
     if (path === "/api/namespaces" && method === "POST") {
-      const input = validate(NamespaceInput, await readBody(request));
+      const raw = await readBody(request);
+      const input = validate(NamespaceInput, raw);
+      // `ensure` is the per-session call: get-or-create, so a caller never has to
+      // treat "already exists" as a failure it must recover from.
+      const ensure = (raw as { ensure?: unknown }).ensure === true;
+      if (ensure) {
+        const res = await ensureNamespace(
+          sql,
+          ownerId,
+          input.name,
+          input.description,
+          plan,
+        );
+        return json(res, res.created ? 201 : 200, cors);
+      }
       return json(
         {
           namespace: await createNamespace(
@@ -283,6 +299,34 @@ export async function handleApi(
           200,
           cors,
         );
+      if (method === "PATCH") {
+        const body = (await readBody(request)) as {
+          name?: unknown;
+          description?: unknown;
+        };
+        const name =
+          typeof body.name === "string" && body.name.trim()
+            ? body.name.trim()
+            : undefined;
+        const description =
+          typeof body.description === "string" ? body.description : undefined;
+        if (name === undefined && description === undefined)
+          return error(
+            "invalid_input",
+            "update requires name or description",
+            422,
+          );
+        return json(
+          {
+            namespace: await updateNamespace(sql, ownerId, idOrName, {
+              name,
+              description,
+            }),
+          },
+          200,
+          cors,
+        );
+      }
       if (method === "DELETE")
         return json(
           { deleted: await deleteNamespace(sql, ownerId, idOrName) },

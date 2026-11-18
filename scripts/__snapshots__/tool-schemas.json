@@ -8,22 +8,28 @@
             "const": "create"
           },
           {
+            "const": "ensure"
+          },
+          {
             "const": "list"
           },
           {
             "const": "get"
           },
           {
+            "const": "update"
+          },
+          {
             "const": "delete"
           }
         ],
-        "description": "create (name, description?) | list | get (id or name) | delete (id or name — cascades all contents)"
+        "description": "create (name, description?) | ensure (name — get-or-create, idempotent; the per-session call) | list (all namespaces + counts + plan) | get (id or name) | update (id or name + name?/description? — rename or describe) | delete (id or name — cascades all contents)"
       },
       "name": {
         "type": "string",
         "minLength": 1,
         "maxLength": 64,
-        "description": "Namespace name (1-64 chars)"
+        "description": "Namespace name (1-64 chars) — use the repo slug"
       },
       "id": {
         "type": "string",
@@ -34,6 +40,12 @@
         "type": "string",
         "description": "Optional description",
         "default": ""
+      },
+      "new_name": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 64,
+        "description": "update: rename to this (repo slug)"
       }
     },
     "required": [
@@ -345,7 +357,7 @@
             "const": "ingest"
           }
         ],
-        "description": "briefing (call ONCE at the start of a session — takes no other args) | create (memory) | get (id) | update (id + update) | delete (id) | query (filters: type|namespace|importance_min|archived|tags|q|offset|limit — `q` is a keyword filter; for ranked search use the `search` tool) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)"
+        "description": "briefing (call ONCE at the start of a session; optional `namespace` scopes the TAIL — core rules tagged `always` load from every namespace) | create (memory) | get (id) | update (id + update) | delete (id) | query (filters: type|namespace|importance_min|archived|tags|q|offset|limit — `q` is a keyword filter; for ranked search use the `search` tool) | batch_update (where + update — updates ALL matching, returns count) | ingest (conversation — handoff digest)"
       },
       "id": {
         "type": "string",
@@ -463,6 +475,10 @@
               "maxLength": 32
             },
             "maxItems": 10
+          },
+          "namespace": {
+            "type": "string",
+            "description": "Move to this namespace (repo slug). Pass with batch_update to refile many rows at once."
           }
         },
         "required": [],
@@ -734,7 +750,7 @@
       },
       "namespace": {
         "type": "string",
-        "description": "Restrict to a namespace"
+        "description": "Restrict to a namespace (repo slug). Omit to search every namespace."
       },
       "type": {
         "type": "string",

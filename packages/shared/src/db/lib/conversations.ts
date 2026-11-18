@@ -9,6 +9,7 @@ import {
 } from "../schema.ts";
 import { normalizeEntityType, normalizeTags } from "../../types.ts";
 import { resolveNamespaceId } from "./util.ts";
+import { applyAccountRedactions, findForeignAccountEmails } from "./redact.ts";
 
 export interface ConversationEntityInput {
   name: string;
@@ -57,18 +58,54 @@ export const DIGEST_IMPORTANCE = 0.85;
 export const CONVERSATION_TAG = "conversation";
 
 /**
- * Ingest a distilled conversation (handoff digest) as an atomic bundle:
- *
- *   digest memory (entry point, tag `conversation`, metadata.kind="conversation")
- *   + constituent memories (decisions→fact, preferences→preference,
- *     instructions→instruction, observations→observation, open_questions→
- *     observation tagged `open-question`), each with metadata.conversation_id
- *   + entities (find-or-create by name in the namespace)
- *
- * All inserts + entity links go through ONE db.batch() — atomic, single
- * Neon HTTP call. The digest is the entry point; constituents are the
- * evidence; metadata.conversation_id groups them; the optional transcript
- * lives in digest metadata (out of search, pure fidelity).
+ * Mask every foreign-ACCOUNT address across a whole ingest payload: one lookup over a
+ * flattened field list, not one per field. Returns the same object when nothing matches.
+ */
+async function redactConversation(
+  db: Db,
+  ownerId: string,
+  input: ConversationIngest,
+): Promise<ConversationIngest> {
+  const fields: string[] = [
+    input.summary,
+    input.title ?? "",
+    input.transcript ?? "",
+    ...(input.decisions ?? []),
+    ...(input.preferences ?? []),
+    ...(input.instructions ?? []),
+    ...(input.observations ?? []),
+    ...(input.open_questions ?? []),
+    ...(input.entities ?? []).map((e) => e.summary ?? ""),
+  ];
+  const emails = await findForeignAccountEmails(db, ownerId, fields);
+  if (emails.length === 0) return input;
+  const r = (text: string) => applyAccountRedactions(text, emails);
+  return {
+    ...input,
+    summary: r(input.summary),
+    ...(input.title ? { title: r(input.title) } : {}),
+    ...(input.transcript ? { transcript: r(input.transcript) } : {}),
+    ...(input.decisions ? { decisions: input.decisions.map(r) } : {}),
+    ...(input.preferences ? { preferences: input.preferences.map(r) } : {}),
+    ...(input.instructions ? { instructions: input.instructions.map(r) } : {}),
+    ...(input.observations ? { observations: input.observations.map(r) } : {}),
+    ...(input.open_questions
+      ? { open_questions: input.open_questions.map(r) }
+      : {}),
+    ...(input.entities
+      ? {
+          entities: input.entities.map((e) =>
+            e.summary ? { ...e, summary: r(e.summary) } : e,
+          ),
+        }
+      : {}),
+  };
+}
+
+/**
+ * Ingest a handoff digest in ONE `db.batch`: the digest memory (tag `conversation`,
+ * metadata.kind), its constituents typed by kind, and find-or-create entities. The
+ * digest is the entry point, constituents are the evidence, `conversation_id` groups them.
  */
 export async function ingestConversation(
   db: Db,
@@ -76,6 +113,10 @@ export async function ingestConversation(
   input: ConversationIngest,
   source?: string,
 ): Promise<IngestResult> {
+  // One lookup for the whole bundle, before anything reaches a row. An ingest
+  // carries a dozen text fields, and this is the path that walked another
+  // account's identifiers into searchable prose — see redact.ts.
+  input = await redactConversation(db, ownerId, input);
   const namespaceName = input.namespace ?? "personal";
   const namespaceId = await resolveNamespaceId(db, ownerId, namespaceName);
   const topicTags = normalizeTags(input.tags);

@@ -20,6 +20,7 @@ import {
 } from "../schema.ts";
 import { normalizeEntityType, normalizeTags } from "../../types.ts";
 import { escapeLike, matchesAllTerms, resolveNamespaceId } from "./util.ts";
+import { redactForeignAccounts } from "./redact.ts";
 import { ENTITY_LIST_COLUMNS } from "./list-columns.ts";
 
 export interface EntityCreate {
@@ -128,7 +129,13 @@ export async function createEntity(
         namespaceId,
         name: input.name,
         type: normalized.type ?? "concept",
-        summary: input.summary ?? "",
+        // An entity summary is searchable prose, so it is the same leak channel
+        // as memory content — see redact.ts. The NAME is deliberately not
+        // redacted: it is an identity, and masking two different addresses to
+        // the same string would collide on the unique index.
+        summary: (
+          await redactForeignAccounts(db, ownerId, [input.summary ?? ""])
+        ).texts[0],
         metadata: input.metadata ?? {},
         importance: input.importance ?? 0.5,
         tags: normalized.tags ?? [],
@@ -217,7 +224,10 @@ export async function updateEntity(
   const sets: Partial<typeof entities.$inferInsert> = {};
   if (update.name !== undefined) sets.name = update.name;
   if (update.type !== undefined) sets.type = update.type;
-  if (update.summary !== undefined) sets.summary = update.summary;
+  if (update.summary !== undefined)
+    sets.summary = (
+      await redactForeignAccounts(db, ownerId, [update.summary])
+    ).texts[0];
   if (update.importance !== undefined) sets.importance = update.importance;
   if (update.metadata !== undefined) sets.metadata = update.metadata;
   if (update.tags !== undefined) sets.tags = update.tags;
@@ -304,11 +314,8 @@ export interface EntityListFilters {
 export type EntityListRow = Awaited<ReturnType<typeof entityListQuery>>[number];
 
 /**
- * Shared filter assembly for the entity list reads. `namespaceMatch` is the
- * caller's namespace predicate: `findEntities` resolves the name to an id (and
- * throws for an unknown namespace, preserving the MCP/REST contract), while
- * `findEntityList` inlines a subquery so the dashboard list costs ONE round
- * trip instead of two.
+ * Shared filter assembly. `namespaceMatch` is the caller's predicate: `findEntities`
+ * resolves name → id, `findEntityList` inlines a subquery (one round trip).
  */
 function entityConditions(
   ownerId: string,
@@ -318,8 +325,7 @@ function entityConditions(
 ): SQL[] {
   const conditions: SQL[] = [eq(namespaces.ownerId, ownerId)];
   if (query !== undefined) {
-    // Read path: match every term in any order, against the name or the summary,
-    // so a multi-word lookup like "Smoke Project" no longer needs adjacency.
+    // Every term, any order, across name or summary — "Smoke Project" needs no adjacency.
     conditions.push(
       sql`(${matchesAllTerms(sql`${entities.name}`, query)} OR ${matchesAllTerms(sql`${entities.summary}`, query)})`,
     );
@@ -333,15 +339,7 @@ function entityConditions(
   return conditions;
 }
 
-/**
- * Full entity list for the MCP/REST/export surfaces — every column, including
- * `metadata` and the generated `haystack_tsv`.
- *
- * Ordered by importance DESC, then updated_at DESC, then id DESC (an immutable
- * tiebreaker — without it, equal-ranked rows come back in whatever order the
- * plan happens to produce, which makes `offset` pagination skip or duplicate
- * rows at a page boundary).
- */
+/** Full entity list for MCP/REST/export. importance DESC, updated_at DESC, id DESC — the id tiebreaker keeps `offset` stable. */
 export async function findEntities(
   db: Db,
   ownerId: string,
@@ -376,18 +374,8 @@ export async function findEntities(
 }
 
 /**
- * Lean entity list for the dashboard: same filters and ordering as
- * `findEntities`, but only the columns the list card renders (see
- * `list-columns.ts` — no tsvector, no metadata, no namespace name).
- *
- * The namespace is matched with a SUBQUERY rather than a `resolveNamespaceId`
- * round trip: the filter values come from the namespace dropdown, so a miss is
- * a stale URL and an empty list is the right answer — throwing
- * `namespace_not_found` would need a second HTTP round trip to say nothing.
- *
- * Deliberately NOT async — `db.batch()` calls `_prepare()` on every element,
- * and an async function returns a native Promise without it. Use
- * `findEntityList` for the awaiting form.
+ * Lean list for the dashboard — same filters, only the columns the card renders. Not async:
+ * `db.batch()` needs `_prepare()`, which a Promise lacks.
  */
 export function entityListQuery(
   db: Db,
@@ -465,7 +453,10 @@ export async function batchUpdateEntities(
   const sets: Partial<typeof entities.$inferInsert> = {};
   if (update.name !== undefined) sets.name = update.name;
   if (update.type !== undefined) sets.type = update.type;
-  if (update.summary !== undefined) sets.summary = update.summary;
+  if (update.summary !== undefined)
+    sets.summary = (
+      await redactForeignAccounts(db, ownerId, [update.summary])
+    ).texts[0];
   if (update.importance !== undefined) sets.importance = update.importance;
   if (update.metadata !== undefined) sets.metadata = update.metadata;
   if (update.tags !== undefined) sets.tags = update.tags;

@@ -24,13 +24,9 @@ export function queryTerms(q: string): string[] {
 }
 
 /**
- * Escape LIKE metacharacters so user input matches literally.
- *
- * This is load-bearing: without it `q="%"` becomes the pattern `'%%%'`, which
- * matches EVERY row — and on a `batch_update` filter that means rewriting the
- * whole namespace. Postgres defaults the LIKE escape character to backslash, so
- * the rewritten `\%` needs no explicit `ESCAPE` clause (verified against the
- * live database: `ILIKE '%\%%'` and `ILIKE '%\%%' ESCAPE '\'` agree).
+ * Escape LIKE metacharacters. Load-bearing: without it `q="%"` matches every row — and on a
+ * `batch_update` filter that rewrites the whole namespace. Postgres defaults the escape to
+ * backslash, so no explicit `ESCAPE` clause is needed.
  */
 export function escapeLike(s: string): string {
   return s.replace(/[%_\\]/g, "\\$&");
@@ -42,12 +38,8 @@ export function escapeRegExp(s: string): string {
 }
 
 /**
- * What a query actually matches on.
- *
- * `terms` are the ranked/coverage terms; `patterns` are the `%term%` LIKE
- * patterns for them. A query with no word characters at all (`"!!!"`) falls
- * back to matching the normalized literal, so `terms` is never empty for a
- * non-empty query and coverage signals stay meaningful.
+ * What a query matches on. A query with no word characters (`"!!!"`) falls back to the
+ * literal, so `terms` is never empty and coverage stays meaningful.
  */
 export function matchPlan(q: string): { terms: string[]; patterns: string[] } {
   const terms = queryTerms(q);
@@ -67,33 +59,24 @@ export function textArray(values: string[]): SQL {
 }
 
 /**
- * `<expr> ILIKE ANY (terms)` — a row may match ANY term. This is the candidate
- * filter for ranked search, where the score then prefers rows covering more
- * terms. Index-supported: the planner turns it into a bitmap index scan on the
- * pg_trgm GIN indexes (verified with `enable_seqscan=off` on the live DB).
+ * `ILIKE ANY` — a row may match any term. Index-supported: the planner turns it into a
+ * bitmap scan on the pg_trgm GIN indexes.
  */
 export function matchesAnyTerm(expr: SQL, patterns: string[]): SQL {
   return sql`${expr} ILIKE ANY (${textArray(patterns)})`;
 }
 
 /**
- * `<expr> ILIKE ALL (terms)` — EVERY term must appear, any order.
- *
- * Used by the *listing* filters (`queryMemories`, `findEntities`): a filter
- * should narrow predictably rather than rank, and this fixes the false zero the
- * single-phrase substring had for natural queries like `q="Jev Bun"` (which
- * required the two words to be adjacent). Ranked search deliberately does NOT
- * use this — requiring every word is what emptied result sets.
+ * `ILIKE ALL` — every term must appear, any order. Used by listing filters, which should
+ * narrow predictably rather than rank; ranked search must not use it, because requiring
+ * every word is what emptied result sets.
  */
 export function matchesAllTerms(expr: SQL, q: string): SQL {
   const { patterns } = matchPlan(q);
   return sql`${expr} ILIKE ALL (${textArray(patterns)})`;
 }
 
-/**
- * Resolve a namespace by name to its id, scoped to the owner, or throw.
- * Every data access goes through here — this is the tenant boundary.
- */
+/** Resolve a namespace name to its id, owner-scoped, or throw. The tenant boundary. */
 export async function resolveNamespaceId(
   db: Db,
   ownerId: string,
@@ -115,6 +98,25 @@ export async function resolveNamespaceId(
 }
 
 /** Fetch a namespace row by id or name, scoped to the owner. */
+/**
+ * Nullable by-name lookup. The get-or-create path needs "miss" as a VALUE, not
+ * an exception — `getNamespaceByIdOrName` throws `namespace_not_found`, which is
+ * right for a caller that was handed a name it must honour, and wrong for one
+ * deciding whether to create it.
+ */
+export async function findNamespaceByName(
+  db: Db,
+  ownerId: string,
+  name: string,
+) {
+  const rows = await db
+    .select()
+    .from(namespaces)
+    .where(and(eq(namespaces.name, name), eq(namespaces.ownerId, ownerId)))
+    .limit(1);
+  return rows[0];
+}
+
 export async function getNamespaceByIdOrName(
   db: Db,
   ownerId: string,

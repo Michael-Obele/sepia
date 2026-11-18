@@ -43,9 +43,19 @@ const hasDb = Boolean(process.env.DATABASE_URL);
 const RUN = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const OWNER_EMAIL = `briefing-suite+${RUN}@sepia.test`;
 const OTHER_EMAIL = `briefing-suite-other+${RUN}@sepia.test`;
+/**
+ * The budget and core suites get their OWN owners. Core is global by contract —
+ * `always` means "every repo, every session" — so sharing one owner across the
+ * three namespaces would leak its core rules into every other assertion and the
+ * suite would stop testing what each test claims.
+ */
+const BUDGET_EMAIL = `briefing-suite-budget+${RUN}@sepia.test`;
+const CORE_EMAIL = `briefing-suite-core+${RUN}@sepia.test`;
 const NS_MAIN = "briefing-suite";
 const NS_BUDGET = "briefing-budget";
 const NS_CORE = "briefing-core";
+/** A second namespace for the main owner — the scope-crossing fixture. */
+const NS_SIDE = "briefing-side";
 const SETUP_TIMEOUT_MS = 60_000;
 const TEST_TIMEOUT_MS = 30_000;
 
@@ -60,9 +70,12 @@ describe.skipIf(!hasDb)("briefing", () => {
   let conn: Db;
   let ownerId = "";
   let otherId = "";
+  let budgetId = "";
+  let coreId = "";
   let nsMain = "";
   let nsBudget = "";
   let nsCore = "";
+  let nsSide = "";
   const ids = new Map<string, string>();
 
   function id(key: string): string {
@@ -102,9 +115,12 @@ describe.skipIf(!hasDb)("briefing", () => {
 
     ownerId = await seedOwner(OWNER_EMAIL, "Briefing Suite");
     otherId = await seedOwner(OTHER_EMAIL, "Briefing Suite Other");
+    budgetId = await seedOwner(BUDGET_EMAIL, "Briefing Suite Budget");
+    coreId = await seedOwner(CORE_EMAIL, "Briefing Suite Core");
     nsMain = await seedNs(ownerId, NS_MAIN);
-    nsBudget = await seedNs(ownerId, NS_BUDGET);
-    nsCore = await seedNs(ownerId, NS_CORE);
+    nsBudget = await seedNs(budgetId, NS_BUDGET);
+    nsCore = await seedNs(coreId, NS_CORE);
+    nsSide = await seedNs(ownerId, NS_SIDE);
 
     // ── Main namespace: ordering, the core predicate, the type escape hatch ──
     const main = await conn
@@ -217,6 +233,18 @@ describe.skipIf(!hasDb)("briefing", () => {
       .returning({ id: memories.id });
     ["C1", "C2", "C3"].forEach((key, i) => ids.set(key, String(core[i]!.id)));
 
+    // ── Second namespace for the MAIN owner: proves core crosses scopes, tail doesn't ──
+    const [sideRow] = await conn
+      .insert(memories)
+      .values({
+        namespaceId: nsSide,
+        type: "instruction",
+        importance: 0.7,
+        content: "side-project tail rule",
+      })
+      .returning({ id: memories.id });
+    ids.set("SIDE_TAIL", String(sideRow!.id));
+
     // ── Another tenant: must never leak into the owner's briefing ──
     const otherNs = await seedNs(otherId, NS_MAIN);
     await conn.insert(memories).values({
@@ -227,12 +255,18 @@ describe.skipIf(!hasDb)("briefing", () => {
       content: "other tenant secret rule",
     });
   }, SETUP_TIMEOUT_MS);
-
   afterAll(async () => {
     if (!conn) return;
     await conn
       .delete(users)
-      .where(inArray(users.email, [OWNER_EMAIL, OTHER_EMAIL]));
+      .where(
+        inArray(users.email, [
+          OWNER_EMAIL,
+          OTHER_EMAIL,
+          BUDGET_EMAIL,
+          CORE_EMAIL,
+        ]),
+      );
   }, SETUP_TIMEOUT_MS);
 
   // ── Ordering: core first, then priority ─────────────────────────────────
@@ -265,7 +299,10 @@ describe.skipIf(!hasDb)("briefing", () => {
     ]);
     expect(b.count).toBe(2);
     expect(b.core_count).toBe(2);
-    expect(b.other_standing).toBe(4);
+    // 4 in this namespace + 1 in NS_SIDE. The count spans every namespace on
+    // purpose: the caller must know the tail exists even when it is not here.
+    expect(b.other_standing).toBe(5);
+    expect(b.other_scopes?.tail).toBe(1);
     // Nothing was left out of what was ASKED for, so the flag stays quiet. If `truncated`
     // were always true the caller would habituate to it and it would stop being read.
     expect(b.truncated).toBe(false);
@@ -282,7 +319,7 @@ describe.skipIf(!hasDb)("briefing", () => {
     const dflt = await getBriefing(conn, ownerId, { namespace: NS_MAIN });
     expect(tiny.memories).toEqual(dflt.memories);
     expect(tiny.max_chars).toBeUndefined();
-    expect(tiny.other_standing).toBe(4);
+    expect(tiny.other_standing).toBe(5);
   });
 
   test("all mode adds the tail, and reports the budget it used", async () => {
@@ -293,7 +330,7 @@ describe.skipIf(!hasDb)("briefing", () => {
     expect(b.detail).toBe("all");
     expect(b.count).toBe(6);
     expect(b.core_count).toBe(2);
-    expect(b.other_standing).toBe(4);
+    expect(b.other_standing).toBe(5);
     expect(b.truncated).toBe(false);
     expect(b.max_chars).toBe(BRIEFING_CHARS_DEFAULT);
   });
@@ -359,7 +396,7 @@ describe.skipIf(!hasDb)("briefing", () => {
 
   // ── Budget honesty ─────────────────────────────────────────────────────
   test("exceeding the budget reports it exactly, and drops the lowest priority first", async () => {
-    const b = await getBriefing(conn, ownerId, {
+    const b = await getBriefing(conn, budgetId, {
       namespace: NS_BUDGET,
       detail: "all",
       max_chars: 1000,
@@ -375,7 +412,7 @@ describe.skipIf(!hasDb)("briefing", () => {
   });
 
   test("a budget that fits reports no truncation", async () => {
-    const b = await getBriefing(conn, ownerId, {
+    const b = await getBriefing(conn, budgetId, {
       namespace: NS_BUDGET,
       detail: "all",
       max_chars: 40_000,
@@ -386,7 +423,7 @@ describe.skipIf(!hasDb)("briefing", () => {
   });
 
   test("budget: false ignores max_chars and returns the whole slice", async () => {
-    const b = await getBriefing(conn, ownerId, {
+    const b = await getBriefing(conn, budgetId, {
       namespace: NS_BUDGET,
       detail: "all",
       max_chars: 1000,
@@ -404,7 +441,7 @@ describe.skipIf(!hasDb)("briefing", () => {
   });
 
   test("core is never dropped for budget, even when it overflows", async () => {
-    const b = await getBriefing(conn, ownerId, {
+    const b = await getBriefing(conn, coreId, {
       namespace: NS_CORE,
       detail: "all",
       max_chars: 1000,
@@ -414,6 +451,33 @@ describe.skipIf(!hasDb)("briefing", () => {
     expect(b.core_count).toBe(3);
     expect(b.truncated).toBe(false);
     expect(b.memories.every((m) => m.core)).toBe(true);
+  });
+
+  // ── Scoping: core crosses namespaces, the tail does not ────────────────
+  test("core loads from every namespace; the tail only from the one asked for", async () => {
+    const side = await getBriefing(conn, ownerId, {
+      namespace: NS_SIDE,
+      detail: "all",
+    });
+    const coreIds = side.memories.filter((m) => m.core).map((m) => m.id);
+    // Tagged `always` in ANOTHER namespace still arrives. If it didn't, a
+    // universal rule would silently stop applying in every project but one.
+    expect(coreIds).toContain(id("ALWAYS_LOW"));
+    expect(coreIds).toContain(id("FACT_ALWAYS"));
+    // The tail is strictly this namespace's own.
+    expect(side.memories.filter((m) => !m.core).map((m) => m.id)).toEqual([
+      id("SIDE_TAIL"),
+    ]);
+    // …and the rest of the tail is still discoverable without being loaded.
+    expect(side.other_scopes?.tail).toBe(4);
+    expect(side.other_standing).toBe(5);
+  });
+
+  test("an unscoped briefing reports no tail elsewhere", async () => {
+    const b = await getBriefing(conn, ownerId);
+    expect(b.other_scopes).toBeUndefined();
+    // 4 in NS_MAIN + 1 in NS_SIDE, none of it returned at detail=core.
+    expect(b.other_standing).toBe(5);
   });
 
   // ── Tenant boundary ────────────────────────────────────────────────────

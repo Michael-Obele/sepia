@@ -19,6 +19,7 @@ import {
   memoryEntityLinks,
   namespaces,
 } from "../schema.ts";
+import { redactForeignAccounts } from "./redact.ts";
 import {
   ALWAYS_TAG,
   BRIEFING_CHARS_DEFAULT,
@@ -54,23 +55,24 @@ export interface MemoryUpdate {
   entity_ids?: string[];
   /** REPLACES the tag set. */
   tags?: string[];
+  /** Move the row here. Entity links do NOT follow — they stay on the old namespace. */
+  namespace?: string;
 }
 
 /** A full memory row as stored in the DB. */
 export type Memory = typeof memories.$inferSelect;
 
-/**
- * Create a memory (optionally linked to 0-3 entities). The id is generated
- * client-side so the memory and its links insert atomically in one
- * transaction.
- */
+/** Create a memory, optionally linked to 0-3 entities, in one transaction. */
 export async function createMemory(
   db: Db,
   ownerId: string,
   input: MemoryCreate,
   source?: string,
   plan?: string | null,
-): Promise<(Memory & { namespace: string }) | undefined> {
+): Promise<
+  | (Memory & { namespace: string; redacted_accounts?: number })
+  | undefined
+> {
   await assertMemoryQuota(db, ownerId, plan);
   const namespaceId = await resolveNamespaceId(
     db,
@@ -103,13 +105,20 @@ export async function createMemory(
   const importance = input.importance ?? 0.5;
   const metadata = input.metadata ?? {};
   const tags = normalizeTags(input.tags);
+  // Another ACCOUNT's address must not survive into searchable prose. Scoped to
+  // registered accounts, so ordinary contact details are untouched — see redact.ts.
+  const { texts: safeContent, redacted } = await redactForeignAccounts(
+    db,
+    ownerId,
+    [input.content],
+  );
 
   // db.batch() = memory + link inserts in ONE Neon HTTP call (atomic).
   const queries: BatchItem<"pg">[] = [
     db.insert(memories).values({
       id,
       namespaceId,
-      content: input.content,
+      content: safeContent[0]!,
       type,
       importance,
       source: source ?? null,
@@ -132,7 +141,11 @@ export async function createMemory(
     .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
     .where(eq(memories.id, id))
     .limit(1);
-  return rows[0];
+  const row = rows[0];
+  if (!row) return undefined;
+  // Report the mask rather than applying it silently: the caller wrote something
+  // and is entitled to know it did not survive verbatim.
+  return redacted ? { ...row, redacted_accounts: redacted } : row;
 }
 
 /** Builder: the memory row plus its namespace, scoped to the owner. */
@@ -162,13 +175,7 @@ export function memoryLinksQuery(db: Db, id: string) {
     .orderBy(entities.name);
 }
 
-/**
- * Full memory detail: memory + linked entity names.
- *
- * The two reads go in ONE `db.batch` — they used to be two sequential round
- * trips — and a page can append its own statements (the detail route adds the
- * namespace options) to the very same request.
- */
+/** Memory detail + linked entity names, both reads in one `db.batch`. */
 export async function getMemory(db: Db, ownerId: string, id: string) {
   const [rows, links] = await db.batch([
     memoryDetailQuery(db, ownerId, id),
@@ -186,12 +193,22 @@ export async function updateMemory(
   update: MemoryUpdate,
 ) {
   const sets: Partial<typeof memories.$inferInsert> = {};
-  if (update.content !== undefined) sets.content = update.content;
+  if (update.content !== undefined)
+    // Same guard as create: an update can just as easily walk another
+    // account's address into the store.
+    sets.content = (
+      await redactForeignAccounts(db, ownerId, [update.content])
+    ).texts[0];
   if (update.type !== undefined) sets.type = update.type;
   if (update.importance !== undefined) sets.importance = update.importance;
   if (update.metadata !== undefined) sets.metadata = update.metadata;
   if (update.archived !== undefined) sets.archived = update.archived;
   if (update.tags !== undefined) sets.tags = normalizeTags(update.tags);
+  // A move resolves through the owned-namespace guard in `resolveNamespaceId`,
+  // so a typo throws `namespace_not_found` instead of silently orphaning the row.
+  // `updateMemory` and `batchUpdateMemories` both land here.
+  if (update.namespace !== undefined)
+    sets.namespaceId = await resolveNamespaceId(db, ownerId, update.namespace);
 
   const owned = db
     .select({ id: namespaces.id })
@@ -276,11 +293,8 @@ export interface MemoryQueryFilters {
 }
 
 /**
- * Shared filter assembly for the memory list reads. `namespaceMatch` is the
- * caller's namespace predicate: `queryMemories` resolves the name to an id (and
- * throws for an unknown namespace, preserving the MCP/REST contract), while
- * `queryMemoryList` inlines a subquery so the dashboard list costs ONE round
- * trip instead of two.
+ * Shared filter assembly. `namespaceMatch` is the caller's predicate:
+ * `queryMemories` resolves name → id, `queryMemoryList` inlines a subquery.
  */
 function memoryConditions(
   ownerId: string,
@@ -301,8 +315,7 @@ function memoryConditions(
     conditions.push(gte(memories.importance, filters.importance_min));
   }
   if (filters.q !== undefined && filters.q.trim() !== "") {
-    // Order-independent all-term match: the old single-phrase substring required
-    // the words to be adjacent, so `q="Jev Bun"` returned nothing.
+    // All-term match, any order: the old phrase-only form missed `q="Jev Bun"`.
     conditions.push(matchesAllTerms(sql`${memories.content}`, filters.q));
   }
   if (filters.tags !== undefined && filters.tags.length) {
@@ -315,12 +328,7 @@ function memoryConditions(
   return conditions;
 }
 
-/**
- * Query memories: ordered by importance DESC, then updated_at DESC, then id
- * DESC (an immutable tiebreaker — without it, equal-ranked rows come back in
- * whatever order the plan happens to produce, which makes `offset` pagination
- * skip or duplicate rows at a page boundary).
- */
+/** importance DESC, updated_at DESC, id DESC — the id tiebreaker keeps `offset` stable. */
 export async function queryMemories(
   db: Db,
   ownerId: string,
@@ -352,23 +360,12 @@ export async function queryMemories(
     .offset(offset);
 }
 
-/** A row from the lean memory list — derived from the builder, not the async
- *  wrapper, so the type alias does not circularly reference `queryMemoryList`. */
+/** A row from the lean list. Derived from the builder to avoid a circular alias. */
 export type MemoryListRow = Awaited<ReturnType<typeof memoryListQuery>>[number];
 
 /**
- * Lean memory list for the dashboard: same filters and ordering as
- * `queryMemories`, but only the columns the list card renders (see
- * `list-columns.ts` — no tsvector). Keeps `content` because the card truncates
- * it, and `namespace` because the card renders it.
- *
- * The namespace is matched with a SUBQUERY rather than a `resolveNamespaceId`
- * round trip — the filter values come from the namespace dropdown, so a miss is
- * a stale URL and an empty list is the right answer.
- *
- * Deliberately NOT async — `db.batch()` calls `_prepare()` on every element,
- * and an async function returns a native Promise without it. Use
- * `queryMemoryList` for the awaiting form.
+ * Lean list for the dashboard — same filters, only the columns the card renders.
+ * Not async: `db.batch()` needs `_prepare()`, which a Promise lacks.
  */
 export function memoryListQuery(
   db: Db,
@@ -391,14 +388,9 @@ export function memoryListQuery(
 }
 
 /**
- * The same read as `memoryListQuery`, but carrying `metadata` and `source` too —
- * the conversation-digest view needs the title, `conversation_id` and status out
- * of `metadata`. Still excludes the generated tsvector.
- *
- * Written out rather than sharing a generic helper: threading the column map
- * through a generic parameter reduces Drizzle's row type to
- * `{ [x: string]: unknown }`, losing every field. The filters still come from the
- * shared `memoryConditions`, which is the part that must not drift.
+ * The list read plus `metadata`/`source` (the digest view needs the title and
+ * status). Written out because threading a generic column map flattens Drizzle's
+ * row type to `unknown`.
  */
 export function memoryDigestQuery(
   db: Db,
@@ -421,10 +413,8 @@ export function memoryDigestQuery(
 }
 
 /**
- * The dashboard's namespace predicate: a SUBQUERY on the name rather than a
- * `resolveNamespaceId` round trip, because the filter values come from the
- * namespace dropdown — a miss is a stale URL, and an empty list is the right
- * answer for that.
+ * Dashboard namespace predicate: a SUBQUERY on the name, because a filter value from
+ * the dropdown going stale should yield an empty list, not a round trip and a throw.
  */
 function memoryNamespaceMatch(
   ownerId: string,
@@ -457,31 +447,9 @@ export interface BriefingItem {
 }
 
 /**
- * The session-start briefing: the standing rules, in priority order, compacted to fit a
- * character budget.
- *
- * This exists because a standing constraint CANNOT be found by relevance search — relevance
- * is measured against a task that has not been scoped yet. "Warn before large downloads"
- * only helps if it is in context *before* you know it is relevant, so this is the one read
- * that must happen unconditionally at the start of a session rather than on a keyword.
- *
- * It returns `core` by default, and that split is the whole design:
- * - **Core is the guarantee.** Stable in size (single digits), so it can be loaded every
- *   session forever. Core rules are never dropped for budget; if the budget cannot hold them
- *   the result overshoots rather than silently thinning the rules that matter.
- * - **The tail is opt-in.** It holds situational and project-scoped rules and grows without
- *   bound — measured 2026-09-20: 235 rows ≈ 8.5k tokens against 9 core rows ≈ 886 tokens.
- *   Anything that loads the tail by default degrades as the user keeps using it, so the
- *   caller asks for it explicitly (`detail: "all"`) when it is about to do something slow,
- *   metered, destructive, or expensive.
- * - **Truncation is reported, never implied.** `truncated` + an exact `omitted` count come
- *   from a COUNT over the same filter, so "what you did not see" is always knowable. Silent
- *   truncation is the failure mode this whole path was built to remove.
- *
- * Deliberately NOT built: server-side summarization. A constraint's power is its specificity
- * and actionability — the two things summarization removes. Measured on the real core set,
- * first-sentence extraction drops the operative clause from 5 of 9 rules, including "state the
- * download size before any build" (whose first sentence is pure context). See the plan doc.
+ * The session-start briefing. A standing rule cannot be found by relevance search,
+ * so this is the one read that is unconditional. Core is the guarantee and never
+ * dropped for budget; the tail is opt-in and grows without bound.
  */
 export interface Briefing {
   /** Which slice was requested — `core` unless the caller escalated. */
@@ -491,10 +459,17 @@ export interface Briefing {
   /** Of those, how many are core. */
   core_count: number;
   /**
-   * Standing rules that exist beyond core. The tail is where situational rules live; it is
-   * NOT returned by default, and this number is how a caller knows it is there.
+   * Standing rules that exist beyond core, across every namespace. The tail is
+   * where situational rules live; it is NOT returned by default, and this number
+   * is how a caller knows it is there without loading it.
    */
   other_standing: number;
+  /**
+   * Set when the briefing was scoped to one namespace and part of the tail lives
+   * in the others. `other_standing` is the total; this is the slice a different
+   * `namespace` would show.
+   */
+  other_scopes?: { tail: number };
   /** `true` when even the requested slice was incomplete (all-mode budget, or a huge core). */
   truncated: boolean;
   /** How many of the requested slice were left out. Exact (COUNT), never inferred. */
@@ -510,12 +485,6 @@ function compactContent(content: string, max = BRIEFING_ITEM_CHARS): string {
   return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
 }
 
-/**
- * Read the standing rules: `instruction`/`preference` memories, plus any row explicitly
- * tagged `always` regardless of type (the tag is user intent and outranks the type filter).
- *
- * Returns core only unless `detail: "all"` is passed. See `Briefing` for why.
- */
 /** Options `getBriefing` and its dashboard twin both accept. */
 interface BriefingOptions {
   namespace?: string;
@@ -542,16 +511,8 @@ function briefingPlan(opts: BriefingOptions) {
 }
 
 /**
- * The briefing's WHERE assembly.
- *
- * Core membership is the `always` tag ALONE (tag-only core, 2026-09-24). The old
- * `OR importance >= CORE_IMPORTANCE` half silently admitted any ≥0.9 row —
- * including project-scoped rules that then shipped to every session — and made
- * removal impossible without corrupting importance. One knob for membership (the
- * tag), one for rank (importance).
- *
- * `namespaceMatch` is the caller's namespace predicate — see `briefingQueries`
- * and `getBriefing` for why those two differ.
+ * The briefing's WHERE. Core is the `always` tag alone; `namespaceMatch` scopes the
+ * TAIL only — scoping core would make a universal rule vanish outside its own project.
  */
 function briefingFilter(ownerId: string, namespaceMatch?: SQL) {
   const alwaysExpr = sql`${memories.tags} @> ARRAY[${ALWAYS_TAG}]::text[]`;
@@ -562,8 +523,12 @@ function briefingFilter(ownerId: string, namespaceMatch?: SQL) {
     eq(namespaces.ownerId, ownerId),
     or(inArray(memories.type, [...BRIEFING_TYPES]), alwaysExpr),
   ];
-  if (namespaceMatch !== undefined) conditions.push(namespaceMatch);
-  return { coreExpr: alwaysExpr, conditions };
+  // Substituting a literal rather than leaving these undefined is what keeps the
+  // three counts disjoint: unscoped means "all tail is in scope", and nothing is
+  // elsewhere. A NULL operand would make both tail buckets count zero.
+  const nsExpr = namespaceMatch ?? sql`TRUE`;
+  const notNsExpr = namespaceMatch ? sql`NOT (${namespaceMatch})` : sql`FALSE`;
+  return { alwaysExpr, notAlwaysExpr: sql`NOT (${alwaysExpr})`, conditions, nsExpr, notNsExpr };
 }
 
 /**
@@ -576,19 +541,25 @@ function briefingStatementPair(
   detail: BriefingDetail,
   namespaceMatch?: SQL,
 ) {
-  const { coreExpr, conditions } = briefingFilter(ownerId, namespaceMatch);
+  const { alwaysExpr, notAlwaysExpr, conditions, nsExpr, notNsExpr } =
+    briefingFilter(ownerId, namespaceMatch);
   const where = and(...conditions);
-  // A bare boolean SQL expression is a valid condition, so core can be filtered in SQL
-  // rather than by loading the tail and discarding it.
-  const coreWhere = and(...conditions, coreExpr);
+  // Core is filtered WITHOUT the namespace predicate, so the count and the rows
+  // agree with each other and with `getBriefing`'s contract.
+  const coreWhere = and(...conditions, alwaysExpr);
+  // `all` returns core from everywhere plus the tail from this namespace only.
+  const allWhere = and(...conditions, or(alwaysExpr, nsExpr));
   return [
     // Both counts in ONE statement, and exact rather than inferred from a capped
     // window: `omitted` has to be trustworthy, and `other_standing` is what makes
     // the tail discoverable.
     db
       .select({
-        total: sql<number>`COUNT(*)::int`,
-        core: sql<number>`(COUNT(*) FILTER (WHERE ${coreExpr}))::int`,
+        core: sql<number>`(COUNT(*) FILTER (WHERE ${alwaysExpr}))::int`,
+        tail_scoped:
+          sql<number>`(COUNT(*) FILTER (WHERE ${notAlwaysExpr} AND ${nsExpr}))::int`,
+        tail_elsewhere:
+          sql<number>`(COUNT(*) FILTER (WHERE ${notAlwaysExpr} AND ${notNsExpr}))::int`,
       })
       .from(memories)
       .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
@@ -600,13 +571,13 @@ function briefingStatementPair(
         content: memories.content,
         importance: memories.importance,
         tags: memories.tags,
-        core: coreExpr,
+        core: alwaysExpr,
       })
       .from(memories)
       .innerJoin(namespaces, eq(namespaces.id, memories.namespaceId))
-      .where(detail === "core" ? coreWhere : where)
+      .where(detail === "core" ? coreWhere : allWhere)
       .orderBy(
-        desc(coreExpr),
+        desc(alwaysExpr),
         desc(memories.importance),
         desc(memories.updatedAt),
       )
@@ -620,15 +591,9 @@ type BriefingTotals = Awaited<BriefingStatementPair[0]>;
 type BriefingRows = Awaited<BriefingStatementPair[1]>;
 
 /**
- * The DASHBOARD's briefing, as a READONLY TUPLE of builders.
- *
- * DIVERGENCE — deliberate and approved (2026-10-03): the namespace is matched
- * with a SUBQUERY here, so a stale namespace name yields an empty briefing
- * instead of throwing. That is the right answer for a value that can only come
- * from the namespace dropdown, and it is what lets this compose with
- * `namespacesQuery` in ONE round trip. `getBriefing` keeps
- * `resolveNamespaceId` and its `namespace_not_found` throw, because the MCP
- * `briefing` action's callers must still be told about a bad name.
+ * The DASHBOARD's briefing. Diverges from `getBriefing` on purpose: a stale namespace
+ * name yields an empty briefing (subquery) rather than throwing, so it batches with
+ * `namespacesQuery` in one trip. The MCP path keeps the throw.
  */
 export function briefingQueries(
   db: Db,
@@ -652,8 +617,11 @@ export function buildBriefing(
   opts: BriefingOptions = {},
 ): Briefing {
   const { detail, applyBudget, maxChars } = briefingPlan(opts);
-  const total = totals[0]?.total ?? 0;
   const totalCore = totals[0]?.core ?? 0;
+  const tailScoped = totals[0]?.tail_scoped ?? 0;
+  const tailElsewhere = totals[0]?.tail_elsewhere ?? 0;
+  // What this read could return: core from everywhere + the tail in scope.
+  const total = totalCore + tailScoped;
 
   let used = 0;
   const included: BriefingItem[] = [];
@@ -689,10 +657,13 @@ export function buildBriefing(
     detail,
     count: included.length,
     core_count: included.filter((m) => m.core).length,
-    other_standing: Math.max(total - totalCore, 0),
+    // Every tail rule that exists, in this scope or not — the number that makes
+    // the unreturned tail discoverable. Unchanged meaning from before scoping.
+    other_standing: tailScoped + tailElsewhere,
     truncated: omitted > 0,
     omitted,
     ...(detail === "all" && applyBudget ? { max_chars: maxChars } : {}),
+    ...(tailElsewhere > 0 ? { other_scopes: { tail: tailElsewhere } } : {}),
     memories: included,
   };
 }
@@ -771,12 +742,17 @@ export async function batchUpdateMemories(
   }
 
   const sets: Partial<typeof memories.$inferInsert> = {};
-  if (update.content !== undefined) sets.content = update.content;
+  if (update.content !== undefined)
+    sets.content = (
+      await redactForeignAccounts(db, ownerId, [update.content])
+    ).texts[0];
   if (update.type !== undefined) sets.type = update.type;
   if (update.importance !== undefined) sets.importance = update.importance;
   if (update.metadata !== undefined) sets.metadata = update.metadata;
   if (update.archived !== undefined) sets.archived = update.archived;
   if (update.tags !== undefined) sets.tags = normalizeTags(update.tags);
+  if (update.namespace !== undefined)
+    sets.namespaceId = await resolveNamespaceId(db, ownerId, update.namespace);
   if (Object.keys(sets).length === 0) {
     throw new MemoryError(
       "invalid_input",

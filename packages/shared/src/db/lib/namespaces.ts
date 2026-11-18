@@ -1,9 +1,9 @@
 import type { Db } from "../client.ts";
 import { MemoryError } from "../errors.ts";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, sql, type SQL } from "drizzle-orm";
 import { namespaces } from "../schema.ts";
 import { DEFAULT_NAMESPACE } from "../../types.ts";
-import { getNamespaceByIdOrName } from "./util.ts";
+import { findNamespaceByName, getNamespaceByIdOrName } from "./util.ts";
 import { assertNamespaceQuota } from "./plans.ts";
 
 export interface NamespaceStats {
@@ -38,6 +38,76 @@ export async function createNamespace(
     );
   }
   return row;
+}
+
+/**
+ * Get-or-create, idempotent: the one call a session makes to say "I am in this repo". `create`
+ * alone forces every caller through a failure branch (get, miss, create, `already_exists`
+ * race), which is the difference between a model that scopes itself and one that gives up at
+ * the first error. Quota is only asserted on the create path, so an existing namespace always
+ * resolves even at the plan limit.
+ */
+export async function ensureNamespace(
+  db: Db,
+  ownerId: string,
+  name: string,
+  description = "",
+  plan?: string | null,
+): Promise<{ namespace: Awaited<ReturnType<typeof getNamespace>>; created: boolean }> {
+  const existing = await findNamespaceByName(db, ownerId, name);
+  if (existing) {
+    return {
+      namespace: await getNamespace(db, ownerId, String(existing.id)),
+      created: false,
+    };
+  }
+  await assertNamespaceQuota(db, ownerId, plan);
+  const rows = await db
+    .insert(namespaces)
+    .values({ ownerId, name, description })
+    .onConflictDoNothing()
+    .returning();
+  const id = rows[0]?.id;
+  // Lost a create race: the row is there now, which is the answer we wanted.
+  const resolved = id
+    ? String(id)
+    : String((await findNamespaceByName(db, ownerId, name))!.id);
+  return {
+    namespace: await getNamespace(db, ownerId, resolved),
+    created: Boolean(id),
+  };
+}
+
+/** Rename and/or describe. The rename path keeps the per-owner name uniqueness. */
+export async function updateNamespace(
+  db: Db,
+  ownerId: string,
+  idOrName: string,
+  changes: { name?: string; description?: string },
+) {
+  const row = await getNamespaceByIdOrName(db, ownerId, idOrName);
+  // `sql`now()`` rather than a JS Date: the column is `mode: "string"`, so a
+  // Date here is a type mismatch the driver would coerce silently.
+  const sets: {
+    name?: string;
+    description?: string;
+    updatedAt: SQL;
+  } = { updatedAt: sql`now()` };
+  if (changes.name !== undefined) sets.name = changes.name;
+  if (changes.description !== undefined) sets.description = changes.description;
+  const updated = await db
+    .update(namespaces)
+    .set(sets)
+    .where(and(eq(namespaces.id, String(row.id)), eq(namespaces.ownerId, ownerId)))
+    .returning();
+  if (!updated[0]) {
+    // Almost always the unique index: another namespace already owns that name.
+    throw new MemoryError(
+      "already_exists",
+      `namespace '${changes.name}' already exists (use manage_namespace action=list to see namespaces)`,
+    );
+  }
+  return getNamespace(db, ownerId, String(row.id));
 }
 
 /**
