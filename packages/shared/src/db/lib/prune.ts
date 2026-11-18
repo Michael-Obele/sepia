@@ -14,16 +14,10 @@ export interface PruneMemoriesResult {
 }
 
 /**
- * Idempotent maintenance sweep — pure SQL, no LLM calls. Scoped to the
- * owner's namespaces. Exposed to models as the `prune_memories` MCP tool —
- * named for what it does to memories, because the old `consolidate` name read
- * like the primary "save memory" action and got called by default.
- * 1. Archive stale (importance < 0.3, untouched 90d). Conversation digests
- *    (metadata.kind = "conversation") are NEVER archived by the sweep — they
- *    are handoff entry points and must survive until the user deletes them.
- * 2. Dedup per namespace (trimmed case-insensitive content; keep highest
- *    importance, tie: oldest).
- * 3. Purge archived rows older than 30d.
+ * Idempotent maintenance sweep, pure SQL, scoped to the owner's namespaces. Named `prune` because
+ * `consolidate` read like the primary "save memory" action and models called it by default.
+ * Archives stale rows (importance < 0.3, 90d) — never conversation digests, which are handoff
+ * entry points; dedupes per namespace keeping the highest importance; purges archived rows past 30d.
  */
 export async function pruneMemories(
   db: Db,

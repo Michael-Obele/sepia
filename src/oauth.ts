@@ -1,27 +1,7 @@
 /**
- * OAuth 2.1 + PKCE authorization server via @tmcp/auth, mounted in the same
- * Bun.serve process as /mcp and /api/*.
- *
- * Endpoints served (auto-routed by `oauth.respond()`):
- *   GET/POST /authorize                          → login + consent page
- *   POST     /token                              → code/refresh exchange
- *   POST     /register                           → dynamic client registration
- *   POST     /revoke                             → token revocation
- *   GET      /.well-known/oauth-authorization-server
- *   GET      /.well-known/oauth-protected-resource
- *
- * Design notes:
- * - Codes and tokens live in Postgres (not memory) so they survive Fly's
- *   scale-to-zero restarts — web AIs (Grok, ChatGPT, Gemini) don't need to
- *   re-authorize after the VM cold-starts.
- * - Access tokens are opaque random strings (no JWT, no OAUTH_JWK_SECRET
- *   needed). Refresh tokens rotate on every use.
- * - Multi-tenant: the login page authenticates against Better Auth
- *   (src/auth.ts). Codes and tokens carry the user id; clients are bound to
- *   their authorizing user (an "AI connection", plan-checked). Legacy
- *   DASHBOARD_PASSWORD still authenticates as the admin (self-host compat).
- * - OAuth is enabled when BETTER_AUTH_SECRET is set; otherwise the
- *   endpoints 404 and the server stays bearer-token only.
+ * OAuth 2.1 + PKCE via @tmcp/auth, in the same Bun.serve process as /mcp and /api/*.
+ * Tokens live in Postgres so they survive Fly's scale-to-zero; opaque access tokens (no JWT),
+ * rotating refresh. Enabled only when BETTER_AUTH_SECRET is set — otherwise 404s.
  */
 
 import { OAuth, InvalidTokenError, InvalidGrantError } from "@tmcp/auth";
@@ -43,20 +23,9 @@ import {
 import { ensureAdmin, verifyCredentials } from "./auth.ts";
 
 /**
- * Normalize /authorize params so real-world clients (Grok, ChatGPT, …) don't
- * trip the library's strict valibot literals — which throw a non-OAuthError
- * and surface as a 500 `server_error` instead of a 400.
- *
- * Fixes:
- * - `response_type` → ALWAYS set to `code` (the login form doesn't include
- *   it, and the library's schema requires it — missing → 500)
- * - `code_challenge_method` → forced to `S256` (case-insensitive); a `plain`
- *   challenge is UPGRADED by hashing it, so the library's S256 verification
- *   still passes when the client sends verifier == challenge at /token
- * - `resource` → dropped if empty or not a valid URL (the login form sends
- *   `resource=""` when the client didn't include it — empty → 500)
- * - `redirect_uri` → dropped if empty or not a valid URL (the library falls
- *   back to the client's single registered redirect URI)
+ * Normalize /authorize params so real clients don't trip the library's strict literals
+ * and get a 500 instead of a 400: force `response_type=code` and `code_challenge_method`
+ * (upgrading `plain` by hashing it), and drop an empty/invalid `resource` or `redirect_uri`.
  */
 function normalizeAuthorizeUrl(url: URL): URL {
   const out = new URL(url.href);
@@ -218,19 +187,10 @@ function escapeHtml(value: string): string {
 // ── Client store (DB-backed, survives restarts) ────────────────────────────
 
 /**
- * Fetch + validate a Client ID Metadata Document (RFC 9728 / MCP spec) for a
- * URL-based client_id (ChatGPT, Gemini, Grok all use these).
- *
- * We handle this OURSELVES (instead of letting @tmcp/auth fetch it) because
- * the library's schema REJECTS documents whose token_endpoint_auth_method is
- * "private_key_jwt" — which ChatGPT/Gemini advertise. The library can't
- * verify private_key_jwt anyway, and those clients also support "none", so
- * we normalize the auth method to "none" (the token endpoint then accepts
- * their requests without a secret).
- *
- * Security: we still enforce the spec's requirements — the document's
- * client_id must match the URL exactly, redirect_uris must be present, and
- * shared-secret auth (client_secret) is rejected.
+ * Fetch and validate a Client ID Metadata Document (RFC 9728) for a URL client_id.
+ * Done here because the library rejects `private_key_jwt`, which ChatGPT and Gemini
+ * advertise; we normalize it to `none` and still enforce client_id match, redirect_uris
+ * presence, and no shared secret.
  */
 async function fetchClientMetadata(
   clientId: string,
@@ -492,22 +452,18 @@ function renderLoginPage(opts: LoginPageOptions): Response {
 // ── Handlers ────────────────────────────────────────────────────────────────
 
 /**
- * Internal header set by handleOAuthRequest() after the credentials are
- * validated (the library consumes the form body before our handler runs, so
- * validation happens in the request pipeline). The rebuilt request strips
- * all client-supplied headers, so this can't be spoofed.
+ * Set by handleOAuthRequest() after credentials are validated (the library consumes the body
+ * first, so validation happens in the pipeline). The rebuilt request strips client-supplied
+ * headers, so it cannot be spoofed.
  */
 const AUTHENTICATED_HEADER = "x-sepia-oauth-authenticated";
 /** Carries the authenticated user id (set alongside AUTHENTICATED_HEADER). */
 const AUTHENTICATED_USER_HEADER = "x-sepia-oauth-user";
 
 /**
- * Render the page shown when a genuinely NEW connection exceeds the plan.
- *
- * "Already connected?" is decided by the app's stable identity, not its
- * `client_id` — see `@sepia/shared`'s `oauth-clients.ts`, where that logic
- * lives so the server (enforcing) and the dashboard (displaying) can't drift
- * apart and produce a limit error that contradicts the usage meter.
+ * Shown when a genuinely NEW connection exceeds the plan. "Already connected?" is the app's
+ * stable identity, not `client_id` — that logic lives in `@sepia/shared` oauth-clients.ts so
+ * enforcing and displaying cannot drift into a limit error that contradicts the usage meter.
  */
 function renderPlanLimitPage(
   client: OAuthClientInformationFull,
@@ -563,11 +519,9 @@ function renderPlanLimitPage(
 
 const handlers = {
   /**
-   * GET  → render the login + consent page (form posts back to /authorize).
-   * POST → the credentials were already validated by handleOAuthRequest()
-   *        (it rebuilds the request and sets AUTHENTICATED_HEADER). Bind the
-   *        client to the user (AI connection, plan-checked), issue a
-   *        PKCE-bound code carrying the user id, redirect.
+   * GET renders login + consent. POST means credentials were already validated by
+   * handleOAuthRequest: bind the client to the user (plan-checked), issue a PKCE-bound code
+   * carrying the user id, redirect.
    */
   async authorize(
     authReq: AuthorizeRequest,
@@ -602,25 +556,12 @@ const handlers = {
         });
       }
 
-      // Quota is checked BEFORE the client row is bound, because binding
-      // creates the very row assertAiConnectionQuota() counts — checking
-      // after made the FIRST connection reject itself on a fresh account.
-      //
-      // Only a GENUINELY new connection is checked. "Already connected?" is
-      // decided by the app's stable identity (name + redirect host), not by
-      // client_id: Dynamic Client Registration hands out a new client_id on
-      // every authorization, so keying on it counted each re-authorization as
-      // a new connection and duplicated the user's dashboard rows.
-      //
-      // A same-app collision is only a RE-AUTHORIZATION when the existing row
-      // is dead or a local editor (see isSupersededRegistration). Otherwise it
-      // is a second account of the same app — a real, countable connection —
-      // so it must be charged against the quota. Deriving the flag once and
-      // sharing it with bindClientToUser keeps "did this cost a slot?" and
-      // "did we insert a row?" from ever disagreeing.
-      //
-      // Local (loopback) clients are excluded from the count entirely — they
-      // are local editors, which the plan leaves unlimited.
+      // Quota is checked BEFORE binding, because binding creates the very row the quota
+      // counts — checking after made the first connection reject itself. "Already
+      // connected?" uses the app's stable identity (name + redirect host), not client_id:
+      // DCR mints a new client_id per authorization, so keying on it counted every
+      // re-authorization as new. See isSupersededRegistration for when a collision is
+      // re-auth rather than a second account.
       const user = await getUserById(db(), userId);
       const previous: OAuthClientRow | undefined = await findOwnedConnection(
         db(),
@@ -823,12 +764,7 @@ export const oauth = OAuth.issuer(issuerUrl())
 
 // ── Request pipeline (single entry point for the fetch handler) ────────────
 
-/**
- * Rewrite a request URL to the public issuer origin so the OAuth library's
- * origin check passes behind Fly's TLS termination (Bun sees http://
- * internally while the issuer is https://sepia.fly.dev). Path + query are
- * preserved; the body/headers are untouched.
- */
+/** Rewrite to the public issuer origin so the library's origin check passes behind Fly's TLS termination. */
 function publicOauthRequest(request: Request): Request {
   const url = new URL(request.url);
   const issuer = new URL(issuerUrl());
@@ -840,22 +776,11 @@ function publicOauthRequest(request: Request): Request {
 }
 
 /**
- * Handle an incoming HTTP request for the OAuth endpoints. Returns a Response
- * for OAuth routes (/authorize, /token, /register, /revoke, /.well-known/*),
- * or null for everything else (routing continues in the fetch handler).
- * Returns null when OAuth is disabled.
+ * Handle the OAuth routes, or null for everything else (and when OAuth is disabled).
  *
- * The pipeline (each step fixes a real-world client bug):
- * 1. Origin rewrite — Fly's TLS proxy means Bun sees http:// while the
- *    issuer is https://sepia.fly.dev; the library rejects origin mismatches.
- * 2. POST /authorize — the library consumes the form body before our handler
- *    runs, so the password is validated HERE; the request is rebuilt without
- *    the password (and without client-supplied headers) and marked
- *    authenticated via an internal header.
- * 3. Param normalization — real clients send variations (plain PKCE, case
- *    differences, missing response_type, empty resource) that the library's
- *    strict schemas turn into 500s.
- * 4. Error logging — the library swallows non-OAuth errors silently.
+ * The pipeline exists because each step fixes a real client bug: origin rewrite (Fly's
+ * TLS proxy makes Bun see http://), password validation before the library eats the
+ * body, param normalization, and logging (the library swallows errors silently).
  */
 export async function handleOAuthRequest(
   request: Request,

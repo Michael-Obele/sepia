@@ -5,12 +5,9 @@ import { memories, namespaces, oauthClients } from "../schema.ts";
 import { isLocalClient } from "./oauth-clients.ts";
 
 /**
- * Plan limits — the pricing page's contract (Free vs Pro).
- * Reads/search/export are NEVER blocked; only writes pause at the limit,
- * with the dashboard nudging at ~80%.
- * Web AI connections = remote OAuth clients (counted). Local (loopback)
- * OAuth clients and bearer-token AI editors are never counted, and are
- * unlimited on every plan.
+ * The pricing contract. Reads, search and export are NEVER blocked; only writes pause at the
+ * limit. Web AI connections are remote OAuth clients — loopback clients and bearer-token
+ * editors are never counted and are unlimited on every plan.
  */
 export type Plan = "free" | "pro";
 
@@ -51,18 +48,10 @@ export async function countMemories(db: Db, ownerId: string): Promise<number> {
 }
 
 /**
- * Web AI connections = OAuth clients bound to the account, EXCLUDING local
- * (loopback) clients. A client that only redirects to the user's own machine
- * is a local editor — LM Studio, Cursor, … — and the plan treats editors as
- * unlimited.
- *
- * Excluding them HERE (not just at the assertion) is what keeps enforcement
- * and the dashboard's usage meter in agreement — both call this function, and
- * a mismatch is what makes a limit error contradict the numbers on screen.
- *
- * Counted in JS rather than SQL because "is this redirect local?" depends on
- * parsing each URI; an account has only a handful of clients, so it stays
- * cheap.
+ * Remote OAuth clients only, loopback excluded. Excluded HERE rather than at the assertion,
+ * because the dashboard's meter calls this too — a mismatch is what makes a limit error
+ * contradict the numbers on screen. Counted in JS because "is this redirect local?" needs
+ * each URI parsed, and an account has only a handful.
  */
 export async function countAiConnections(
   db: Db,

@@ -1,22 +1,9 @@
 /**
- * Identity of the running BUILD.
- *
- * WHY THIS EXISTS. The MCP spec requires `serverInfo.version`, so the server
- * needs *something* there — and that something used to be the literal `"1.0.0"`,
- * which no process owned and nothing bumped. Live proof it was a lie: /version
- * advertised 1.0.0 while the docs version was 1.9.0 and the npm package was
- * 0.8.4. A version nobody maintains is worse than no version, because it is
- * believed.
- *
- * The deployed server has no semver to report: it is redeployed from master
- * whenever the repo changes, so a hand-written number here would rot exactly the
- * same way, and a second hand-bumped counter beside DOCS_VERSION would just
- * reintroduce the freeze this repo already spent a day removing. Fly names every
- * deploy, and that name IS the version of what is running — so report it:
- * truthful by construction, nothing to remember.
- *
- * (The npm package `sepia-mcp` is a DIFFERENT artifact with a real semver —
- * Changesets maintains its package.json — and it reports that instead.)
+ * Identity of the running BUILD. The MCP spec requires `serverInfo.version`, and the literal
+ * "1.0.0" that used to sit here was a lie nobody maintained — /version advertised 1.0.0 while
+ * docs said 1.9.0. This server is redeployed from master, so it has no semver: Fly names every
+ * deploy and that name IS the running version. (`sepia-mcp` is a separate artifact with a real
+ * semver from Changesets, and reports its own.)
  */
 const DEV = "dev";
 

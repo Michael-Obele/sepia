@@ -17,34 +17,21 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-/**
- * `tsvector` has no first-class drizzle type. These columns are only ever read by
- * hand-written SQL, never selected or inserted, so a bare custom type is enough.
- * `content_tsv` / `haystack_tsv` are normal Postgres full-text columns — plain
- * `tsvector`, standard operators — and only the INDEX access method differs.
- */
+/** `tsvector` has no drizzle type; these columns are only ever read by raw SQL. */
 const tsvector = customType<{ data: string }>({
   dataType: () => "tsvector",
 });
 
 /**
- * Sepia knowledge-graph schema — single source of truth for the DB shape.
- * Shared by the MCP server (Fly) and the dashboard (Netlify) so both talk to
- * the same Neon Postgres with the same table definitions — no drift.
- * Introspected from the live DB (constraint/index names match exactly), then
- * extended with: CHECK constraints (importance/weight ∈ [0,1], type whitelist),
- * UNIQUE(namespace_id, name) on entities, pg_trgm GIN indexes for ILIKE search,
- * and a partial index for the queryMemories hot path.
+ * The DB shape, shared by the MCP server and the dashboard so the two cannot drift.
+ * Introspected from the live DB (constraint names match), plus CHECK constraints,
+ * UNIQUE(namespace_id, name), pg_trgm GIN indexes and a partial index for queryMemories.
  */
 
 // ── Accounts (Better Auth) ──────────────────────────────────────────────────
-// Multi-tenant identity. `users.plan` is the billing tier (free | pro), set
-// server-side ONLY by the Lemon Squeezy webhook (src/billing/webhook.ts) or
-// manual assignment — never user-editable.
-// `lemon_customer_id` / `lemon_subscription_id` are the merchant-of-record
-// handles, stored so a later billing-portal pass can act on the subscription
-// without another migration. Nullable: existing rows predate billing.
-// Ids are uuids via Better Auth's `advanced.database.generateId`.
+// `users.plan` is set server-side only, by the billing webhook or manually — never
+// user-editable. The lemon_* columns are merchant-of-record handles kept for a future
+// billing portal; nullable because existing rows predate billing.
 
 export const users = pgTable(
   "users",
@@ -178,11 +165,9 @@ export const verifications = pgTable("verifications", {
 });
 
 /**
- * API keys (Better Auth apiKey plugin) — per-user keys for local editors
- * (Claude Code, Cursor, Zed, Copilot). `referenceId` is the owning user id.
- * Table name is `apikey` (the plugin's API_KEY_TABLE_NAME). The export name
- * is `apikey` too — the Better Auth drizzle adapter resolves models by
- * schema key, and the plugin's model name is `apikey`.
+ * Per-user API keys for local editors. `referenceId` is the owning user id. Both the
+ * table and the export are named `apikey` because the Better Auth drizzle adapter
+ * resolves models by schema key, and that is the plugin's model name.
  */
 export const apikey = pgTable(
   "apikey",
@@ -244,10 +229,8 @@ export const apikey = pgTable(
 );
 
 /**
- * Namespaces — isolated memory containers. `ownerId` is the account that
- * owns the namespace (multi-tenant). Nullable only during the bootstrap
- * adoption window (existing data is adopted by the admin user at boot);
- * the application always sets it. Uniqueness is per-owner, not global.
+ * Isolated memory containers. `ownerId` is nullable only during the bootstrap adoption
+ * window; the application always sets it. Uniqueness is per-owner, not global.
  */
 export const namespaces = pgTable(
   "namespaces",
@@ -291,12 +274,7 @@ export const entities = pgTable(
     importance: real().default(0.5),
     accessCount: integer("access_count").default(0),
     tags: text("tags").array().default([]),
-    /**
-     * BM25 index source, generated so it can never drift from `name`/`summary`
-     * and STORED so it can be indexed. The haystack deliberately mirrors what
-     * search already matched against, so the ranked path sees the same text the
-     * substring path did.
-     */
+    /** Generated so it cannot drift from `name`/`summary`; STORED so it can be indexed. */
     haystackTsv: tsvector("haystack_tsv").generatedAlwaysAs(
       sql`to_tsvector('english', COALESCE(name, '') || ' ' || COALESCE(summary, ''))`,
     ),
@@ -322,12 +300,9 @@ export const entities = pgTable(
       "btree",
       table.type.asc().nullsLast().op("text_ops"),
     ),
-    // BM25 index for ranked search. `b = 0` disables length normalisation —
-    // measured, not assumed: with the default b = 0.75 the correct 2,259-char
-    // memory ranked 6th for its own query, 3rd at b = 0.4, and 1st at b = 0.
-    // Sepia's rows span two orders of magnitude in length, so length carries no
-    // signal about relevance here. `default_limit` is the top-K pushdown; keep
-    // it close to the query LIMIT rather than the 1000 default.
+    // `b = 0` disables length normalisation — measured, not assumed: the correct 2,259-char
+    // row ranked 6th for its own query at b=0.75 and 1st at b=0. Row lengths span two
+    // orders of magnitude here, so length carries no relevance signal.
     index("entities_haystack_bm25")
       .using("lakebase_bm25", table.haystackTsv)
       .with({ b: 0, default_limit: 100 }),
@@ -432,10 +407,9 @@ export const memories = pgTable(
     }).defaultNow(),
     archived: boolean().default(false),
     /**
-     * BM25 index source. Generated so it can never drift from `content`, and
-     * STORED so it can be indexed. Deliberately just `content`: the metadata
-     * fields (digest title / conversation_id / source_ai) are matched but were
-     * never ranked, and widening this would silently change result ordering.
+     * BM25 source: generated so it cannot drift, STORED so it can be indexed. Just
+     * `content` — metadata is matched but never ranked, and widening this would change
+     * result ordering silently.
      */
     contentTsv: tsvector("content_tsv").generatedAlwaysAs(
       sql`to_tsvector('english', COALESCE(content, ''))`,
@@ -454,8 +428,7 @@ export const memories = pgTable(
       "btree",
       table.type.asc().nullsLast().op("text_ops"),
     ),
-    // BM25 index for ranked search — see `entities_haystack_bm25` for why
-    // b = 0 (measured) and why default_limit is lowered from the 1000 default.
+    // BM25 — see `entities_haystack_bm25` for why b = 0.
     index("memories_content_bm25")
       .using("lakebase_bm25", table.contentTsv)
       .with({ b: 0, default_limit: 100 }),
@@ -474,12 +447,11 @@ export const memories = pgTable(
       "gin",
       table.content.op("gin_trgm_ops"),
     ),
-    // New: trigram index for the DIGEST-METADATA branch of the search prefilter.
-    // A GIN trigram index can only serve a predicate whose expression matches the
-    // indexed one, and an OR against an unindexed expression costs the planner the
-    // index for the WHOLE predicate — without this, every search seq-scanned.
-    // MUST stay identical to `memMeta` in db/lib/search.ts (verified by EXPLAIN,
-    // since nothing else would catch the drift).
+    // Serves the metadata branch of the search prefilter. A GIN trigram index only works
+    // when the expression matches exactly, and an OR against an unindexed expression
+    // costs the planner the index for the WHOLE predicate — without this, every search
+    // seq-scanned. MUST stay identical to `memMeta` in db/lib/search.ts (only EXPLAIN
+    // catches the drift).
     index("idx_memories_metadata_trgm").using(
       "gin",
       sql`(COALESCE(${table.metadata}->>'title', '') || ' ' || COALESCE(${table.metadata}->>'conversation_id', '') || ' ' || COALESCE(${table.metadata}->>'source_ai', '')) gin_trgm_ops`,
@@ -637,17 +609,9 @@ export const memoryEntityLinks = pgTable(
 );
 
 // ── Telemetry (opt-in, OFF by default, owner-scoped) ────────────────────────
-// Answers questions the server otherwise cannot: is search actually working? did
-// the agent engage with what it was given? does the session-start briefing ever
-// fire? Without it we are guessing — which is why a search bug can hide for
-// weeks and why we could not tell whether a ranking change helped.
-//
-// The privacy posture is structural rather than a policy promise: this data
-// lives in the OWNER'S OWN Postgres, is never sent to a third party, and the
-// owner can read and delete every row. `tier` gates what is written at all:
-//   off         — nothing recorded (the default for every account)
-//   signals     — counters + a SALTED query fingerprint; never text, never content
-//   transcripts — also raw query text + returned ids, expiring after `ttl_days`
+// Owner's own Postgres, never a third party, owner can read and delete. `tier`
+// gates what is written: off = nothing, signals = counters + salted fingerprint,
+// transcripts = raw query text + returned ids, expiring after `ttl_days`.
 export const TELEMETRY_TIERS = ["off", "signals", "transcripts"] as const;
 
 export const telemetrySettings = pgTable(
@@ -681,11 +645,8 @@ export const telemetrySettings = pgTable(
 );
 
 /**
- * Structural parameters of one `search` call — everything the caller shaped
- * EXCEPT `q`, which is content and lives in `query_text` (tier "transcripts"
- * only). Optional keys are simply absent when the caller left them unset, so
- * "the caller asked for this engine" reads as `engine` present, not as a
- * nullable column with a sentinel.
+ * What one `search` call was shaped to, except `q` (content, in `query_text`, transcripts
+ * tier only). Absent key = the caller left it unset — no sentinel columns.
  */
 export interface SearchCallOptions {
   /** Resolved page size (schema default 10) — `hit_count = limit` means the page was cut. */
@@ -700,14 +661,10 @@ export interface SearchCallOptions {
 }
 
 /**
- * Append-only event log. Outcomes (did the agent go on to fetch a hit? re-ask?)
- * are DERIVED from the stream when read, never written back — so the hot path
- * stays a single insert and the log stays immutable.
- *
- * Never stored here, at any tier: memory content, entity names, agent
- * conversation, credentials. A query FINGERPRINT is a salted hash of the
- * normalised terms, rotated daily, so equivalent queries group without the text
- * being recoverable from the table itself.
+ * Append-only event log. Outcomes are DERIVED on read, never written back, so the hot path
+ * stays one insert. Never stored at any tier: memory content, entity names, conversation,
+ * credentials. The fingerprint is a daily-rotated salted hash, so equivalent queries group
+ * without the text being recoverable.
  */
 export const telemetryEvents = pgTable(
   "telemetry_events",

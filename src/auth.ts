@@ -1,30 +1,11 @@
 /**
- * Authentication for /mcp and /api/* — multi-tenant accounts (Phase 3).
+ * Auth for /mcp and /api/*. Identity is Better Auth (email/password + apiKey plugin)
+ * mounted at /api/auth/*. Token chain, first match wins: legacy MCP_BEARER_TOKEN →
+ * admin, API key → its user, OAuth access token → its user.
  *
- * Identity: Better Auth (email/password) with the apiKey plugin, mounted in
- * the same Bun.serve process at /api/auth/*. Every request resolves to a
- * USER; the business logic scopes all data by user id.
- *
- * Token resolution chain (first match wins):
- *   1. Legacy global MCP_BEARER_TOKEN  → the admin user (self-host compat)
- *   2. Better Auth API key             → its user (local editors; the
- *      dashboard mints these directly against Neon)
- *   3. OAuth 2.1 access token          → its user (web AIs)
- *
- * Dashboard browser sessions are deliberately NOT accepted here. They live in
- * the dashboard's own HTTP-only cookie and are validated against the `sessions`
- * table by the dashboard itself, so a session token never reaches /mcp — a
- * leaked MCP credential can't be exchanged for a browser session, and signing
- * out of the dashboard can't silently break an editor. Better Auth's `bearer`
- * plugin was removed along with this split: its only job was letting session
- * tokens authenticate /api/auth/*, which nothing does any more.
- *
- * Modes:
- *   - Dev mode (no BETTER_AUTH_SECRET, no MCP_BEARER_TOKEN): no auth; a
- *     dev user is auto-created and used for every request.
- *   - Auth mode (BETTER_AUTH_SECRET set): auth enforced. ADMIN_EMAIL +
- *     ADMIN_PASSWORD are required at boot — the admin owns pre-tenant data
- *     (adopted by ensureAdmin).
+ * Dashboard browser sessions are deliberately NOT accepted: a leaked MCP credential
+ * must not buy a browser session, and signing out of the dashboard must not break an
+ * editor. Dev mode (no BETTER_AUTH_SECRET, no MCP_BEARER_TOKEN) auto-creates a dev user.
  */
 
 import { betterAuth } from "better-auth";
@@ -168,13 +149,9 @@ function unauthorized(): Response {
 }
 
 /**
- * Resolve the authenticated user for a request, or return a 401 Response.
- * The returned user drives ALL data scoping downstream.
- *
- * A transient database failure is NOT a 401 and must not become a 500: the API
- * key may be perfectly valid and the database simply unreachable. It is a 503
- * with Retry-After — the one status that tells an MCP client to try again
- * instead of showing the user an unattributed error (2026-11-14).
+ * Resolve the authenticated user, or a 401 Response. A transient DB failure is NOT a 401 and
+ * must not become a 500 — the key may be fine and the database unreachable — so it is 503 +
+ * Retry-After, the one status that tells an MCP client to retry (2026-11-14).
  */
 export async function requireAuth(request: Request): Promise<AuthResult> {
   const authHeader = request.headers.get("authorization") ?? "";

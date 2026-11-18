@@ -1,21 +1,9 @@
 /**
- * Declared filter sets — the single source of truth for surface parity (G3).
- *
- * WHY THIS EXISTS (2026-09-29 silent-arg-drop, docs/plans/2026-09-29-silent-
- * arg-drop-guardrails.md): a filter can die at five layers (schema → parse →
- * handler → surface → docs), and every layer used to be silent. The incident
- * was `q` missing from the MCP schema while the lib supported it — plus
- * REST/stdio dropping it for the same reason. `search.test.ts`-style tests
- * anchor to these sets (not to schema keys): a param the schema forgot is
- * exactly what must fail the test, so schema-anchored iteration would be
- * blind to the original bug.
- *
- * CONTRACT: every key here must be (1) declared on the tool schema, (2)
- * forwarded by every handler/REST branch/stdio client that claims to support
- * it, (3) named in agent-facing docs. scripts/filter-parity.test.ts asserts
- * (1) DB-free; src/tools/memory.test.ts asserts (2) behaviorally through the
- * real tmcp validation path. Adding a filter to a lib function without adding
- * it here (or to an OMITTED list with a reason) is the drift this catches.
+ * The single source of truth for filter parity (G3). A filter can die silently at five
+ * layers — schema, parse, handler, surface, docs — which is exactly what happened on
+ * 2026-09-29 when `q` was missing from the MCP schema. Tests anchor to these sets, never
+ * to schema keys, so a forgotten param is the thing that fails.
+ * Contract: declared on the schema, forwarded by every surface, named in agent docs.
  */
 
 /** manage_memory action=query — every filter queryMemories honors. */
@@ -80,23 +68,11 @@ export const FILTER_OMITTED: Record<
 };
 
 /**
- * G5 — self-describing responses.
- *
- * KEYED BY THE DECLARED SET, never by "spread what the handler passed": a
- * stripped key never reaches the handler, so echoing the handler's own view
- * would inherit the exact bug this exists to defeat (forge-logic). Every
- * declared filter appears with its value (or null), so an agent can see
- * `filters_applied: { q: null }` and know its keyword was NOT applied —
- * the signal the 2026-09-29 report never had.
- *
- * `ignored` covers present-but-inapplicable params — the wrong-action class
- * (`where` on action=query passes every schema check and dies silently;
- * forge-logic: survives G1–G4). `entries` is the schema's entry map: valibot
- * FILLS DEFAULTS into parsed output (`detail: "core"` appears without the
- * caller sending it), so a key whose value equals its schema default is
- * treated as not-sent and never reported. A caller who explicitly sends the
- * default value is indistinguishable — accepting that, since the value is
- * then identical to doing nothing.
+ * G5 — self-describing responses, KEYED BY THE DECLARED SET rather than by what the handler
+ * passed: a stripped key never reaches the handler, so echoing its view would inherit the very
+ * bug this defeats. Every declared filter appears (or null), so `filters_applied: { q: null }`
+ * proves a keyword was not applied. `ignored` covers the wrong-action class, and a key equal to
+ * its schema default counts as not-sent (valibot fills defaults in).
  */
 export function echoQueryFilters(
   args: Record<string, unknown>,

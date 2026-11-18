@@ -23,13 +23,9 @@ const UNIQUE_VIOLATION = "23505";
 const MAX_ERROR_CHAIN = 5;
 
 /**
- * Network error codes that guarantee the request never reached the server —
- * DNS never resolved, or the TCP connection was refused/never established.
- * Retrying these is safe even for writes, because nothing was executed.
- *
- * Deliberately NOT here: `ECONNRESET`, `ECONNABORTED`, `EPIPE`, and timeouts
- * that can fire AFTER the request is on the wire. Those may have been
- * processed, so a retry could apply a write twice. See `db/retry.ts`.
+ * Pre-send network codes only — DNS or connect failures, so nothing reached the server and
+ * a retry is safe even for writes. NOT ECONNRESET/EPIPE/timeouts: those can fire after the
+ * request is on the wire, so a retry could duplicate a write. See `db/retry.ts`.
  */
 const PRE_SEND_NETWORK_CODES: ReadonlySet<string> = new Set([
   "EAI_AGAIN", // DNS temporary failure — the 2026-11-14 incident
@@ -40,17 +36,10 @@ const PRE_SEND_NETWORK_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Walk an error and everything it wraps, outermost first.
- *
- * Three shapes are in play, and reaching the real reason needs all of them:
- *   - Drizzle nests the driver error on `.cause` (`DrizzleQueryError`);
- *   - `@neondatabase/serverless` puts the failed `fetch` on `.sourceError`
- *     (verified against 1.1.0 — it does NOT set `.cause`);
- *   - undici/Bun put the syscall error on `.cause` of `TypeError: fetch failed`.
- *
- * Reading only `.cause` stops at the driver wrapper, which is exactly why the
- * 2026-11-14 DNS failure was invisible to the app and only legible in Bun's
- * crash page.
+ * Walk an error and everything it wraps, outermost first. Three shapes are in play:
+ * Drizzle nests on `.cause`, `@neondatabase/serverless` on `.sourceError`, undici on
+ * `.cause` of `TypeError: fetch failed`. Reading only `.cause` stops at the driver
+ * wrapper — which is why the 2026-11-14 DNS failure was invisible to the app.
  */
 function errorChain(
   error: unknown,
@@ -71,16 +60,10 @@ function errorChain(
 }
 
 /**
- * The Postgres fields buried under Drizzle's wrapper.
- *
- * Drizzle does NOT rethrow the driver error. It throws a `DrizzleQueryError`
- * whose `cause` is the driver's `NeonDbError` (see drizzle-orm/errors.js), so
- * the SQLSTATE and the violated constraint live on the CAUSE, never on the
- * error the caller catches; reading `error.code` finds nothing. Walk the cause
- * chain for the first object carrying a 5-char SQLSTATE.
- *
- * Without this, a constraint violation reaches the model as Drizzle's raw
- * `Failed query: insert into "entities" …` dump (the 2026-10-11 incident).
+ * The Postgres fields buried under Drizzle's wrapper. Drizzle rethrows a
+ * `DrizzleQueryError` whose CAUSE is the driver error, so SQLSTATE and constraint
+ * live there — reading `error.code` finds nothing, and the model gets a raw
+ * `Failed query: …` dump instead (the 2026-10-11 incident).
  */
 export function pgError(
   error: unknown,
@@ -120,11 +103,8 @@ export function isUniqueViolation(
 }
 
 /**
- * True when the request never left the machine — a DNS or connect failure.
- *
- * These are transient by definition, safe to retry (see `db/retry.ts`), and
- * never the caller's fault — which is why they must not be reported as a 401
- * or as a failed query.
+ * True when the request never left the machine — transient, safe to retry, never the
+ * caller's fault, so it must not surface as a 401 or a failed query.
  */
 export function isPreSendNetworkError(error: unknown): boolean {
   return errorChain(error).some(
@@ -142,13 +122,9 @@ function truncate(text: string, max: number): string {
 }
 
 /**
- * One loggable line describing an error and what it wraps, ROOT CAUSE FIRST.
- *
- * `error.message` alone is useless for a database failure: Drizzle replaces the
- * reason with the opaque `Failed query: select …` wrapper and hides the cause
- * on `.cause`. During the 2026-11-14 incident the real reason
- * (`getaddrinfo EAI_AGAIN …`) existed ONLY in Bun's crash page, because
- * nothing in the app ever walked the chain.
+ * One loggable line, ROOT CAUSE FIRST. `error.message` alone is useless for a DB
+ * failure: Drizzle hides the reason behind `Failed query: …`, which is why the real
+ * `getaddrinfo EAI_AGAIN` existed only in Bun's crash page during the 2026-11-14 outage.
  */
 export function describeError(error: unknown): string {
   const parts = errorChain(error).map((candidate) => {

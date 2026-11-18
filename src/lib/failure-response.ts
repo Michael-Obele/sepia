@@ -1,22 +1,9 @@
 /**
- * The failure boundary for the HTTP process.
- *
- * WHY THIS FILE EXISTS: on 2026-11-14 a one-second DNS failure inside the
- * container made `Bun.serve` render its development crash page as the body of a
- * `500` response. The MCP client could only report `Error 500 status sending
- * message to http://localhost:8484/mcp` followed by a wall of HTML — no JSON,
- * no JSON-RPC error, no usable reason. Nothing was wrong with the request.
- *
- * The rules encoded here:
- *   - A failure that never reached the database (`isPreSendNetworkError`) is
- *     `503` + `Retry-After`, NOT `500`: the caller's input was fine and asking
- *     again is the fix.
- *   - `/mcp` answers in JSON-RPC 2.0, because that is the only error shape an
- *     MCP client can parse and surface.
- *   - Every other route answers `{ error: { code, message } }`, matching the
- *     REST surface in `src/api.ts`.
- *   - Internal detail goes to the LOG, never to the response body — except for
- *     the transient message, which is deliberately safe to show a user.
+ * The HTTP failure boundary. On 2026-11-14 a one-second DNS failure made `Bun.serve`
+ * render its dev crash page as the body of a 500, so the MCP client saw a wall of HTML.
+ * Rules: a pre-send failure is 503 + Retry-After, not 500 (the input was fine, asking again
+ * is the fix); /mcp answers JSON-RPC 2.0 because that is the only shape an MCP client can
+ * parse; every other route matches the REST error shape; internal detail goes to the log.
  */
 import { describeError, isPreSendNetworkError } from "@sepia/shared";
 
@@ -33,12 +20,9 @@ function isMcpPath(pathname: string): boolean {
 }
 
 /**
- * Build the response for an error that escaped a route handler, and log the
- * real cause in one line (`describeError` is root-cause-first; `error.message`
- * alone is Drizzle's opaque `Failed query: …` wrapper).
- *
- * `transientMessage` lets an auth boundary say "authentication temporarily
- * unavailable" instead of blaming the database at the caller's level.
+ * Response for an error that escaped a handler, logging the real cause in one root-cause-first
+ * line. `transientMessage` lets an auth boundary say "authentication unavailable" instead of
+ * blaming the database.
  */
 export function failureResponse(
   error: unknown,

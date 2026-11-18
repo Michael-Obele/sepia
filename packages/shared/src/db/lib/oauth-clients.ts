@@ -3,18 +3,10 @@ import { and, eq, isNull } from "drizzle-orm";
 import { oauthClients, oauthTokens } from "../schema.ts";
 
 /**
- * OAuth client helpers, shared by the authorization server and the dashboard.
- *
- * The central idea: an "AI connection" belongs to an APP, not to an OAuth
- * `client_id`. Clients using Dynamic Client Registration (LM Studio, Cursor,
- * any local MCP client) mint a brand-new `client_id` on every authorization,
- * so anything keyed on `client_id` treats each re-authorization as a brand-new
- * connection — inflating the count, duplicating dashboard rows, and eventually
- * locking a user out of an app they had already connected.
- *
- * `getUserByApiKey`-style single implementations matter here too: the quota is
- * enforced by the server but DISPLAYED by the dashboard, and if the two ever
- * count differently users see a limit error that contradicts their usage meter.
+ * An "AI connection" belongs to an APP, not an OAuth `client_id`. DCR clients (LM Studio,
+ * Cursor) mint a new client_id per authorization, so keying on it inflates the count,
+ * duplicates dashboard rows, and locks users out of an app they already connected. The
+ * server enforces the quota and the dashboard displays it — both must count the same way.
  */
 
 export type OAuthClientRow = typeof oauthClients.$inferSelect;
@@ -39,11 +31,9 @@ function isLoopbackHostname(hostname: string): boolean {
 }
 
 /**
- * Hostnames this client redirects to, lowercased and sorted.
- *
- * Deliberately WITHOUT the port: a local app re-registers on a different port
- * between runs (LM Studio, for one), and an identity that included the port
- * would treat each run as a brand-new connection.
+ * Redirect hostnames, lowercased and sorted. Deliberately WITHOUT the port: a local app
+ * re-registers on a different port between runs, and including it would make each run look
+ * like a new connection.
  */
 export function redirectHostnames(uris: string[] | null | undefined): string[] {
   return parseRedirectUris(uris)
@@ -52,14 +42,9 @@ export function redirectHostnames(uris: string[] | null | undefined): string[] {
 }
 
 /**
- * True when a client only ever redirects back to the user's own machine.
- *
- * Such a client is a LOCAL EDITOR (LM Studio, Cursor, …), not a Web AI — and
- * the plan explicitly treats editors as unlimited. Exempting them is safe
- * because a remote service cannot own a loopback redirect.
- *
- * Requires at least one URI and ALL of them loopback, so a client can't claim
- * local status while also redirecting somewhere remote.
+ * True when a client only redirects to the user's own machine — a local EDITOR, which the
+ * plan leaves unlimited. Safe because a remote service cannot own a loopback redirect.
+ * Requires at least one URI and ALL loopback, so it cannot claim local while also going remote.
  */
 export function isLocalClient(uris: string[] | null | undefined): boolean {
   const parsed = parseRedirectUris(uris);
@@ -68,11 +53,8 @@ export function isLocalClient(uris: string[] | null | undefined): boolean {
 }
 
 /**
- * Stable identity of an AI connection: the app, not its current registration.
- *
- * `name` + redirect hostname survives re-registration (and port changes), and
- * unnamed clients still stay distinct from each other because their hosts
- * differ.
+ * Stable identity of an AI connection: `name` + redirect hostname survives re-registration
+ * and port changes, and unnamed clients stay distinct because their hosts differ.
  */
 export function connectionIdentity(
   name: string | null | undefined,
@@ -83,13 +65,7 @@ export function connectionIdentity(
   return `${normalizedName}@${hostname}`;
 }
 
-/**
- * True when this client still holds a usable credential.
- *
- * A connection with no non-revoked, unexpired refresh token can never be used
- * again, so retiring it costs the user nothing. This is the discriminator that
- * tells a stale re-registration from a second, live account of the same app.
- */
+/** True when this client still holds a usable credential (unrevoked, unexpired refresh token). */
 export async function hasLiveToken(db: Db, clientId: string): Promise<boolean> {
   const rows = await db
     .select({ expiresAt: oauthTokens.refreshExpiresAt })
@@ -102,10 +78,7 @@ export async function hasLiveToken(db: Db, clientId: string): Promise<boolean> {
   return Boolean(expiresAt) && new Date(expiresAt!).getTime() > Date.now();
 }
 
-/**
- * The user's existing connection for the same app, if any — matched by stable
- * identity rather than `client_id`, so re-authorization finds it.
- */
+/** The user's existing connection for the same app, by stable identity rather than client_id. */
 export async function findOwnedConnection(
   db: Db,
   ownerId: string,
@@ -141,28 +114,14 @@ export interface OAuthClientInput {
 }
 
 /**
- * Whether `previous` is a SUPERSEDED registration that may be retired, rather
- * than a second live account of the same app that must be left alone.
+ * Is `previous` a superseded registration, or a second live account of the same app?
+ * App identity (`name@host`) cannot tell: both Grok logins are `Grok@grok.com`. Treating
+ * a collision as re-auth revoked a working account's tokens and deleted its row.
  *
- * App identity (`name@host`) cannot tell one ACCOUNT of an app from another:
- * both Grok logins are `Grok@grok.com`. Treating every same-app collision as a
- * re-authorization meant binding a second Grok account revoked the first one's
- * tokens and deleted its row — a destructive, irreversible loss of a working
- * connection, with nothing left in the dashboard to show it happened.
- *
- * So a collision is only a re-registration when we can show the old row is not
- * doing any work:
- *
- *   - DEAD (no live token). It can never authorize again, so retiring it loses
- *     nothing. This is the stale-registration case that must not leak quota.
- *   - LOCAL (loopback-only redirect). A local editor has exactly one identity —
- *     one LM Studio, one machine — so two loopback rows for the same app are
- *     re-registrations by definition, and the quota exempts them anyway. This
- *     is the case commit 2be9c32 was written for, unchanged.
- *
- * Anything else is presumed to be a DIFFERENT account, because the asymmetry is
- * lopsided: destroying a working connection is unrecoverable, while an extra row
- * the user did not ask for is visible, removable, and bounded by the quota.
+ * Only two cases are re-registrations: DEAD (no live token — retiring loses nothing) and
+ * LOCAL (loopback; a local editor has one identity, and the quota exempts it). Anything
+ * else is presumed a different account: destroying a working connection is unrecoverable,
+ * while an extra row is visible, removable, and quota-bounded.
  */
 export async function isSupersededRegistration(
   db: Db,
@@ -176,14 +135,9 @@ export async function isSupersededRegistration(
 }
 
 /**
- * Bind a client to its authorizing user, reusing the row when the same app is
- * already connected.
- *
- * `previous` is the user's existing connection for this app (from
- * `findOwnedConnection`) — passing it in avoids a second lookup and lets the
- * caller make the quota decision first. `superseded` is that caller's
- * `isSupersededRegistration` verdict; when omitted it is computed here so the
- * two can never disagree.
+ * Bind a client to its authorizing user, reusing the row when the same app is already
+ * connected. `previous` is passed in to avoid a second lookup and let the caller decide the
+ * quota first; `superseded` defaults to the local verdict so the two cannot disagree.
  */
 export async function bindClientToUser(
   db: Db,

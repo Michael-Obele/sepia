@@ -11,16 +11,9 @@ import { SEARCH_LIMIT_DEFAULT } from "../../types.ts";
 export type TelemetryTier = (typeof TELEMETRY_TIERS)[number];
 
 /**
- * `node:crypto` is loaded LAZILY — never at the top level.
- *
- * This module is re-exported by the `@sepia/shared` barrel, so a top-level Node
- * import lands in the browser-reachable module graph; Vite then externalises it
- * and the client bundle throws at IMPORT time ("Cannot access
- * node:crypto.createHash in client code"), taking the whole page down before any
- * of its code runs. Deferring it means the module is safe to import anywhere and
- * only an actual `fingerprintQuery()` call needs Node — and that only ever
- * happens server-side. Same pattern as `getUserByApiKey` in `users.ts`;
- * `browser-safety.test.ts` guards the boundary from the other side.
+ * `node:crypto` must be loaded LAZILY: this module is in the shared barrel, so a
+ * top-level Node import reaches the browser bundle and throws at import time. Same
+ * pattern as `getUserByApiKey`; `browser-safety.test.ts` guards it.
  */
 let createHashLoader: Promise<typeof import("node:crypto").createHash> | null =
   null;
@@ -40,15 +33,9 @@ const tierCache = new Map<
 >();
 
 /**
- * Salted, day-scoped fingerprint of a query's terms.
- *
- * The point is to group equivalent queries WITHOUT storing the query. Two
- * consequences worth stating plainly:
- *  - the salt rotates daily, so the same query hashes differently tomorrow —
- *    you cannot profile a user's questions across days, but you also cannot
- *    count "the same query over a week". In-session loops are what matter here.
- *  - the secret falls back to the auth secret (always present) rather than a
- *    literal, because a hardcoded salt makes the hash dictionary-reversible.
+ * Salted, day-scoped fingerprint: groups equivalent queries without storing them. The
+ * daily rotation means no cross-day profiling; the salt falls back to the auth secret
+ * because a hardcoded one is dictionary-reversible.
  */
 export async function fingerprintQuery(parts: string[]): Promise<string> {
   const normalized = [...new Set(parts.map((p) => p.toLowerCase()))]
@@ -85,22 +72,16 @@ export interface TelemetryInput {
   /** tier "transcripts" only — dropped at every other tier */
   hitIds?: string[] | null;
   /**
-   * The call's structural parameters (see `SearchCallOptions`) — limit,
-   * precision dial, scope filters, requested engine. Recorded at EVERY tier,
-   * because it is what classifies an empty result. Never query text: build it
-   * with `searchOptions()`, which picks known keys instead of spreading.
+   * Structural params (limit, dial, filters, engine) — recorded at EVERY tier, because they
+   * classify an empty result. Never query text: build via `searchOptions()`, which picks
+   * known keys instead of spreading.
    */
   options?: SearchCallOptions | null;
 }
 
 /**
- * The `search` call as made, minus `q`.
- *
- * Built by picking known keys rather than spreading the input, so `q` cannot
- * leak into a column that is written at every tier — `q` is content and lives
- * only in `queryText`, gated to tier "transcripts". `limit` is always present:
- * the input schema resolves it, and recording the RESOLVED value is what makes
- * "the page was cut" (hit_count = limit) answerable later.
+ * The `search` call minus `q`. Picks known keys rather than spreading, so `q` cannot leak into
+ * a column written at every tier — it is content, gated to the transcripts tier.
  */
 export function searchOptions(input: {
   limit?: number;
@@ -163,13 +144,9 @@ export async function setTelemetrySettings(
 }
 
 /**
- * Retention only. Deliberately NOT a call to `setTelemetrySettings`: that one
- * re-stamps `enabledAt`, which is right when the tier changes and wrong when
- * the only thing that changed is how long payloads live — "recording since"
- * must not claim the switch was just flipped because the TTL moved.
- *
- * Upserts, so an account can configure retention before ever enabling
- * telemetry (a missing row keeps the `off` default).
+ * Retention only — deliberately not `setTelemetrySettings`, which re-stamps `enabledAt`:
+ * "recording since" must not claim the switch was flipped because the TTL moved. Upserts,
+ * so retention can be configured before telemetry is ever enabled.
  */
 export async function setTelemetryTtl(
   db: Db,
@@ -247,19 +224,10 @@ export function recordTelemetrySafe(db: Db, input: TelemetryInput): void {
 }
 
 /**
- * Enforce retention on the tier-2 payloads. There is no scheduler in this app
- * (Fly scales to zero), so this runs on read — call it before showing data,
- * rather than pretending a cron exists.
- */
 /**
- * Enforce retention on the tier-2 payloads. There is no scheduler in this app
- * (Fly scales to zero), so this runs on read — call it before showing data,
- * rather than pretending a cron exists.
- *
- * `ownerId` is REQUIRED on purpose. It used to be optional, which meant one
- * careless call could sweep every account's payloads in a single statement:
- * not a leak, but the wrong shape for a scoping guarantee. Now no call shape
- * exists that can reach another account's rows.
+ * Enforce retention on tier-2 payloads. No scheduler exists (Fly scales to zero), so it
+ * runs on read. `ownerId` is REQUIRED: when it was optional, one careless call swept
+ * every account's payloads in a single statement.
  */
 export async function purgeExpiredTelemetry(db: Db, ownerId: string) {
   const res = await db.execute(sql`
@@ -286,12 +254,8 @@ export const PURGE_INTERVAL_MS = 15 * 60_000;
 const lastPurgeAt = new Map<string, number>();
 
 /**
- * Opportunistic retention: run `purgeExpiredTelemetry` for this owner at most
- * once per `PURGE_INTERVAL_MS`.
- *
- * `now` exists purely so the throttle can be tested without sleeping;
- * production callers omit it. The returned count is diagnostic only — a caller
- * must never depend on it.
+ * At most one retention sweep per owner per `PURGE_INTERVAL_MS`. `now` exists so the
+ * throttle is testable without sleeping; the returned count is diagnostic only.
  */
 export async function maybePurgeExpiredTelemetry(
   db: Db,
@@ -557,13 +521,10 @@ export async function deleteTelemetry(db: Db, ownerId: string) {
 }
 
 /**
- * The queue of searches worth looking at: EMPTY, or covering under HALF the
- * query. Reading as `best_matched_terms < terms` would return almost every
- * search (best-effort recall is partial by design), which is why the old
- * predicate never got a caller. `terms > 0` keeps the recent-items path out —
- * it has no coverage to judge.
+ * Builder for the failure queue: EMPTY, or covering under HALF the query. `best_matched_terms <
+ * terms` would return almost every search, since best-effort recall is partial by design.
+ * `terms > 0` keeps the recent-items path out. Composable into `db.batch`.
  */
-/** Builder form of the failure-queue read — composable into `db.batch`. */
 export function telemetryFailuresQuery(
   db: Db,
   ownerId: string,

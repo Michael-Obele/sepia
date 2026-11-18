@@ -112,6 +112,18 @@ Do NOT start new dev servers (vite, `bun run dev`, `bun --hot`, etc.) and do NOT
 
 The SvelteKit dashboard (`dashboard/`) prefers remote `form` over `command` for any mutation that has form inputs; `command` is reserved for input-less actions (bare buttons, dialog confirmations, toggles). Full rule, gotchas, and patterns: `dashboard/AGENTS.md` → "Data Fetching & Mutations (Remote Functions)".
 
+## Comments — short, and rarely
+
+The CODE carries the meaning. A comment is **1-3 lines at most**, and most functions need none.
+
+- **Delete** comments that narrate what the next line does, numbered step blocks the code already shows, and multi-paragraph or `@param`/`@returns` JSDoc essays.
+- **Keep** only the WHY when it is genuinely surprising: an ordering requirement, a workaround, a version or API fact, a decision that looks wrong without its reason. One line is usually enough.
+- **File headers** are one line naming the module, plus at most one clause naming a non-obvious constraint.
+- **Durable knowledge goes to Sepia**, not into new source prose. Gotchas, vendor behaviour and the long version of "why" belong in memory; the comment keeps only what stops the next person re-breaking the line in front of them.
+- **Never grow a comment** to explain something the code, a test, or a memory already holds. If a comment needs a second paragraph, the paragraph is a memory entry or a doc.
+
+A comment-only pass leaves the code byte-identical. If a change would need the comment to understand it, fix the code instead.
+
 ## Sepia docs — keep in sync when adding features
 
 Sepia's docs are the agents' only window into the server. When you add a feature (new tool, action, field, endpoint, or behavior change), update ALL of these before calling it done:
@@ -142,7 +154,7 @@ Rule: no feature is done until its docs are updated. Check the diff of every alw
 <!-- sepia:start -->
 ## Sepia memory (always-on) — AGENTS.md (Codex / OpenCode / generic)
 
-<!-- sepia-docs-version: 1.15.2 -->
+<!-- sepia-docs-version: 1.16.1 -->
 
 You are connected to the user's personal Sepia memory server (sepia) over MCP (any `AGENTS.md`-aware agent: Codex, OpenCode, Copilot, Cursor, Zed). It stores a knowledge graph in namespaces (default `personal`): entities, relations, memories with importance scoring.
 

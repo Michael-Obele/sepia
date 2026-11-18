@@ -1,19 +1,8 @@
 #!/usr/bin/env node
 /**
- * sepia-mcp — self-contained MCP server for Sepia.
- *
- * Registers the same 7 tools as the Sepia server, but every tool call is
- * proxied to the Sepia REST API (`SEPIA_URL/api/*`) with `SEPIA_API_KEY`.
- * No database access, no migrations — just a lightweight MCP wrapper.
- *
- * Transports:
- *   - stdio (default) — for `npx sepia-mcp` in MCP clients
- *   - http — `--http` (or `SEPIA_HTTP=1`) serves Streamable HTTP at /mcp on
- *     PORT (default 8080), so it can be self-hosted on Fly.io too.
- *
- * Env:
- *   SEPIA_URL      base URL, default https://sepia.fly.dev
- *   SEPIA_API_KEY  Bearer token (the server's MCP_BEARER_TOKEN / an API key)
+ * sepia-mcp — standalone MCP server for Sepia. Same 7 tools, every call proxied to the REST
+ * API with `SEPIA_API_KEY`; no database access, no migrations. stdio by default, or `--http`
+ * for Streamable HTTP at /mcp on PORT. Env: `SEPIA_URL`, `SEPIA_API_KEY`.
  */
 import { McpServer } from "tmcp";
 import { ValibotJsonSchemaAdapter } from "@tmcp/adapter-valibot";

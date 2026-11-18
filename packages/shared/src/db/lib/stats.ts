@@ -37,21 +37,14 @@ export interface Stats {
 }
 
 /**
- * The 11 dashboard-stat queries as a READONLY TUPLE of builders, so a caller can
- * append its own statements and pay ONE Neon HTTP round trip for everything
- * (the `/app` home page appends the namespace options).
- *
- * `as const` is load-bearing. `db.batch` accepts `Readonly<[U, ...U[]]>` and
- * returns `BatchResponse<T>`, which maps over the tuple position-for-position —
- * that is what keeps each result's type attached. Returning a plain array would
- * widen every element to one generic shape and let the destructuring drift out
- * of order WITHOUT a compile error.
+ * The 11 dashboard-stat queries as a READONLY TUPLE, so a page can append its own
+ * statements and pay ONE round trip. `as const` is load-bearing: `db.batch` maps over the
+ * tuple position-for-position, so returning a plain array would widen every result and let
+ * destructuring drift out of order with no compile error.
  */
 export function statsQueries(db: Db, ownerId: string) {
-  // All 11 queries in ONE Neon HTTP round trip via db.batch. Firing them as
-  // separate requests (even via Promise.all) costs ~500-700ms each through the
-  // Neon HTTP driver, so getStats used to take ~10s. A single batch is ~1s.
-  // Every query is scoped to the owner's namespaces.
+  // All 11 in ONE round trip. Firing them separately (even Promise.all) costs ~500-700ms
+  // each through the Neon HTTP driver, so getStats took ~10s; a batch is ~1s.
   const owned = sql`(SELECT id FROM ${namespaces} WHERE owner_id = ${ownerId})`;
   return [
     db
@@ -108,9 +101,8 @@ export function statsQueries(db: Db, ownerId: string) {
           AND updated_at < now() - (${STALE_AFTER_DAYS} * interval '1 day')
           AND namespace_id IN (SELECT id FROM ${namespaces} WHERE owner_id = ${ownerId})
       `),
-    // Conversation digests only — constituents carry metadata.kind too, but
-    // only the digest carries the `conversation` tag (matches the dashboard
-    // conversations list filter). Uses the GIN tag index.
+    // Digests only: constituents carry metadata.kind too, but only the digest carries the
+    // `conversation` tag, which matches the dashboard filter and uses the GIN tag index.
     db
       .select({ n: sql<number>`count(*)::int` })
       .from(memories)
@@ -143,14 +135,8 @@ function rawStatsBatch(db: Db, ownerId: string) {
 export type StatsResults = Awaited<ReturnType<typeof rawStatsBatch>>;
 
 /**
- * Turn the raw `statsQueries` results into the `Stats` object.
- *
- * Split out from `getStats` so a page can append its OWN statements to the same
- * batch — the `/app` home page adds the namespace options — and still reuse this
- * mapping instead of repeating it.
- *
- * ORDER MUST MATCH `statsQueries`, position for position; the tuple typing is
- * what enforces it.
+ * Map the raw results to `Stats`. Split out so a page can append its own statements to the
+ * same batch and reuse the mapping. ORDER MUST MATCH `statsQueries` — the tuple typing enforces it.
  */
 export function buildStats([
   ns, // 1  namespace count

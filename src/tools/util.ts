@@ -25,18 +25,11 @@ export const SEPIA_ICON: {
 };
 
 /**
- * Wraps a tool handler so that business errors become MCP tool errors
- * (visible to the model as a message) instead of JSON-RPC failures, while
- * protocol-level McpErrors still propagate.
- *
- * G2 (silent-arg-drop guardrails): tool schemas are `v.looseObject`, so an
- * unknown key survives tmcp validation instead of being silently stripped
- * (the 2026-09-29 incident: `q` vanished before the handler ever ran). We
- * diff the keys the caller actually sent against the schema's declared
- * entries and report the extras as `ignored_args` + a hint — the model sees
- * what was dropped instead of inferring it from plausible-looking output.
- * Boundary: unknown keys *inside* nested objects (memory/update/where/…)
- * are still stripped by their `v.object` — top-level only, by design.
+ * Turn business errors into MCP tool errors (the model reads a message) while letting
+ * protocol McpErrors propagate. G2: schemas are `looseObject`, so unknown keys survive
+ * validation — we diff actual keys against declared ones and report extras as
+ * `ignored_args` (the 2026-09-29 incident: `q` vanished before the handler ran). Top-level
+ * only; keys inside nested objects are still stripped by their `v.object`.
  */
 export function safe<Schema extends { entries: Record<string, unknown> }, T>(
   schema: Schema,

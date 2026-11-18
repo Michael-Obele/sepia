@@ -1,26 +1,10 @@
 /**
- * Lemon Squeezy webhook — the source of truth for `users.plan`.
- *
- * WHY THIS FILE EXISTS: the pricing page sells Pro, but nothing could flip a
- * user's tier. The merchant of record (Lemon Squeezy) tells us when money
- * moved; this module is the only code allowed to write `users.plan` besides
- * the admin bootstrap.
- *
- * ARCHITECTURE (docs/plans/2026-09-29-lemon-squeezy-billing-design.md):
- * the webhook lives on Fly — not the dashboard — for two reasons:
- *   1. LS must reach it unauthenticated, and src/api.ts 401s every /api/*
- *      route without a user, so it is mounted BEFORE that guard.
- *   2. The dashboard cannot authenticate to Fly for an arbitrary user
- *      (src/auth.ts deliberately rejects browser sessions there).
- *
- * SECURITY: every request is verified with HMAC-SHA256 over the RAW body
- * against `X-Signature`, compared timing-safe. No signature → 401, no
- * secret configured → 503 (a deploy without the env var must be loud, never
- * a silent "accept everything" fallback).
- *
- * IDEMPOTENCY: LS retries on non-2xx, so every write is an absolute SET
- * (never an increment) and a verified event that changes nothing still
- * returns 200 — otherwise LS redelivers the same event forever.
+ * Lemon Squeezy webhook — the only writer of `users.plan` besides the admin bootstrap.
+ * Mounted on Fly before the /api auth guard (LS cannot authenticate, and the dashboard
+ * cannot reach Fly for an arbitrary user). HMAC-SHA256 over the raw body, timing-safe;
+ * no secret configured returns 503 rather than accepting everything. Every write is an
+ * absolute SET, and a no-op event still returns 200 so LS stops retrying.
+ * Design: docs/plans/2026-09-29-lemon-squeezy-billing-design.md
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import * as v from "valibot";
@@ -118,14 +102,10 @@ const PRO_EVENTS = new Set([
 ]);
 
 /**
- * Subscription status → tier, for the `subscription_updated` catch-all.
- * Explicit map rather than "anything not expired is pro": an unknown future
- * status should be a logged no-op, not a free upgrade.
- *
- * `cancelled` → pro is deliberate: LS cancels immediately but keeps access
- * until `ends_at`; the downgrade arrives later as `subscription_expired`.
- * `past_due`/`paused`/`unpaid` → pro: dunning is not a reason to lock out a
- * customer who is mid-retry.
+ * Status → tier for `subscription_updated`. Explicit map rather than "not expired is pro",
+ * so an unknown future status is a logged no-op instead of a free upgrade. `cancelled` → pro
+ * is deliberate: LS cancels immediately but access runs to `ends_at`. `past_due`/`paused`/
+ * `unpaid` → pro: dunning is not a reason to lock out a customer mid-retry.
  */
 const STATUS_TO_PLAN: Record<string, Plan> = {
   active: "pro",
@@ -181,10 +161,8 @@ function strId(value: unknown): string | undefined {
 }
 
 /**
- * Custom data is injected at checkout (`checkout_data.custom.user_id`) and
- * echoed back in `meta.custom_data` on every order/subscription event. The
- * email fallback covers a checkout opened directly (no custom data) — LS
- * still tells us who bought it.
+ * Custom data is injected at checkout (`checkout_data.custom.user_id`) and echoed back in
+ * `meta.custom_data`. The caller falls back to an email lookup.
  */
 export function resolveUserId(payload: Payload): string | undefined {
   const custom = payload.meta.custom_data;
@@ -251,11 +229,7 @@ export interface WebhookDeps {
   secret?: string;
 }
 
-/**
- * Handle one webhook delivery. Returns a Response for every path; never
- * throws past this boundary (an unhandled throw = 500 = LS retry, which is
- * the correct behaviour for a genuine server error).
- */
+/** Handle one delivery. Returns a Response on every path; never throws past here. */
 export async function handleLemonWebhook(
   request: Request,
   deps: WebhookDeps = {},
@@ -297,14 +271,9 @@ export async function handleLemonWebhook(
     ...ids,
   };
 
-  // Verified but nothing to write → 200 with a reason. This is NOT a no-op
-  // to LS: it means "handled", and returning an error here would trigger
-  // redelivery of an event we have already decided not to act on.
-  //
-  // NOTE: this branch is a safety net, not the common path — most events also
-  // carry a customer_id, which we opportunistically record even when the plan
-  // doesn't change (learning the handles early makes a later portal pass
-  // work regardless of which event arrives first).
+  // Verified but nothing to write → 200 with a reason: to LS this means "handled", and an
+  // error would trigger redelivery of an event we already decided not to act on. Rare in
+  // practice — most events carry a customer_id, which we record opportunistically.
   if (!patch.plan && !patch.lemonCustomerId && !patch.lemonSubscriptionId) {
     console.log(`[billing] ${eventName}: ${decision.reason}`);
     return json(200, {

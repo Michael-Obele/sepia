@@ -1,30 +1,12 @@
 /**
- * Retry the one class of database failure where retrying is PROVABLY safe:
- * the request never left the machine.
+ * Retry the one failure class where retrying is PROVABLY safe: the request never left the
+ * machine. The 2026-11-14 incident lost DNS for a second (`EAI_AGAIN`), one /mcp POST
+ * failed, and the client got an HTML 500 — that container had 72 such failures over 12 days.
  *
- * THE INCIDENT (2026-11-14): a local Docker container lost DNS for about a
- * second — `getaddrinfo EAI_AGAIN api.c-5.us-east-2.aws.neon.tech` — one
- * `/mcp` POST failed, and the editor's MCP client got an HTML 500 because
- * nothing anywhere retried. That container's log holds 72 such DNS failures
- * across 12 separate days. A data layer that gets exactly one attempt per
- * request cannot survive a resolver that is right 99.9% of the time.
- *
- * WHY `fetch` IS THE RIGHT CHOKE POINT: every query, `db.batch()`, and
- * transaction the Neon HTTP driver runs is ONE HTTP POST, so wrapping `fetch`
- * covers the entire data layer — MCP, REST, and the dashboard — without
- * touching a single call site, and it also covers connection failures that
- * happen before Drizzle is involved at all.
- *
- * WHY THIS CANNOT DOUBLE-WRITE: only failures that guarantee the request was
- * never sent are retried (`isPreSendNetworkError` — DNS never resolved, or TCP
- * refused/no listener). A reset or timeout AFTER send is never retried: at that
- * point the server may already have committed, and a second attempt could
- * apply the write twice. Keep that distinction — a "retry everything" version
- * of this file would turn a blip into duplicated memories.
- *
- * Verified against `@neondatabase/serverless` 1.1.0 (2026-11-14): the driver
- * reads `neonConfig.fetchFunction` and calls it with the same arguments as
- * native `fetch`, so this hooks in without patching the driver.
+ * `fetch` is the right choke point: every query, `db.batch()` and transaction is ONE HTTP
+ * POST, so wrapping it covers the whole data layer without touching a call site. Only
+ * pre-send failures are retried — a reset or timeout AFTER send may already have committed,
+ * and retrying it would duplicate the write.
  */
 import { neonConfig } from "@neondatabase/serverless";
 import { isPreSendNetworkError } from "./errors.ts";

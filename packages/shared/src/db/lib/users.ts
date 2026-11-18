@@ -5,14 +5,9 @@ import { API_KEY_PREFIX } from "../../types.ts";
 import { MemoryError } from "../errors.ts";
 
 /**
- * Account helpers shared by the MCP server and the dashboard. Both resolve
- * a bearer token to a user the same way (session token or API key), so the
- * scoping is identical everywhere.
- *
- * NOTE: `node:crypto` is imported lazily inside getUserByApiKey — this
- * module is re-exported through the shared barrel, which the dashboard's
- * remote-function CLIENT stubs also import (for types). A top-level
- * node:crypto import would break the browser bundle.
+ * Account helpers shared by the server and the dashboard, so token→user resolution is
+ * identical everywhere. `node:crypto` is imported lazily: the barrel is imported by
+ * browser-side type stubs, so a top-level import would break that bundle.
  */
 
 export type UserRow = typeof users.$inferSelect;
@@ -32,13 +27,9 @@ export async function getUserByEmail(db: Db, email: string) {
 }
 
 /**
- * Resolve a Better Auth session token to its session row + user (checks
- * expiry). Returns `undefined` for unknown or expired sessions.
- *
- * NOTE: the token's HMAC signature is intentionally NOT verified — the DB
- * row is the authority (a unique, high-entropy `sessions.token`), which makes
- * sessions instantly revocable. Verifying the signature would only matter if
- * we were validating statelessly without a database round-trip.
+ * Session token → session row + user, or `undefined` when unknown/expired. The HMAC
+ * signature is deliberately NOT verified: the DB row is the authority, which is what
+ * makes sessions instantly revocable.
  */
 export async function getSessionWithUser(db: Db, token: string) {
   // Better Auth session tokens are `{sessionId}.{signature}` — the DB
@@ -60,12 +51,8 @@ export async function getSessionWithUser(db: Db, token: string) {
 }
 
 /**
- * Slide a session's expiry forward from "now" (activity-based renewal).
- *
- * The new expiry is capped at `createdAt + maxLifetimeMs`, so an actively-used
- * session still dies eventually — otherwise a leaked token would live forever.
- * Callers decide *when* to slide (see `SESSION_REFRESH_INTERVAL_MS` in the
- * dashboard) so this stays a bounded number of writes.
+ * Slide a session's expiry forward, capped at `createdAt + maxLifetimeMs` so an actively
+ * used session still dies eventually — otherwise a leaked token lives forever.
  */
 export async function slideSession(
   db: Db,
@@ -99,11 +86,8 @@ export async function deleteOtherSessions(
 }
 
 /**
- * Hash an API key the way Better Auth stores it: base64url(SHA-256(key)),
- * unpadded and unsalted. Any implementation that mints keys MUST use this,
- * or `getUserByApiKey` will never find them.
- *
- * Lazy `node:crypto` import — keeps it out of the browser bundle (see header).
+ * Hash an API key the way Better Auth stores it: base64url(SHA-256(key)), unpadded and
+ * unsalted. Any path that mints keys MUST use this or `getUserByApiKey` never finds them.
  */
 async function hashApiKey(key: string): Promise<string> {
   const { createHash } = await import("node:crypto");
@@ -142,10 +126,8 @@ const API_KEY_LENGTH = 64;
 export const API_KEY_START_LENGTH = 10;
 
 /**
- * Generate a random API key, matching Better Auth's format (letters, 64 chars)
- * and prepending `API_KEY_PREFIX` so keys look identical wherever they are
- * minted. Rejection sampling discards the short tail of the byte range,
- * avoiding the modulo bias a plain `% alphabet.length` would introduce.
+ * Random key in Better Auth's format, prefixed so it looks identical wherever minted. Rejection
+ * sampling discards the short tail of the byte range, avoiding modulo bias.
  */
 function generateApiKey(): string {
   const limit = 256 - (256 % API_KEY_ALPHABET.length);
@@ -164,13 +146,9 @@ function generateApiKey(): string {
 }
 
 /**
- * Mint an API key for a user. Returns the PLAINTEXT key — the only moment it
- * exists in readable form; the table stores just the hash.
- *
- * This lives in the shared data layer rather than only behind Better Auth's
- * `/api/auth/api-key/*` routes because the dashboard talks to Neon directly.
- * One implementation means keys minted by the dashboard and keys validated by
- * the MCP server can never drift apart.
+ * Mint an API key, returning the PLAINTEXT once — the table stores only the hash. Lives here,
+ * not only behind Better Auth's routes, because the dashboard talks to Neon directly; one
+ * implementation means minting and validating cannot drift apart.
  */
 export async function createApiKeyForUser(
   db: Db,
@@ -237,12 +215,7 @@ export async function deleteApiKeyForUser(
     .where(and(eq(apikey.id, keyId), eq(apikey.referenceId, userId)));
 }
 
-/**
- * Rename one of a user's API keys — the label that tells a user which key is
- * for what (and which one to delete). Throws if the key isn't the caller's,
- * so a successful rename also proves ownership rather than silently
- * updating zero rows.
- */
+/** Rename a key. Throws when the key is not the caller's, so a success also proves ownership. */
 export async function renameApiKeyForUser(
   db: Db,
   userId: string,
@@ -260,10 +233,8 @@ export async function renameApiKeyForUser(
 }
 
 /**
- * Rotate a key: mint a replacement carrying the SAME name, then drop the old
- * material. The replacement is created before the old one is deleted so a
- * failed mint can never leave the user with no working key — the only moment
- * a plaintext key exists is the return value here, same as create.
+ * Rotate a key: mint the replacement (same name) BEFORE deleting the old material, so a failed
+ * mint never leaves the user with no working key.
  */
 export async function regenerateApiKeyForUser(
   db: Db,

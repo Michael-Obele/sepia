@@ -7,23 +7,11 @@ import { SERVER_VERSION } from "../version.ts";
 import { safe, SEPIA_ICON } from "./util.ts";
 
 /**
- * `wake` — the readiness probe, and the only tool whose job is to be retried.
- *
- * WHY IT EXISTS: the Fly Machine sleeps between sessions (fly.toml:
- * auto_stop_machines, min_machines_running = 0). The first call of a
- * conversation can therefore land during boot, and whatever takes that hit
- * looks to the model like "the memory server is down" — which is how a session
- * ends up abandoning memory entirely. So the hit lands here instead.
- *
- * It is NOT what warms the database: `requireAuth` already runs a query on
- * every MCP POST before any handler runs. What this buys is cost asymmetry —
- * a single `select 1` sits in front of `briefing`, the heaviest read in the
- * system (up to BRIEFING_FETCH_MAX rows, compacted, plus namespace
- * resolution). Cheap probe first, expensive read second.
- *
- * Deliberately writes NO telemetry: recordTelemetrySafe would be a second
- * round-trip on the slowest call of the session, for a signal we can already
- * infer from uptime.
+ * `wake` — the readiness probe, and the only tool whose job is to be retried. The Fly Machine
+ * sleeps between sessions, so a conversation's first call can land during boot and look to the
+ * model like "memory is down". It does not warm the DB (`requireAuth` already queries): what it
+ * buys is a single `select 1` in front of `briefing`, the heaviest read. No telemetry — a second
+ * round trip on the slowest call of the session.
  */
 export function registerWakeTool(server: McpServer<any, any>) {
   server.tool(

@@ -146,18 +146,10 @@ export async function traverseGraph(
  * a traversal). Powers the dashboard's Obsidian-style "full graph" view.
  */
 export async function fullGraph(db: Db, ownerId: string): Promise<GraphResult> {
-  // Two queries, ONE HTTP round trip. The Neon HTTP driver costs ~450-500ms per
-  // request, so `Promise.all` paid for two of them; `db.batch` pays for one.
-  // This is the same fix `getStats` needed — see the note in stats.ts.
-  //
-  // Both selects are deliberately narrow:
-  //  - entities: the graph renders four fields, so selecting every column
-  //    dragged ~145KB of `summary` + `haystack_tsv` out of Postgres for 312
-  //    rows and then threw all of it away (measured: 997ms vs 492ms, and the
-  //    serialized result is unchanged at 55.7KB).
-  //  - relations: `GraphEdge` needs five columns, so the two entity joins and
-  //    the four extra name/type/importance columns were pure cost — node
-  //    labels already come from the entity query.
+  // ONE round trip: the Neon HTTP driver costs ~450-500ms per request, so this is the
+  // `db.batch` fix `getStats` also needed. Both selects are narrow — selecting every
+  // column dragged ~145KB of summary + tsvector out of Postgres for 312 rows and threw it
+  // away (measured 997ms vs 492ms; serialized result unchanged).
   const [entityRows, relationRows] = await db.batch([
     db
       .select({
@@ -198,19 +190,11 @@ export async function fullGraph(db: Db, ownerId: string): Promise<GraphResult> {
 }
 
 /**
- * The entity the Focus view should centre on by default: the most CONNECTED
- * one, not the most-viewed one.
- *
- * Degree is the right heuristic for a graph root; view count is not. A node you
- * open often can still have no edges, and traversing from it returns a single
- * lonely node with nothing to explain why. Measured on the live `personal`
- * namespace: 180 of 312 entities (58%) have zero relations, and the
- * most-accessed entity (`zenpick/compare-page`, 14 views) is one of them — so
- * the old `top_entities[0]` default showed exactly one node every time Focus
- * was opened cold.
- *
- * Returns null when the owner has no relations at all, so callers can fall back
- * instead of rendering a one-node graph.
+ * The node Focus should centre on: the most CONNECTED, not the most viewed. Degree is the
+ * right heuristic for a graph root — a node opened often can still have no edges. Measured
+ * on live `personal`: 180 of 312 entities have zero relations, including the most-accessed
+ * one, so the old default showed a single lonely node every time. Null when there are no
+ * relations at all.
  */
 export async function mostConnectedEntity(
   db: Db,

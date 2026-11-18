@@ -78,15 +78,9 @@ registerMemoryTools(server);
 registerSearchTools(server);
 registerPruneMemoriesTools(server);
 
-// Streamable HTTP transport mounted at /mcp inside this Bun.serve process.
-//
-// disableSse: no GET stream (clients get 405 → spec-compliant POST-only).
-// Sepia never pushes server→client notifications, so nothing is lost, and a
-// long-lived SSE response would otherwise (a) be killed by Bun's default
-// 10s idleTimeout, putting clients in a reconnect loop that keeps the Fly
-// Machine permanently warm, and (b) hold an open connection that blocks
-// auto-stop. With this on, MCP traffic is short POSTs only → the Machine
-// can actually spin down when nobody is using it.
+// Streamable HTTP transport at /mcp. `disableSse` because Sepia never pushes: a GET stream
+// would be killed by Bun's 10s idleTimeout (clients reconnect forever, keeping the Fly Machine
+// warm) and holds a connection open that blocks auto-stop. POST-only means it can spin down.
 const transport = new HttpTransport(server, {
   path: "/mcp",
   disableSse: true,
